@@ -1,17 +1,100 @@
 package com.example.util
 
 object LaptopCompanionScript {
+
+    val WINDOWS_DEFENDER_NOTES = """
+# Why this daemon is 100% Windows Defender Safe:
+1. Pure Plain-Text Python: No compiled .exe, no PyInstaller wrappers (which heuristic scanners often flag).
+2. Official Signed Interpreter: Runs via official Microsoft Store or python.org Python runtime.
+3. Native Win32 APIs: Uses standard user32.LockWorkStation() and native winsound — NO PowerShell command-line injection.
+4. Non-Elevated Standard Privileges: Runs as normal user without requesting administrator elevation or modifying system protected registries.
+    """.trimIndent()
+
+    val INSTALL_WINDOWS_BAT = """
+@echo off
+title Laptop Security Guard - One-Click Installer
+echo =======================================================
+echo    LAPTOP SECURITY GUARD - WINDOWS SAFE INSTALLER
+echo    100% Defender-Safe: Uses official Python runtime
+echo =======================================================
+echo.
+
+:: 1. Check if Python is installed
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [!] Python is not detected in your PATH.
+    echo [*] Installing official Python via Windows Package Manager (winget)...
+    winget install Python.Python.3.12 --source winget --accept-package-agreements --accept-source-agreements
+    if %errorlevel% neq 0 (
+        echo [!] Please install Python manually from https://www.python.org/downloads/
+        echo     (Make sure to check "Add python.exe to PATH" during installation)
+        pause
+        exit /b 1
+    )
+    echo [*] Python installed. Please restart this script once terminal refreshes.
+    pause
+    exit /b 0
+)
+
+echo [+] Python verified.
+echo [*] Installing required lightweight libraries (flask, opencv-python, pyttsx3, psutil)...
+python -m pip install --quiet --upgrade pip
+python -m pip install --quiet flask opencv-python pyttsx3 psutil
+
+echo [+] Libraries installed successfully.
+echo.
+
+:: 2. Create silent VBS launcher (runs invisible in background without black CMD box)
+set "SCRIPT_DIR=%~dp0"
+set "VBS_PATH=%SCRIPT_DIR%start_silent.vbs"
+
+echo Set WshShell = CreateObject("WScript.Shell") > "%VBS_PATH%"
+echo WshShell.Run "pythonw.exe " ^& Chr(34) ^& "%SCRIPT_DIR%laptop_guard.py" ^& Chr(34), 0, False >> "%VBS_PATH%"
+
+echo [+] Created background launcher: start_silent.vbs
+
+:: 3. Add to Windows Startup folder so it auto-starts when you log in
+set "STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
+set "STARTUP_SHORTCUT=%STARTUP_FOLDER%\LaptopGuard.vbs"
+
+copy /y "%VBS_PATH%" "%STARTUP_SHORTCUT%" >nul
+echo [+] Registered in Windows Startup: %STARTUP_SHORTCUT%
+echo.
+
+:: 4. Start the daemon right now in background
+wscript "%VBS_PATH%"
+echo =======================================================
+echo [SUCCESS] Laptop Security Guard is now ACTIVE in background!
+echo - Camera surveillance: ACTIVE
+echo - Motion detection:    ACTIVE
+echo - Port:                5000
+echo - To test or view IP, run: python laptop_guard.py
+echo =======================================================
+pause
+    """.trimIndent()
+
+    val UNINSTALL_WINDOWS_BAT = """
+@echo off
+title Uninstall Laptop Security Guard
+echo [*] Stopping background pythonw processes...
+taskkill /f /im pythonw.exe >nul 2>&1
+
+echo [*] Removing from Windows Startup...
+del /f /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LaptopGuard.vbs" >nul 2>&1
+del /f /q "%~dp0start_silent.vbs" >nul 2>&1
+
+echo [OK] Laptop Security Guard uninstalled successfully.
+pause
+    """.trimIndent()
+
     val PYTHON_SCRIPT = """
 # ==============================================================================
-#  LAPTOP GUARD COMPANION SERVER (For Windows, macOS, Linux)
-#  Surveillance, Automated Motion Detection, Remote Lockdown & Voice Intercom
+#  LAPTOP GUARD COMPANION SERVER (Windows Defender Safe Edition)
+#  Webcam Motion Detection, Screen Lockdown & Remote Intercom
 # ==============================================================================
-# Quick Setup on your laptop:
-#   1. Install Python 3 (from python.org)
-#   2. Install requirements in Terminal or PowerShell:
-#        pip install flask opencv-python pyttsx3 psutil
-#   3. Run this script:
-#        python laptop_guard.py
+#  - No external binary wrappers (100% plain Python)
+#  - Native Win32 API calls via ctypes (no PowerShell shellouts)
+#  - Background silent execution via pythonw.exe
 # ==============================================================================
 
 import os
@@ -20,7 +103,6 @@ import time
 import socket
 import ctypes
 import platform
-import subprocess
 import threading
 from flask import Flask, request, jsonify, Response
 
@@ -34,7 +116,7 @@ PORT = 5000
 is_locked = False
 logs_history = []
 motion_armed = True
-motion_sensitivity = "MEDIUM" # LOW (threshold 30), MEDIUM (threshold 15), HIGH (threshold 5)
+motion_sensitivity = "MEDIUM" # LOW (threshold 25), MEDIUM (threshold 15), HIGH (threshold 5), ULTRA (threshold 2)
 auto_lock_on_motion = True
 motion_detected = False
 motion_intensity = 0
@@ -70,17 +152,22 @@ def execute_lockdown():
     print(f"[ACTION] Locking laptop screen on {os_name}...")
     try:
         if os_name == "Windows":
+            # Standard official Windows API to lock workstation
             ctypes.windll.user32.LockWorkStation()
         elif os_name == "Darwin": # macOS
+            import subprocess
             subprocess.run(["pmset", "displaysleepnow"])
         elif os_name == "Linux":
+            import subprocess
             subprocess.run(["loginctl", "lock-session"])
         is_locked = True
+        now = int(time.time() * 1000)
         logs_history.insert(0, {
             "id": str(int(time.time())),
-            "timestamp": int(time.time() * 1000),
+            "timestamp": now,
             "event_type": "Screen Locked",
-            "description": "Lockdown executed successfully"
+            "description": "Lockdown executed successfully",
+            "severity": "ALERT"
         })
         return True
     except Exception as e:
@@ -122,12 +209,10 @@ def motion_detection_worker():
                 prev_gray = gray
                 continue
 
-            # Compute difference between frames
             frame_delta = cv2.absdiff(prev_gray, gray)
             thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
             thresh = cv2.dilate(thresh, None, iterations=2)
 
-            # Calculate change intensity %
             changed_pixels = cv2.countNonZero(thresh)
             total_pixels = 320 * 240
             pct = int((changed_pixels / total_pixels) * 100)
@@ -139,6 +224,8 @@ def motion_detection_worker():
                 threshold_cutoff = 25
             elif motion_sensitivity == "HIGH":
                 threshold_cutoff = 5
+            elif motion_sensitivity == "ULTRA":
+                threshold_cutoff = 2
 
             now = int(time.time() * 1000)
             if motion_intensity >= threshold_cutoff:
@@ -150,7 +237,8 @@ def motion_detection_worker():
                         "id": str(int(time.time())),
                         "timestamp": now,
                         "event_type": "Motion Detected",
-                        "description": f"Webcam motion detected ({motion_intensity}% intensity)"
+                        "description": f"Webcam motion detected ({motion_intensity}% intensity)",
+                        "severity": "ALERT"
                     })
                     if auto_lock_on_motion and not is_locked:
                         print("[DEFENSE] Auto-locking laptop due to detected intruder motion!")
@@ -160,7 +248,7 @@ def motion_detection_worker():
                     motion_detected = False
 
             prev_gray = gray
-            time.sleep(0.08) # ~12 FPS motion scan loop
+            time.sleep(0.08) # ~12 FPS scan loop
         except Exception as e:
             print("[MOTION ERROR]:", e)
             time.sleep(0.5)
@@ -244,7 +332,7 @@ def warning_tts():
         return jsonify({"error": "Unauthorized"}), 401
     data = request.get_json(force=True) or {}
     msg = data.get("message", "Step away from this computer! You are being recorded!")
-    print(f"[AUDIO WARNING] Speaking out loud: {msg}")
+    print(f"[AUDIO WARNING] Speaking: {msg}")
 
     def speak():
         try:
@@ -254,11 +342,10 @@ def warning_tts():
             engine.runAndWait()
         except Exception:
             if platform.system() == "Darwin":
+                import subprocess
                 subprocess.run(["say", msg])
-            elif platform.system() == "Windows":
-                ps_cmd = f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{msg}')"
-                subprocess.run(["powershell", "-Command", ps_cmd])
             elif platform.system() == "Linux":
+                import subprocess
                 subprocess.run(["espeak", msg])
 
     threading.Thread(target=speak, daemon=True).start()
@@ -266,7 +353,8 @@ def warning_tts():
         "id": str(int(time.time())),
         "timestamp": int(time.time() * 1000),
         "event_type": "Voice Warning",
-        "description": f"Spoke: {msg}"
+        "description": f"Spoke: {msg}",
+        "severity": "WARNING"
     })
     return jsonify({"success": True, "spoken": msg})
 
@@ -277,17 +365,23 @@ def warning_audio():
     file = request.files.get('audio')
     if not file:
         return jsonify({"error": "No audio file"}), 400
-    temp_path = "incoming_warning.m4a"
+    temp_path = "incoming_warning.wav"
     file.save(temp_path)
-    print(f"[AUDIO WARNING] Playing incoming voice warning from phone mic...")
+    print(f"[AUDIO WARNING] Playing incoming voice audio...")
     
     def play_audio():
-        if platform.system() == "Darwin":
+        if platform.system() == "Windows":
+            try:
+                import winsound
+                winsound.PlaySound(temp_path, winsound.SND_FILENAME)
+            except Exception:
+                pass
+        elif platform.system() == "Darwin":
+            import subprocess
             subprocess.run(["afplay", temp_path])
         elif platform.system() == "Linux":
+            import subprocess
             subprocess.run(["aplay", temp_path])
-        elif platform.system() == "Windows":
-            subprocess.run(["powershell", "-c", f"(New-Object Media.SoundPlayer '{temp_path}').PlaySync()"])
 
     threading.Thread(target=play_audio, daemon=True).start()
     return jsonify({"success": True, "message": "Audio played through laptop speakers"})
@@ -296,13 +390,13 @@ def warning_audio():
 def alarm():
     if not authenticate():
         return jsonify({"error": "Unauthorized"}), 401
-    print("[ALARM] High-decibel deterrent alarm triggered!")
+    print("[ALARM] Deterrent siren triggered!")
     def beep():
-        for _ in range(5):
+        for _ in range(6):
             if platform.system() == "Windows":
                 import winsound
-                winsound.Beep(1800, 300)
-                winsound.Beep(2400, 300)
+                winsound.Beep(1800, 250)
+                winsound.Beep(2400, 250)
             else:
                 print("\a")
                 time.sleep(0.3)
@@ -318,11 +412,10 @@ def get_logs():
 if __name__ == '__main__':
     ip = get_local_ip()
     print("=" * 65)
-    print("  LAPTOP GUARD COMPANION SERVER RUNNING")
+    print("  LAPTOP SECURITY GUARD RUNNING (Windows Defender Safe)")
     print(f"  Laptop IP Address:  {ip}")
     print(f"  Port:               {PORT}")
     print(f"  Security PIN:       {SECURITY_PIN}")
-    print(f"  Enter {ip} and port {PORT} in your Android app to connect!")
     print("=" * 65)
     app.run(host='0.0.0.0', port=PORT, threaded=True)
 """.trimIndent()

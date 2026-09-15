@@ -40,4 +40,19 @@ interface LaptopDao {
 
     @Query("UPDATE laptop_config SET autoTtsOnMotion = :autoTts WHERE id = 1")
     suspend fun updateAutoTtsOnMotion(autoTts: Boolean)
+
+    @Query("UPDATE laptop_config SET isAwayMode = :isAway WHERE id = 1")
+    suspend fun updateAwayMode(isAway: Boolean)
+
+    @Query("UPDATE laptop_config SET awayMotionSensitivity = :sensitivity WHERE id = 1")
+    suspend fun updateAwaySensitivity(sensitivity: String)
+
+    @Query("UPDATE laptop_config SET connectionMode = :mode WHERE id = 1")
+    suspend fun updateConnectionMode(mode: String)
+
+    @Query("UPDATE laptop_config SET activeTransport = :transport WHERE id = 1")
+    suspend fun updateActiveTransport(transport: String)
+
+    @Query("UPDATE laptop_config SET remoteWebUrl = :url WHERE id = 1")
+    suspend fun updateRemoteWebUrl(url: String)
 }

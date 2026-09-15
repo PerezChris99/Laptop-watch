@@ -43,17 +43,48 @@ class LaptopApiClient {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    fun resolveBaseUrl(ipOrUrl: String, port: Int = 5000): String {
+        val trimmed = ipOrUrl.trim().removeSuffix("/")
+        if (trimmed.isEmpty()) return "http://127.0.0.1:$port"
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return trimmed
+        }
+        val cleanHost = trimmed.removePrefix("http://").removePrefix("https://")
+        return "http://$cleanHost:$port"
+    }
+
     private fun getBaseUrl(ip: String, port: Int): String {
-        val cleanIp = ip.trim().removePrefix("http://").removePrefix("https://").removeSuffix("/")
-        return "http://$cleanIp:$port"
+        return resolveBaseUrl(ip, port)
     }
 
-    fun getCameraSnapshotUrl(ip: String, port: Int, pin: String): String {
-        return "${getBaseUrl(ip, port)}/api/camera/frame?pin=$pin&t=${System.currentTimeMillis()}"
+    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String): String {
+        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/frame?pin=$pin&t=${System.currentTimeMillis()}"
     }
 
-    fun getCameraStreamUrl(ip: String, port: Int, pin: String): String {
-        return "${getBaseUrl(ip, port)}/api/camera/stream?pin=$pin"
+    fun getCameraStreamUrl(ipOrUrl: String, port: Int, pin: String): String {
+        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/stream?pin=$pin"
+    }
+
+    suspend fun pingEndpoint(targetUrl: String, pin: String, timeoutSecs: Long = 2): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val quickClient = client.newBuilder()
+                .connectTimeout(timeoutSecs, TimeUnit.SECONDS)
+                .readTimeout(timeoutSecs, TimeUnit.SECONDS)
+                .build()
+
+            val url = "${resolveBaseUrl(targetUrl)}/api/status"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .get()
+                .build()
+
+            quickClient.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     suspend fun getStatus(ip: String, port: Int, pin: String): Result<LaptopStatusResponse> = withContext(Dispatchers.IO) {

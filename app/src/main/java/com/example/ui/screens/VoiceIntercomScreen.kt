@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -33,18 +32,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -61,21 +57,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
-import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.CyanGlow
-import com.example.ui.theme.EmeraldSafe
-import com.example.ui.theme.Navy700
-import com.example.ui.theme.Navy800
-import com.example.ui.theme.Navy900
-import com.example.ui.theme.Slate400
-import com.example.ui.theme.Slate600
+import com.example.ui.theme.DeepSlate800
+import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlueSoft
+import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.SkyBlueDark
+import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.WhitePure
+import com.example.ui.theme.WhiteSmoke
 import com.example.viewmodel.MonitorUiState
 
 @Composable
@@ -112,7 +107,7 @@ fun VoiceIntercomScreen(
     val infiniteTransition = rememberInfiniteTransition(label = "micPulse")
     val micScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = 1.18f,
+        targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
             animation = tween(600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -125,10 +120,11 @@ fun VoiceIntercomScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Navy900)
+            .background(WhiteSmoke)
             .verticalScroll(scrollState)
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Section Header
         Row(
@@ -138,46 +134,45 @@ fun VoiceIntercomScreen(
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(CyanAccent.copy(alpha = 0.15f)),
+                    .background(LightBlueSoft),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.RecordVoiceOver,
                     contentDescription = "Voice Intercom",
-                    tint = CyanAccent,
+                    tint = SkyBluePrimary,
                     modifier = Modifier.size(20.dp)
                 )
             }
             Column {
                 Text(
-                    text = "LAPTOP INTERCOM & MIC",
-                    fontSize = 15.sp,
+                    text = "Laptop Intercom & Mic",
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = DeepSlate800
                 )
                 Text(
                     text = "Broadcast voice warnings directly to laptop speakers",
                     fontSize = 12.sp,
-                    color = Slate400
+                    color = MutedSlate500
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // PUSH-TO-TALK HERO SECTION
+        // PUSH-TO-TALK HERO CARD
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("push_to_talk_card"),
-            colors = CardDefaults.cardColors(containerColor = Navy800),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
             shape = RoundedCornerShape(20.dp),
             border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (uiState.isRecordingVoice) CrimsonAlert else Navy700
-            )
+                1.5.dp,
+                if (uiState.isRecordingVoice) CrimsonAlert else LightBlue100
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -186,16 +181,16 @@ fun VoiceIntercomScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = if (uiState.isRecordingVoice) "TRANSMITTING VOICE..." else "PUSH TO TALK",
-                    fontSize = 13.sp,
+                    text = if (uiState.isRecordingVoice) "TRANSMITTING LIVE VOICE..." else "PUSH TO TALK",
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (uiState.isRecordingVoice) CrimsonAlert else CyanAccent,
-                    fontFamily = FontFamily.Monospace
+                    color = if (uiState.isRecordingVoice) CrimsonAlert else SkyBlueDark,
+                    letterSpacing = 1.sp
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Big Mic Button with Tap-and-Hold / Toggle
+                // Big Mic Button with Tap-and-Hold
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -203,7 +198,12 @@ fun VoiceIntercomScreen(
                         .scale(if (uiState.isRecordingVoice) micScale else 1f)
                         .clip(CircleShape)
                         .background(
-                            if (uiState.isRecordingVoice) CrimsonAlert else CyanAccent
+                            if (uiState.isRecordingVoice) CrimsonAlert else LightBlueSoft
+                        )
+                        .border(
+                            2.dp,
+                            if (uiState.isRecordingVoice) CrimsonAlert else SkyBluePrimary,
+                            CircleShape
                         )
                         .pointerInput(hasMicPermission) {
                             detectTapGestures(
@@ -223,8 +223,8 @@ fun VoiceIntercomScreen(
                     Icon(
                         imageVector = if (uiState.isRecordingVoice) Icons.Default.GraphicEq else Icons.Default.Mic,
                         contentDescription = "Hold to Speak",
-                        tint = if (uiState.isRecordingVoice) Color.White else Navy900,
-                        modifier = Modifier.size(52.dp)
+                        tint = if (uiState.isRecordingVoice) Color.White else SkyBluePrimary,
+                        modifier = Modifier.size(48.dp)
                     )
                 }
 
@@ -239,171 +239,170 @@ fun VoiceIntercomScreen(
                     )
                 } else {
                     Text(
-                        text = "Press & hold to speak into Tecno phone mic",
-                        color = Slate400,
+                        text = "Press & hold to speak into your phone's microphone",
+                        color = MutedSlate500,
                         fontSize = 12.sp
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
         // QUICK WARNING PRESETS (TTS)
-        Text(
-            text = "INSTANT VOICE WARNING PRESETS",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = Slate400,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-        )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "INSTANT VOICE WARNING PRESETS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = SkyBlueDark,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
 
-        val warningPresets = listOf(
-            "🚨 Step away from this computer! You are being recorded!" to CrimsonAlert,
-            "⚠️ Unauthorized user detected! Locking laptop now." to AmberWarning,
-            "📢 Security Alert: Owner has been notified of your presence." to CyanAccent,
-            "🛑 Do not touch this keyboard! Security alarm armed." to Color(0xFFF43F5E)
-        )
+            val warningPresets = listOf(
+                "🚨 Step away from this computer! You are being recorded!" to CrimsonAlert,
+                "⚠️ Unauthorized user detected! Locking laptop now." to AmberWarning,
+                "📢 Security Alert: Owner has been notified of your presence." to SkyBluePrimary,
+                "🛑 Do not touch this keyboard! Security alarm armed." to Color(0xFFE11D48)
+            )
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            warningPresets.forEachIndexed { index, (preset, color) ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSendTTS(preset) }
-                        .testTag("warning_preset_$index"),
-                    colors = CardDefaults.cardColors(containerColor = Navy800),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
-                ) {
-                    Row(
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                warningPresets.forEachIndexed { index, (preset, color) ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSendTTS(preset) }
+                            .testTag("warning_preset_$index"),
+                        colors = CardDefaults.cardColors(containerColor = WhitePure),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VolumeUp,
+                                    contentDescription = "Play Warning",
+                                    tint = color,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = preset,
+                                    color = DeepSlate800,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
                             Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Play Warning",
-                                tint = color,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = preset,
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send",
+                                tint = SkyBluePrimary,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
-
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Send",
-                            tint = Slate400,
-                            modifier = Modifier.size(16.dp)
-                        )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
         // CUSTOM TEXT-TO-SPEECH ANNOUNCEMENT
-        Text(
-            text = "CUSTOM VOICE ANNOUNCEMENT",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = Slate400,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-        )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "CUSTOM VOICE ANNOUNCEMENT",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = SkyBlueDark,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Navy800),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = WhitePure),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
             ) {
-                OutlinedTextField(
-                    value = customMessage,
-                    onValueChange = { customMessage = it },
-                    label = { Text("Type warning to speak out loud on laptop") },
-                    placeholder = { Text("e.g. Please leave my desk immediately!") },
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("custom_warning_input"),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = CyanAccent,
-                        unfocusedBorderColor = Slate600,
-                        focusedLabelColor = CyanAccent,
-                        unfocusedLabelColor = Slate400
-                    ),
-                    maxLines = 3
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Button(
-                    onClick = {
-                        if (customMessage.isNotBlank()) {
-                            onSendTTS(customMessage)
-                            customMessage = ""
-                        }
-                    },
-                    enabled = customMessage.isNotBlank(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .testTag("broadcast_custom_button"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CyanAccent,
-                        contentColor = Navy900
-                    ),
-                    shape = RoundedCornerShape(10.dp)
+                        .padding(14.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.VolumeUp,
-                        contentDescription = "Broadcast",
-                        modifier = Modifier.size(18.dp)
+                    OutlinedTextField(
+                        value = customMessage,
+                        onValueChange = { customMessage = it },
+                        label = { Text("Type warning to speak out loud on laptop") },
+                        placeholder = { Text("e.g. Please leave my desk immediately!") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_warning_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = DeepSlate800,
+                            unfocusedTextColor = DeepSlate800,
+                            focusedBorderColor = SkyBluePrimary,
+                            unfocusedBorderColor = LightBlue100,
+                            focusedLabelColor = SkyBluePrimary,
+                            unfocusedLabelColor = MutedSlate500,
+                            focusedContainerColor = WhitePure,
+                            unfocusedContainerColor = WhitePure
+                        ),
+                        maxLines = 3
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Broadcast Message to Laptop", fontWeight = FontWeight.Bold)
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            if (customMessage.isNotBlank()) {
+                                onSendTTS(customMessage)
+                                customMessage = ""
+                            }
+                        },
+                        enabled = customMessage.isNotBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("broadcast_custom_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SkyBluePrimary,
+                            contentColor = Color.White,
+                            disabledContainerColor = LightBlue100,
+                            disabledContentColor = MutedSlate500
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = "Broadcast",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Broadcast Message to Laptop", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
 
         // DETERRENT HIGH-DECIBEL SIREN ALARM
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("deterrent_alarm_card"),
-            colors = CardDefaults.cardColors(containerColor = CrimsonAlert.copy(alpha = 0.12f)),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, CrimsonAlert.copy(alpha = 0.5f))
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECDD3))
         ) {
             Row(
                 modifier = Modifier
@@ -421,7 +420,7 @@ fun VoiceIntercomScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(CrimsonAlert.copy(alpha = 0.2f)),
+                            .background(Color(0xFFFEE2E2)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -434,13 +433,13 @@ fun VoiceIntercomScreen(
                     Column {
                         Text(
                             text = "Anti-Theft Siren Alarm",
-                            color = Color.White,
+                            color = DeepSlate800,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Plays high-pitch alarm deterrent on laptop",
-                            color = Slate400,
+                            text = "Blasts high-pitch alarm deterrent on laptop",
+                            color = MutedSlate500,
                             fontSize = 11.sp
                         )
                     }
@@ -459,5 +458,7 @@ fun VoiceIntercomScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }

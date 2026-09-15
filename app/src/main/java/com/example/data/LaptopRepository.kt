@@ -13,6 +13,8 @@ class LaptopRepository(
     val laptopConfig: Flow<LaptopConfigEntity?> = laptopDao.getLaptopConfig()
     val intruderLogs: Flow<List<IntruderLogEntity>> = intruderLogDao.getAllLogs()
 
+    suspend fun getConfigDirect(): LaptopConfigEntity? = laptopDao.getLaptopConfigDirect()
+
     suspend fun initializeDefaultsIfNeeded() {
         val current = laptopDao.getLaptopConfigDirect()
         if (current == null) {
@@ -97,7 +99,8 @@ class LaptopRepository(
         snapshotUrl: String? = null,
         warningIssued: String? = null,
         wasLocked: Boolean = false,
-        severity: String = "WARNING"
+        severity: String = "WARNING",
+        category: String = "SECURITY"
     ): Long {
         val entity = IntruderLogEntity(
             timestamp = System.currentTimeMillis(),
@@ -106,9 +109,38 @@ class LaptopRepository(
             snapshotUrl = snapshotUrl,
             warningIssued = warningIssued,
             wasLocked = wasLocked,
-            severity = severity
+            severity = severity,
+            category = category
         )
         return intruderLogDao.insertLog(entity)
+    }
+
+    suspend fun recordUserAction(
+        action: String,
+        details: String,
+        wasLocked: Boolean = false,
+        severity: String = "INFO"
+    ): Long {
+        return recordEvent(
+            eventType = action,
+            description = details,
+            wasLocked = wasLocked,
+            severity = severity,
+            category = "USER_ACTION"
+        )
+    }
+
+    suspend fun recordSystemEvent(
+        event: String,
+        details: String,
+        severity: String = "INFO"
+    ): Long {
+        return recordEvent(
+            eventType = event,
+            description = details,
+            severity = severity,
+            category = "SYSTEM"
+        )
     }
 
     suspend fun deleteLog(id: Long) {
@@ -119,29 +151,82 @@ class LaptopRepository(
         intruderLogDao.clearAllLogs()
     }
 
+    suspend fun setAwayMode(isAway: Boolean) {
+        laptopDao.updateAwayMode(isAway)
+    }
+
+    suspend fun setAwaySensitivity(sensitivity: String) {
+        laptopDao.updateAwaySensitivity(sensitivity)
+    }
+
+    suspend fun setConnectionMode(mode: String) {
+        laptopDao.updateConnectionMode(mode)
+    }
+
+    suspend fun setActiveTransport(transport: String) {
+        laptopDao.updateActiveTransport(transport)
+    }
+
+    suspend fun setRemoteWebUrl(url: String) {
+        laptopDao.updateRemoteWebUrl(url)
+    }
+
+    suspend fun resolveActiveTarget(config: LaptopConfigEntity): Pair<String, String> {
+        // Returns Pair(resolvedTargetHostOrUrl, transportType: "LAN" | "WEB")
+        val lanTarget = "${config.ipAddress}:${config.port}"
+        val webTarget = config.remoteWebUrl.trim()
+
+        return when (config.connectionMode) {
+            "LAN" -> Pair(lanTarget, "LAN")
+            "WEB" -> Pair(if (webTarget.isNotEmpty()) webTarget else lanTarget, "WEB")
+            else -> {
+                // AUTO: Test LAN first
+                val lanReachable = apiClient.pingEndpoint(lanTarget, config.pin, timeoutSecs = 2)
+                if (lanReachable) {
+                    if (config.activeTransport != "LAN") {
+                        laptopDao.updateActiveTransport("LAN")
+                    }
+                    Pair(lanTarget, "LAN")
+                } else if (webTarget.isNotEmpty()) {
+                    val webReachable = apiClient.pingEndpoint(webTarget, config.pin, timeoutSecs = 3)
+                    if (webReachable) {
+                        if (config.activeTransport != "WEB") {
+                            laptopDao.updateActiveTransport("WEB")
+                        }
+                        Pair(webTarget, "WEB")
+                    } else {
+                        Pair(lanTarget, "LAN")
+                    }
+                } else {
+                    Pair(lanTarget, "LAN")
+                }
+            }
+        }
+    }
+
     // Network calls to laptop
-    suspend fun checkLaptopStatus(ip: String, port: Int, pin: String): Result<LaptopStatusResponse> {
-        return apiClient.getStatus(ip, port, pin)
+    suspend fun checkLaptopStatus(ipOrUrl: String, port: Int, pin: String): Result<LaptopStatusResponse> {
+        return apiClient.getStatus(ipOrUrl, port, pin)
     }
 
-    suspend fun lockLaptop(ip: String, port: Int, pin: String): Result<Boolean> {
-        return apiClient.lockScreen(ip, port, pin)
+    suspend fun lockLaptop(ipOrUrl: String, port: Int, pin: String): Result<Boolean> {
+        return apiClient.lockScreen(ipOrUrl, port, pin)
     }
 
-    suspend fun sendTTSWarning(ip: String, port: Int, pin: String, message: String): Result<Boolean> {
-        return apiClient.sendTTSWarning(ip, port, pin, message)
+    suspend fun sendTTSWarning(ipOrUrl: String, port: Int, pin: String, message: String): Result<Boolean> {
+        return apiClient.sendTTSWarning(ipOrUrl, port, pin, message)
     }
 
-    suspend fun sendAudioWarning(ip: String, port: Int, pin: String, file: File): Result<Boolean> {
-        return apiClient.sendAudioWarning(ip, port, pin, file)
+    suspend fun sendAudioWarning(ipOrUrl: String, port: Int, pin: String, file: File): Result<Boolean> {
+        return apiClient.sendAudioWarning(ipOrUrl, port, pin, file)
     }
 
-    suspend fun triggerLaptopAlarm(ip: String, port: Int, pin: String): Result<Boolean> {
-        return apiClient.triggerAlarm(ip, port, pin)
+    suspend fun triggerLaptopAlarm(ipOrUrl: String, port: Int, pin: String): Result<Boolean> {
+        return apiClient.triggerAlarm(ipOrUrl, port, pin)
     }
 
-    suspend fun fetchRemoteLogs(ip: String, port: Int, pin: String) {
-        val result = apiClient.fetchIntruders(ip, port, pin)
+    suspend fun fetchRemoteLogs(ipOrUrl: String, port: Int, pin: String) {
+        val result = apiClient.fetchIntruders(ipOrUrl, port, pin)
         if (result.isSuccess) {
             val logs = result.getOrNull() ?: emptyList()
             for (remote in logs) {
@@ -158,7 +243,7 @@ class LaptopRepository(
         }
     }
 
-    fun getCameraSnapshotUrl(ip: String, port: Int, pin: String): String {
-        return apiClient.getCameraSnapshotUrl(ip, port, pin)
+    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String): String {
+        return apiClient.getCameraSnapshotUrl(ipOrUrl, port, pin)
     }
 }

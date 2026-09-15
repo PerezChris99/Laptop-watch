@@ -12,5 +12,6 @@ data class IntruderLogEntity(
     val snapshotUrl: String? = null,
     val warningIssued: String? = null,
     val wasLocked: Boolean = false,
-    val severity: String = "WARNING" // "INFO", "WARNING", "ALERT"
+    val severity: String = "WARNING", // "INFO", "WARNING", "ALERT"
+    val category: String = "SECURITY" // "SECURITY", "USER_ACTION", "SYSTEM"
 )

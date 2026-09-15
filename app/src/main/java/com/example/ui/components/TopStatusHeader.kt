@@ -24,12 +24,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -52,11 +53,14 @@ import androidx.compose.ui.unit.sp
 import com.example.data.LaptopConfigEntity
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.EmeraldSafe
-import com.example.ui.theme.Navy700
-import com.example.ui.theme.Navy800
-import com.example.ui.theme.Navy900
-import com.example.ui.theme.Slate400
+import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlue50
+import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.SkyBlueDark
+import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.WhitePure
 import com.example.viewmodel.ConnectionState
 import com.example.viewmodel.MonitorUiState
 
@@ -84,13 +88,14 @@ fun TopStatusHeader(
         modifier = modifier
             .fillMaxWidth()
             .testTag("top_status_header"),
-        color = Navy800,
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp
+        color = WhitePure,
+        tonalElevation = 2.dp,
+        shadowElevation = 2.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .border(width = 1.dp, color = LightBlue100)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             // Main Top Bar Row
@@ -109,7 +114,7 @@ fun TopStatusHeader(
                         val dotColor = when (uiState.connectionState) {
                             ConnectionState.CONNECTED -> EmeraldSafe
                             ConnectionState.DEMO_MODE -> AmberWarning
-                            ConnectionState.CONNECTING -> Color(0xFF38BDF8)
+                            ConnectionState.CONNECTING -> SkyBluePrimary
                             ConnectionState.DISCONNECTED, ConnectionState.ERROR -> CrimsonAlert
                         }
                         Box(
@@ -127,29 +132,77 @@ fun TopStatusHeader(
                             text = config?.laptopName ?: "Laptop Guard",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = DeepSlate800,
                             maxLines = 1
                         )
+
+                        // Transport Badge (LAN or Web)
+                        val transportIcon = if (uiState.activeTransport == "WEB") Icons.Default.CloudDone else Icons.Default.Lan
+                        val transportLabel = if (uiState.activeTransport == "WEB") "Web" else "LAN"
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(LightBlue50)
+                                .border(0.8.dp, LightBlue100, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                imageVector = transportIcon,
+                                contentDescription = transportLabel,
+                                tint = SkyBluePrimary,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = transportLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SkyBlueDark
+                            )
+                        }
+
+                        // Away Mode Badge if active
+                        if (uiState.isAwayMode) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFFEF3C7))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "AWAY",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFB45309)
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         val statusText = when (uiState.connectionState) {
-                            ConnectionState.CONNECTED -> "Online (${config?.ipAddress})"
-                            ConnectionState.DEMO_MODE -> "Demo Mode (Simulated)"
-                            ConnectionState.CONNECTING -> "Connecting..."
+                            ConnectionState.CONNECTED -> {
+                                if (uiState.activeTransport == "WEB") "Connected via Web Tunnel"
+                                else "Local LAN (${config?.ipAddress})"
+                            }
+                            ConnectionState.DEMO_MODE -> "Safe Demo Simulator"
+                            ConnectionState.CONNECTING -> "Resolving network route..."
                             ConnectionState.DISCONNECTED -> "Offline"
-                            ConnectionState.ERROR -> "Connection Error"
+                            ConnectionState.ERROR -> "Link Offline"
                         }
                         Text(
                             text = statusText,
                             fontSize = 12.sp,
-                            color = Slate400,
-                            fontFamily = FontFamily.Monospace
+                            color = MutedSlate500,
+                            fontFamily = FontFamily.SansSerif
                         )
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -157,19 +210,20 @@ fun TopStatusHeader(
                                 imageVector = Icons.Default.BatteryChargingFull,
                                 contentDescription = "Battery",
                                 tint = EmeraldSafe,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
-                            Spacer(modifier = Modifier.width(2.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = uiState.batteryLevel,
                                 fontSize = 11.sp,
-                                color = Slate400
+                                color = MutedSlate500,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
                 }
 
-                // Quick Action Buttons (Lock & Alarm)
+                // Quick Action Buttons (Alarm & Lock)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -178,31 +232,31 @@ fun TopStatusHeader(
                     IconButton(
                         onClick = onAlarmClick,
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(42.dp)
                             .clip(CircleShape)
-                            .background(Navy700)
-                            .border(1.dp, CrimsonAlert.copy(alpha = 0.5f), CircleShape)
+                            .background(Color(0xFFFFF1F2))
+                            .border(1.dp, Color(0xFFFECDD3), CircleShape)
                             .testTag("quick_alarm_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.NotificationsActive,
                             contentDescription = "Trigger Siren Alarm",
                             tint = CrimsonAlert,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     // Main Lockdown Button
                     val isLocked = uiState.isLocked
                     val lockBtnBg by animateColorAsState(
-                        targetValue = if (isLocked) CrimsonAlert else Color(0xFF0284C7),
+                        targetValue = if (isLocked) CrimsonAlert else SkyBluePrimary,
                         label = "lockBg"
                     )
 
                     Button(
                         onClick = onLockClick,
                         modifier = Modifier
-                            .height(44.dp)
+                            .height(42.dp)
                             .testTag("quick_lock_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = lockBtnBg,
@@ -214,13 +268,13 @@ fun TopStatusHeader(
                         Icon(
                             imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
                             contentDescription = if (isLocked) "Locked" else "Lock Laptop",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isLocked) "LOCKED" else "LOCK",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
                 }
@@ -232,11 +286,11 @@ fun TopStatusHeader(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CrimsonAlert.copy(alpha = 0.2f))
-                        .border(1.dp, CrimsonAlert, RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFFFF1F2))
+                        .border(1.dp, Color(0xFFFDA4AF), RoundedCornerShape(10.dp))
                         .clickable { onMotionAlertClick() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -251,7 +305,7 @@ fun TopStatusHeader(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "⚠️ Motion detected in front of laptop!",
+                            text = "Motion detected in front of laptop!",
                             color = CrimsonAlert,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp
@@ -259,13 +313,13 @@ fun TopStatusHeader(
                     }
                     Text(
                         text = "VIEW ➔",
-                        color = Color.White,
+                        color = CrimsonAlert,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontSize = 11.sp
                     )
                 }
             }
         }
     }
 }
+

@@ -2,10 +2,10 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,20 +13,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -36,7 +36,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,7 +50,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,12 +58,15 @@ import coil.request.ImageRequest
 import com.example.data.IntruderLogEntity
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
-import com.example.ui.theme.CyanAccent
+import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.EmeraldSafe
-import com.example.ui.theme.Navy700
-import com.example.ui.theme.Navy800
-import com.example.ui.theme.Navy900
-import com.example.ui.theme.Slate400
+import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlueSoft
+import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.SkyBlueDark
+import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.WhitePure
+import com.example.ui.theme.WhiteSmoke
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -83,9 +84,9 @@ fun IntruderLogsScreen(
 
     val filteredLogs = remember(logs, selectedFilter) {
         when (selectedFilter) {
-            "ALERTS" -> logs.filter { it.severity == "ALERT" }
-            "MOTION" -> logs.filter { it.eventType.contains("Motion", ignoreCase = true) }
-            "LOCKED" -> logs.filter { it.wasLocked || it.eventType.contains("Lock", ignoreCase = true) }
+            "SECURITY" -> logs.filter { it.category == "SECURITY" || it.severity == "ALERT" }
+            "ACTIONS" -> logs.filter { it.category == "USER_ACTION" }
+            "SYSTEM" -> logs.filter { it.category == "SYSTEM" }
             else -> logs
         }
     }
@@ -93,7 +94,7 @@ fun IntruderLogsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Navy900)
+            .background(WhiteSmoke)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         // Top row: Header & Clear button
@@ -104,15 +105,15 @@ fun IntruderLogsScreen(
         ) {
             Column {
                 Text(
-                    text = "INTRUDER & ACCESS LOGS",
-                    fontSize = 15.sp,
+                    text = "Activity & Security Logs",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = DeepSlate800
                 )
                 Text(
-                    text = "${logs.size} security events recorded",
+                    text = "${logs.size} total activities & events recorded",
                     fontSize = 12.sp,
-                    color = Slate400
+                    color = MutedSlate500
                 )
             }
 
@@ -124,39 +125,45 @@ fun IntruderLogsScreen(
                     Icon(
                         imageVector = Icons.Default.DeleteSweep,
                         contentDescription = "Clear All Logs",
-                        tint = Slate400
+                        tint = MutedSlate500
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Filter chips
+        // Filter chips (De-cluttered, clean horizontal list)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf(
-                "ALL" to "All",
-                "ALERTS" to "Alerts",
-                "MOTION" to "Motion",
-                "LOCKED" to "Lockdowns"
+                "ALL" to "All Activity",
+                "SECURITY" to "🚨 Security",
+                "ACTIONS" to "👤 Actions",
+                "SYSTEM" to "⚙️ System"
             ).forEach { (key, label) ->
                 val isSelected = selectedFilter == key
                 FilterChip(
                     selected = isSelected,
                     onClick = { selectedFilter = key },
-                    label = { Text(label, fontSize = 12.sp) },
+                    label = {
+                        Text(
+                            label,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = CyanAccent,
-                        selectedLabelColor = Navy900,
-                        containerColor = Navy800,
-                        labelColor = Slate400
+                        selectedContainerColor = SkyBluePrimary,
+                        selectedLabelColor = Color.White,
+                        containerColor = WhitePure,
+                        labelColor = DeepSlate800
                     ),
                     border = FilterChipDefaults.filterChipBorder(
-                        borderColor = Navy700,
-                        selectedBorderColor = CyanAccent,
+                        borderColor = LightBlue100,
+                        selectedBorderColor = SkyBluePrimary,
                         enabled = true,
                         selected = isSelected
                     )
@@ -164,7 +171,7 @@ fun IntruderLogsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (filteredLogs.isEmpty()) {
             Box(
@@ -173,37 +180,46 @@ fun IntruderLogsScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = WhitePure),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(Navy800),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = "No Incidents",
-                            tint = EmeraldSafe,
-                            modifier = Modifier.size(36.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFECFDF5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = "No Incidents",
+                                tint = EmeraldSafe,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Text(
+                            text = "No Activity Recorded",
+                            fontWeight = FontWeight.Bold,
+                            color = DeepSlate800,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "Security triggers, user actions, and system logs will appear here in real time.",
+                            color = MutedSlate500,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
-                    Text(
-                        text = "No Suspicious Activity Detected",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 15.sp
-                    )
-                    Text(
-                        text = "Any motion in front of your laptop or unauthorized attempts will appear here.",
-                        color = Slate400,
-                        fontSize = 12.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
                 }
             }
         } else {
@@ -212,7 +228,8 @@ fun IntruderLogsScreen(
                     .fillMaxWidth()
                     .weight(1f)
                     .testTag("intruder_logs_list"),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(filteredLogs, key = { it.id }) { item ->
                     IntruderLogItemCard(
@@ -229,8 +246,19 @@ fun IntruderLogsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Access History?") },
-            text = { Text("This will remove all recorded intruder snapshots and security events from this device.") },
+            title = {
+                Text(
+                    "Clear Activity History?",
+                    color = DeepSlate800,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "This will remove all recorded security incidents, user remote actions, and snapshots from this device.",
+                    color = MutedSlate500
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -239,17 +267,16 @@ fun IntruderLogsScreen(
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = CrimsonAlert)
                 ) {
-                    Text("Clear All")
+                    Text("Clear All", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text("Cancel", color = MutedSlate500)
                 }
             },
-            containerColor = Navy800,
-            titleContentColor = Color.White,
-            textContentColor = Slate400
+            containerColor = WhitePure,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 }
@@ -264,15 +291,23 @@ private fun IntruderLogItemCard(
     val severityColor = when (log.severity) {
         "ALERT" -> CrimsonAlert
         "WARNING" -> AmberWarning
-        else -> CyanAccent
+        else -> SkyBluePrimary
     }
 
     val iconVector = when {
         log.eventType.contains("Lock", ignoreCase = true) -> Icons.Default.Lock
         log.eventType.contains("Voice", ignoreCase = true) -> Icons.Default.RecordVoiceOver
-        log.eventType.contains("Alarm", ignoreCase = true) -> Icons.Default.Notifications
+        log.eventType.contains("Alarm", ignoreCase = true) || log.eventType.contains("Siren", ignoreCase = true) -> Icons.Default.Notifications
         log.eventType.contains("Snapshot", ignoreCase = true) -> Icons.Default.CameraAlt
+        log.category == "USER_ACTION" -> Icons.Default.Person
+        log.category == "SYSTEM" -> Icons.Default.Settings
         else -> Icons.Default.Warning
+    }
+
+    val categoryBadge = when (log.category) {
+        "USER_ACTION" -> "USER ACTION"
+        "SYSTEM" -> "SYSTEM"
+        else -> "SECURITY"
     }
 
     Card(
@@ -280,15 +315,17 @@ private fun IntruderLogItemCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .testTag("log_item_${log.id}"),
-        colors = CardDefaults.cardColors(containerColor = Navy800),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
+        colors = CardDefaults.cardColors(containerColor = WhitePure),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp)
         ) {
-            // Header Row: Icon, Event Name, Severity Pill, Delete
+            // Header Row: Icon, Event Name, Category Badge, Severity Pill, Delete
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -301,9 +338,15 @@ private fun IntruderLogItemCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
-                            .background(severityColor.copy(alpha = 0.15f)),
+                            .background(
+                                when (log.severity) {
+                                    "ALERT" -> Color(0xFFFFF1F2)
+                                    "WARNING" -> Color(0xFFFEF3C7)
+                                    else -> LightBlueSoft
+                                }
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -315,17 +358,31 @@ private fun IntruderLogItemCard(
                     }
 
                     Column {
-                        Text(
-                            text = log.eventType,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = log.eventType,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepSlate800,
+                                fontSize = 14.sp
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(LightBlueSoft)
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = categoryBadge,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = SkyBlueDark
+                                )
+                            }
+                        }
                         Text(
                             text = formattedTime,
                             fontSize = 11.sp,
-                            color = Slate400,
-                            fontFamily = FontFamily.Monospace
+                            color = MutedSlate500
                         )
                     }
                 }
@@ -334,7 +391,13 @@ private fun IntruderLogItemCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(severityColor.copy(alpha = 0.2f))
+                            .background(
+                                when (log.severity) {
+                                    "ALERT" -> Color(0xFFFFF1F2)
+                                    "WARNING" -> Color(0xFFFEF3C7)
+                                    else -> LightBlueSoft
+                                }
+                            )
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
@@ -352,20 +415,20 @@ private fun IntruderLogItemCard(
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Delete Event",
-                            tint = Slate400,
+                            tint = MutedSlate500.copy(alpha = 0.7f),
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Description
             Text(
                 text = log.description,
-                color = Slate400,
-                fontSize = 13.sp
+                color = MutedSlate500,
+                fontSize = 12.sp
             )
 
             // Warning issued pill if any
@@ -375,7 +438,7 @@ private fun IntruderLogItemCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Navy700.copy(alpha = 0.6f))
+                        .background(LightBlueSoft)
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -383,12 +446,12 @@ private fun IntruderLogItemCard(
                     Icon(
                         imageVector = Icons.Default.RecordVoiceOver,
                         contentDescription = null,
-                        tint = CyanAccent,
+                        tint = SkyBluePrimary,
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = "Warning Issued: \"${log.warningIssued}\"",
-                        color = Color.White,
+                        text = "Warning: \"${log.warningIssued}\"",
+                        color = DeepSlate800,
                         fontSize = 11.sp
                     )
                 }
@@ -408,7 +471,7 @@ private fun IntruderLogItemCard(
                         .fillMaxWidth()
                         .height(140.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, Navy700, RoundedCornerShape(10.dp))
+                        .border(1.dp, LightBlue100, RoundedCornerShape(10.dp))
                 )
             }
         }

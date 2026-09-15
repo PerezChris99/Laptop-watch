@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,11 +47,15 @@ import com.example.ui.screens.LaptopSetupScreen
 import com.example.ui.screens.LiveCameraScreen
 import com.example.ui.screens.VoiceIntercomScreen
 import com.example.ui.theme.CrimsonAlert
-import com.example.ui.theme.CyanAccent
+import com.example.ui.theme.DeepSlate800
+import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlueSoft
+import com.example.ui.theme.MutedSlate500
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.Navy800
-import com.example.ui.theme.Navy900
-import com.example.ui.theme.Slate400
+import com.example.ui.theme.SkyBlueDark
+import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.WhitePure
+import com.example.ui.theme.WhiteSmoke
 import com.example.viewmodel.LaptopMonitorViewModel
 import com.example.viewmodel.MonitorTab
 
@@ -103,9 +108,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
         },
         bottomBar = {
             NavigationBar(
-                containerColor = Navy800,
+                containerColor = WhitePure,
                 modifier = Modifier
                     .navigationBarsPadding()
+                    .border(androidx.compose.foundation.BorderStroke(1.dp, LightBlue100))
                     .testTag("bottom_nav_bar")
             ) {
                 // Tab 1: Alert Dashboard
@@ -130,11 +136,11 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     },
                     label = { Text("Alerts", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Navy900,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = CyanAccent,
-                        unselectedIconColor = Slate400,
-                        unselectedTextColor = Slate400
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
                     ),
                     modifier = Modifier.testTag("tab_alerts")
                 )
@@ -151,11 +157,11 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     },
                     label = { Text("Webcam", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Navy900,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = CyanAccent,
-                        unselectedIconColor = Slate400,
-                        unselectedTextColor = Slate400
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
                     ),
                     modifier = Modifier.testTag("tab_camera")
                 )
@@ -172,11 +178,11 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     },
                     label = { Text("Intercom", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Navy900,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = CyanAccent,
-                        unselectedIconColor = Slate400,
-                        unselectedTextColor = Slate400
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
                     ),
                     modifier = Modifier.testTag("tab_intercom")
                 )
@@ -189,7 +195,7 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         BadgedBox(
                             badge = {
                                 if (logs.isNotEmpty()) {
-                                    Badge(containerColor = CyanAccent, contentColor = Navy900) {
+                                    Badge(containerColor = SkyBluePrimary, contentColor = Color.White) {
                                         Text(text = logs.size.coerceAtMost(99).toString())
                                     }
                                 }
@@ -203,11 +209,11 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     },
                     label = { Text("Intruders", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Navy900,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = CyanAccent,
-                        unselectedIconColor = Slate400,
-                        unselectedTextColor = Slate400
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
                     ),
                     modifier = Modifier.testTag("tab_logs")
                 )
@@ -224,18 +230,18 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     },
                     label = { Text("Link", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Navy900,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = CyanAccent,
-                        unselectedIconColor = Slate400,
-                        unselectedTextColor = Slate400
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
                     ),
                     modifier = Modifier.testTag("tab_setup")
                 )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = Navy900
+        containerColor = WhiteSmoke
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -259,7 +265,9 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onLockLaptop = { viewModel.lockLaptopRemotely() },
                         onUnlockLaptop = { viewModel.unlockLaptopSimulation() },
                         onTriggerAlarm = { viewModel.triggerDeterrentAlarm() },
-                        onNavigateToTab = { tab -> viewModel.switchTab(tab) }
+                        onNavigateToTab = { tab -> viewModel.switchTab(tab) },
+                        onToggleAwayMode = { viewModel.toggleAwayMode() },
+                        onSetAwaySensitivity = { viewModel.setAwaySensitivity(it) }
                     )
                 }
 
@@ -303,11 +311,13 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     LaptopSetupScreen(
                         config = config,
                         uiState = uiState,
-                        onSaveConfig = { name, ip, port, pin ->
-                            viewModel.updateConfig(name, ip, port, pin)
+                        onSaveConfig = { name, ip, port, pin, webUrl, mode ->
+                            viewModel.updateConfig(name, ip, port, pin, webUrl, mode)
                         },
                         onTestConnection = { viewModel.testConnection() },
-                        onToggleDemoMode = { viewModel.toggleDemoMode() }
+                        onToggleDemoMode = { viewModel.toggleDemoMode() },
+                        onToggleAwayMode = { viewModel.toggleAwayMode() },
+                        onSetAwaySensitivity = { viewModel.setAwaySensitivity(it) }
                     )
                 }
             }

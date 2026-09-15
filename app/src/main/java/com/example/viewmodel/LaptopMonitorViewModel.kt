@@ -11,6 +11,7 @@ import com.example.data.DiagnosticEvent
 import com.example.data.IntruderLogEntity
 import com.example.data.LaptopConfigEntity
 import com.example.data.LaptopRepository
+import com.example.util.NotificationHelper
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -58,6 +59,10 @@ data class MonitorUiState(
     val lastSnapshotTaken: String? = null,
     val systemHealthStatus: String = "100% OPERATIONAL",
     val caughtErrorsCount: Int = 0,
+    val activeTransport: String = "LAN", // "LAN" or "WEB"
+    val isAwayMode: Boolean = false,
+    val awaySensitivity: String = "HIGH", // "HIGH" (5%) or "ULTRA" (2%)
+    val connectionMode: String = "AUTO", // "AUTO", "LAN", "WEB"
     val recentDiagnostics: List<DiagnosticEvent> = emptyList()
 )
 
@@ -65,6 +70,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     private val database = AppDatabase.getInstance(application)
     private val repository = LaptopRepository(database.laptopDao(), database.intruderLogDao())
     private val voiceRecorder = VoiceRecorderHelper(application)
+    private val notificationHelper = NotificationHelper(application)
 
     // Global Safe Coroutine Exception Handler to catch and log any unhandled coroutine errors proactively
     private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -98,10 +104,19 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     init {
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.initializeDefaultsIfNeeded()
+            val initialConfig = repository.getConfigDirect()
+            if (initialConfig != null) {
+                _uiState.value = _uiState.value.copy(
+                    isAwayMode = initialConfig.isAwayMode,
+                    awaySensitivity = initialConfig.awayMotionSensitivity,
+                    connectionMode = initialConfig.connectionMode,
+                    activeTransport = initialConfig.activeTransport
+                )
+            }
             recordDiagnostic(
                 tag = "SYSTEM",
                 status = "HEALTHY",
-                message = "Laptop Security Engine started. Room DB verified."
+                message = "Laptop Security Engine started. Ready for LAN & Web connections."
             )
             startHeartbeat()
         }
@@ -152,23 +167,112 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun updateConfig(name: String, ip: String, port: Int, pin: String) {
+    fun updateConfig(name: String, ip: String, port: Int, pin: String, webUrl: String = "", mode: String = "AUTO") {
         viewModelScope.launch(coroutineExceptionHandler) {
             val current = laptopConfig.value ?: LaptopConfigEntity()
             val updated = current.copy(
                 laptopName = name.trim(),
                 ipAddress = ip.trim(),
                 port = port,
-                pin = pin.trim()
+                pin = pin.trim(),
+                remoteWebUrl = webUrl.trim(),
+                connectionMode = mode
             )
             repository.updateConfig(updated)
-            _uiState.value = _uiState.value.copy(toastFeedback = "Laptop connection settings saved")
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Configuration saved. Auto-detecting route...",
+                connectionMode = mode
+            )
             recordDiagnostic(
                 tag = "CONFIG",
                 status = "HEALTHY",
-                message = "Updated laptop link config: $ip:$port"
+                message = "Updated connection settings (Mode: $mode, LAN: $ip:$port, Web: $webUrl)"
             )
             testConnection()
+        }
+    }
+
+    fun setConnectionMode(mode: String) {
+        val config = laptopConfig.value ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.setConnectionMode(mode)
+            _uiState.value = _uiState.value.copy(
+                connectionMode = mode,
+                toastFeedback = "Connection Mode: $mode"
+            )
+            testConnection()
+        }
+    }
+
+    // Away Mode with heightened motion sensitivity
+    fun toggleAwayMode() {
+        val config = laptopConfig.value ?: return
+        val newAway = !config.isAwayMode
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.setAwayMode(newAway)
+            if (newAway) {
+                // When activating Away Mode:
+                repository.setMotionArmed(true)
+                _uiState.value = _uiState.value.copy(
+                    isAwayMode = true,
+                    threatLevel = "SECURE",
+                    toastFeedback = "🏃 Away Mode ACTIVATED! High-sensitivity radar & auto-lock armed."
+                )
+                recordDiagnostic(
+                    tag = "AWAY_MODE",
+                    status = "HEALTHY",
+                    message = "Away Mode enabled with ${config.awayMotionSensitivity} sensitivity"
+                )
+                repository.recordEvent(
+                    eventType = "Away Guard Armed",
+                    description = "Away Mode active: Radar armed to ${config.awayMotionSensitivity} sensitivity.",
+                    warningIssued = "Away Protocol Active",
+                    wasLocked = _uiState.value.isLocked,
+                    severity = "INFO"
+                )
+                if (!config.isDemoMode) {
+                    val (target, _) = repository.resolveActiveTarget(config)
+                    repository.syncMotionConfigToLaptop(
+                        target, config.port, config.pin,
+                        armed = true, sensitivity = config.awayMotionSensitivity, autoLock = true
+                    )
+                }
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isAwayMode = false,
+                    toastFeedback = "Away Mode deactivated. Normal radar restored."
+                )
+                recordDiagnostic(
+                    tag = "AWAY_MODE",
+                    status = "HEALTHY",
+                    message = "Away Mode deactivated. Normal sensitivity restored."
+                )
+                if (!config.isDemoMode) {
+                    val (target, _) = repository.resolveActiveTarget(config)
+                    repository.syncMotionConfigToLaptop(
+                        target, config.port, config.pin,
+                        armed = config.isMotionArmed, sensitivity = config.motionSensitivity, autoLock = config.autoLockOnMotion
+                    )
+                }
+            }
+        }
+    }
+
+    fun setAwaySensitivity(sensitivity: String) {
+        val config = laptopConfig.value ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.setAwaySensitivity(sensitivity)
+            _uiState.value = _uiState.value.copy(
+                awaySensitivity = sensitivity,
+                toastFeedback = "Away sensitivity: $sensitivity"
+            )
+            if (config.isAwayMode && !config.isDemoMode) {
+                val (target, _) = repository.resolveActiveTarget(config)
+                repository.syncMotionConfigToLaptop(
+                    target, config.port, config.pin,
+                    armed = true, sensitivity = sensitivity, autoLock = true
+                )
+            }
         }
     }
 
@@ -189,9 +293,11 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 message = "Motion sensor arm state set to $newArmed"
             )
             if (!config.isDemoMode) {
+                val (target, _) = repository.resolveActiveTarget(config)
+                val effectiveSens = if (config.isAwayMode) config.awayMotionSensitivity else config.motionSensitivity
                 repository.syncMotionConfigToLaptop(
-                    config.ipAddress, config.port, config.pin,
-                    armed = newArmed, sensitivity = config.motionSensitivity, autoLock = config.autoLockOnMotion
+                    target, config.port, config.pin,
+                    armed = newArmed, sensitivity = effectiveSens, autoLock = config.autoLockOnMotion
                 )
             }
         }
@@ -201,10 +307,11 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.setMotionSensitivity(sensitivity)
-            _uiState.value = _uiState.value.copy(toastFeedback = "Motion sensitivity: $sensitivity")
-            if (!config.isDemoMode) {
+            _uiState.value = _uiState.value.copy(toastFeedback = "Normal sensitivity: $sensitivity")
+            if (!config.isDemoMode && !config.isAwayMode) {
+                val (target, _) = repository.resolveActiveTarget(config)
                 repository.syncMotionConfigToLaptop(
-                    config.ipAddress, config.port, config.pin,
+                    target, config.port, config.pin,
                     armed = config.isMotionArmed, sensitivity = sensitivity, autoLock = config.autoLockOnMotion
                 )
             }
@@ -299,13 +406,21 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 sendTTSWarning(config.ttsWarningPhrase)
             }
 
+            // Trigger Push Notification immediately
+            notificationHelper.showMotionAlertNotification(
+                title = if (_uiState.value.isAwayMode) "🚨 Intruder Detected (Away Radar)" else "🚨 Intruder Movement Detected!",
+                message = "Webcam spotted movement near your laptop workspace.",
+                isAwayMode = _uiState.value.isAwayMode
+            )
+
             // Record incident into Room database
             repository.recordEvent(
                 eventType = "Motion Detected",
-                description = "Suspicious movement detected in front of laptop webcam (88% intensity)",
+                description = "Suspicious movement detected in front of laptop webcam (${_uiState.value.motionIntensity}% intensity)",
                 warningIssued = if (config.autoTtsOnMotion) config.ttsWarningPhrase else "Motion Alert",
                 wasLocked = _uiState.value.isLocked,
-                severity = "ALERT"
+                severity = "ALERT",
+                category = "SECURITY"
             )
 
             // Start cooldown to restore threat level to ELEVATED after 8s
@@ -346,14 +461,17 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(coroutineExceptionHandler) {
             _uiState.value = _uiState.value.copy(
                 connectionState = ConnectionState.CONNECTING,
-                statusMessage = "Connecting to ${config.ipAddress}:${config.port}..."
+                statusMessage = "Auto-detecting link (LAN / Web)..."
             )
-            val result = repository.checkLaptopStatus(config.ipAddress, config.port, config.pin)
+            val (activeTarget, transport) = repository.resolveActiveTarget(config)
+            val result = repository.checkLaptopStatus(activeTarget, config.port, config.pin)
             if (result.isSuccess) {
                 val res = result.getOrNull()!!
+                val routeLabel = if (transport == "WEB") "Web Cloud" else "LAN Direct"
                 _uiState.value = _uiState.value.copy(
                     connectionState = ConnectionState.CONNECTED,
-                    statusMessage = "Connected to ${res.hostname}",
+                    statusMessage = "$routeLabel: ${res.hostname}",
+                    activeTransport = transport,
                     batteryLevel = res.battery,
                     isLocked = res.isLocked,
                     isCameraActive = res.cameraActive,
@@ -361,20 +479,20 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     motionIntensity = res.motionIntensity,
                     threatLevel = res.threatLevel,
                     lastMotionTime = res.lastMotionTime,
-                    toastFeedback = "Connected to laptop successfully!"
+                    toastFeedback = "Connected via $routeLabel!"
                 )
                 repository.setLockStatus(res.isLocked)
                 recordDiagnostic(
                     tag = "NETWORK",
                     status = "HEALTHY",
-                    message = "Ping successful to ${config.ipAddress}. Laptop is online."
+                    message = "Active route: $routeLabel ($activeTarget). Ping OK."
                 )
             } else {
                 val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Connection failed"
                 _uiState.value = _uiState.value.copy(
                     connectionState = ConnectionState.ERROR,
                     statusMessage = "Offline ($errorMsg)",
-                    toastFeedback = "Could not reach laptop. Make sure companion script is running."
+                    toastFeedback = "Could not reach laptop via LAN or Web URL."
                 )
                 recordDiagnostic(
                     tag = "NETWORK",
@@ -399,10 +517,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     toastFeedback = "🔒 Laptop screen LOCKED remotely!"
                 )
                 repository.setLockStatus(true)
-                repository.recordEvent(
-                    eventType = "Screen Locked",
-                    description = "Remote lockdown sent from Tecno Camon 12 Air",
-                    warningIssued = "Screen locked immediately",
+                notificationHelper.showRemoteLockNotification(isLocked = true)
+                repository.recordUserAction(
+                    action = "Screen Locked Remotely",
+                    details = "Remote lock command executed (Demo Simulation)",
                     wasLocked = true,
                     severity = "ALERT"
                 )
@@ -414,24 +532,26 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val result = repository.lockLaptop(config.ipAddress, config.port, config.pin)
-            _uiState.value = _uiState.value.copy(isSendingAction = false)
+            val (activeTarget, transport) = repository.resolveActiveTarget(config)
+            val result = repository.lockLaptop(activeTarget, config.port, config.pin)
+            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
                     isLocked = true,
                     toastFeedback = "🔒 Laptop screen LOCKED successfully!"
                 )
                 repository.setLockStatus(true)
-                repository.recordEvent(
-                    eventType = "Screen Locked",
-                    description = "Remote lock command executed",
+                notificationHelper.showRemoteLockNotification(isLocked = true)
+                repository.recordUserAction(
+                    action = "Screen Locked Remotely",
+                    details = "Remote lock command executed (via $transport)",
                     wasLocked = true,
                     severity = "ALERT"
                 )
                 recordDiagnostic(
                     tag = "LOCKDOWN",
                     status = "HEALTHY",
-                    message = "Real lock command confirmed by laptop OS"
+                    message = "Real lock command confirmed via $transport"
                 )
             } else {
                 val err = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
@@ -454,6 +574,13 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 toastFeedback = "Laptop unlocked"
             )
             repository.setLockStatus(false)
+            notificationHelper.showRemoteLockNotification(isLocked = false)
+            repository.recordUserAction(
+                action = "Screen Unlocked",
+                details = "Workstation display unlocked simulation confirmed",
+                wasLocked = false,
+                severity = "INFO"
+            )
             recordDiagnostic(
                 tag = "LOCKDOWN",
                 status = "HEALTHY",
@@ -491,15 +618,16 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val result = repository.sendTTSWarning(config.ipAddress, config.port, config.pin, message)
-            _uiState.value = _uiState.value.copy(isSendingAction = false)
+            val (target, transport) = repository.resolveActiveTarget(config)
+            val result = repository.sendTTSWarning(target, config.port, config.pin, message)
+            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
                     toastFeedback = "📢 Spoken through laptop: \"$message\""
                 )
                 repository.recordEvent(
                     eventType = "Voice Warning",
-                    description = "Voice warning broadcasted",
+                    description = "Voice warning broadcasted (via $transport)",
                     warningIssued = message,
                     wasLocked = _uiState.value.isLocked,
                     severity = "WARNING"
@@ -507,7 +635,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 recordDiagnostic(
                     tag = "AUDIO",
                     status = "HEALTHY",
-                    message = "Spoken warning sent to laptop speakers: $message"
+                    message = "Spoken warning sent to laptop speakers via $transport: $message"
                 )
             } else {
                 val err = result.exceptionOrNull()?.localizedMessage ?: "Unknown"
@@ -535,10 +663,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     isSendingAction = false,
                     toastFeedback = "🚨 Deterrent alarm sounding on laptop!"
                 )
-                repository.recordEvent(
-                    eventType = "Alarm Fired",
-                    description = "High-decibel anti-theft siren triggered",
-                    warningIssued = "Siren Alert",
+                notificationHelper.showAlarmNotification("High-decibel anti-theft siren triggered.")
+                repository.recordUserAction(
+                    action = "Deterrent Siren Fired",
+                    details = "Audible anti-theft siren triggered (Demo Simulation)",
                     wasLocked = true,
                     severity = "ALERT"
                 )
@@ -550,22 +678,24 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val result = repository.triggerLaptopAlarm(config.ipAddress, config.port, config.pin)
-            _uiState.value = _uiState.value.copy(isSendingAction = false)
+            val (target, transport) = repository.resolveActiveTarget(config)
+            val result = repository.triggerLaptopAlarm(target, config.port, config.pin)
+            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
                     toastFeedback = "🚨 Anti-theft siren triggered on laptop!"
                 )
-                repository.recordEvent(
-                    eventType = "Alarm Fired",
-                    description = "Anti-theft deterrent siren sounded",
+                notificationHelper.showAlarmNotification("Anti-theft deterrent siren sounded on laptop speakers.")
+                repository.recordUserAction(
+                    action = "Deterrent Siren Fired",
+                    details = "Audible anti-theft siren sounded (via $transport)",
                     wasLocked = true,
                     severity = "ALERT"
                 )
                 recordDiagnostic(
                     tag = "ALARM",
                     status = "HEALTHY",
-                    message = "Alarm trigger delivered to laptop"
+                    message = "Alarm trigger delivered to laptop via $transport"
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
@@ -630,8 +760,9 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val result = repository.sendAudioWarning(config.ipAddress, config.port, config.pin, recordedFile)
-            _uiState.value = _uiState.value.copy(isSendingAction = false)
+            val (target, transport) = repository.resolveActiveTarget(config)
+            val result = repository.sendAudioWarning(target, config.port, config.pin, recordedFile)
+            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             try { recordedFile.delete() } catch (_: Exception) {}
 
             if (result.isSuccess) {
@@ -640,7 +771,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 )
                 repository.recordEvent(
                     eventType = "Live Voice Mic",
-                    description = "Microphone voice message played on laptop",
+                    description = "Microphone voice message played on laptop (via $transport)",
                     warningIssued = "Voice transmission",
                     wasLocked = _uiState.value.isLocked,
                     severity = "WARNING"
@@ -700,7 +831,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun getCameraSnapshotUrl(): String? {
         val config = laptopConfig.value ?: return null
         if (config.isDemoMode) return null
-        return repository.getCameraSnapshotUrl(config.ipAddress, config.port, config.pin)
+        val target = if (config.activeTransport == "WEB" && config.remoteWebUrl.isNotBlank()) {
+            config.remoteWebUrl
+        } else {
+            "${config.ipAddress}:${config.port}"
+        }
+        return repository.getCameraSnapshotUrl(target, config.port, config.pin)
     }
 
     private fun startRecordingTimer() {
@@ -728,7 +864,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 val config = laptopConfig.value
                 if (config != null && !config.isDemoMode) {
                     try {
-                        val result = repository.checkLaptopStatus(config.ipAddress, config.port, config.pin)
+                        val (activeTarget, transport) = repository.resolveActiveTarget(config)
+                        val result = repository.checkLaptopStatus(activeTarget, config.port, config.pin)
                         if (result.isSuccess) {
                             val status = result.getOrNull()!!
                             val wasMotion = _uiState.value.motionAlertActive
@@ -737,20 +874,27 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                             // If motion newly triggered from real laptop:
                             if (!wasMotion && newMotion && config.isMotionArmed) {
                                 vibrateDevice(true)
+                                notificationHelper.showMotionAlertNotification(
+                                    title = if (config.isAwayMode) "🚨 Intruder Movement (Away Mode)!" else "🚨 Intruder Motion Detected!",
+                                    message = "Motion detected near your laptop webcam (via $transport).",
+                                    isAwayMode = config.isAwayMode
+                                )
                                 if (config.autoLockOnMotion && !status.isLocked) {
                                     lockLaptopRemotely()
                                 }
                                 repository.recordEvent(
                                     eventType = "Motion Detected",
-                                    description = "Webcam detected movement in front of laptop",
+                                    description = "Webcam detected movement in front of laptop (via $transport)",
                                     warningIssued = "Motion Alarm",
                                     wasLocked = status.isLocked,
-                                    severity = "ALERT"
+                                    severity = "ALERT",
+                                    category = "SECURITY"
                                 )
                             }
 
                             _uiState.value = _uiState.value.copy(
                                 connectionState = ConnectionState.CONNECTED,
+                                activeTransport = transport,
                                 batteryLevel = status.battery,
                                 isLocked = status.isLocked,
                                 isCameraActive = status.cameraActive,

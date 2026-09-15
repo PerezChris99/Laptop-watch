@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Lock
@@ -31,15 +33,12 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,15 +60,16 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
-import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.CyanGlow
+import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.EmeraldSafe
-import com.example.ui.theme.Navy700
-import com.example.ui.theme.Navy800
-import com.example.ui.theme.Navy900
-import com.example.ui.theme.Slate400
+import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlueSoft
+import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.SkyBlueDark
+import com.example.ui.theme.SkyBluePrimary
+import com.example.ui.theme.WhitePure
+import com.example.ui.theme.WhiteSmoke
 import com.example.viewmodel.ConnectionState
-import com.example.viewmodel.MonitorTab
 import com.example.viewmodel.MonitorUiState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -114,12 +114,16 @@ fun LiveCameraScreen(
         label = "scanY"
     )
 
+    val scrollState = rememberScrollState()
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Navy900)
+            .background(WhiteSmoke)
+            .verticalScroll(scrollState)
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Feed Container
         Card(
@@ -127,9 +131,13 @@ fun LiveCameraScreen(
                 .fillMaxWidth()
                 .aspectRatio(4f / 3f)
                 .clip(RoundedCornerShape(16.dp))
-                .border(2.dp, if (uiState.motionAlertActive) CrimsonAlert else Navy700, RoundedCornerShape(16.dp))
+                .border(
+                    1.5.dp,
+                    if (uiState.motionAlertActive) CrimsonAlert else LightBlue100,
+                    RoundedCornerShape(16.dp)
+                )
                 .testTag("camera_feed_container"),
-            colors = CardDefaults.cardColors(containerColor = Color.Black)
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 if (!isDemo && cameraUrl != null) {
@@ -144,7 +152,7 @@ fun LiveCameraScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    // Simulated Surveillance Canvas
+                    // Surveillance Canvas
                     SurveillanceSimulationCanvas(
                         scanProgress = scanY,
                         motionActive = uiState.motionAlertActive
@@ -184,7 +192,7 @@ fun LiveCameraScreen(
 
                         Text(
                             text = "CAM 01 // LAPTOP",
-                            color = CyanAccent,
+                            color = Color(0xFF7DD3FC),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = FontFamily.Monospace
@@ -207,8 +215,8 @@ fun LiveCameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isDemo) "FEED: SIMULATED (30 FPS)" else "FEED: LIVE MJPEG",
-                            color = Slate400,
+                            text = if (isDemo) "FEED: SIMULATED (30 FPS)" else "FEED: LIVE STREAM",
+                            color = Color(0xFF94A3B8),
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
                         )
@@ -219,7 +227,7 @@ fun LiveCameraScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(CrimsonAlert.copy(alpha = 0.8f))
+                                    .background(CrimsonAlert.copy(alpha = 0.9f))
                                     .padding(horizontal = 8.dp, vertical = 2.dp)
                             ) {
                                 Icon(
@@ -241,7 +249,7 @@ fun LiveCameraScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(EmeraldSafe.copy(alpha = 0.8f))
+                                    .background(EmeraldSafe.copy(alpha = 0.9f))
                                     .padding(horizontal = 8.dp, vertical = 2.dp)
                             ) {
                                 Icon(
@@ -263,8 +271,6 @@ fun LiveCameraScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
         // Quick Surveillance Action Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -275,18 +281,20 @@ fun LiveCameraScreen(
                 onClick = onCaptureSnapshot,
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .height(44.dp)
                     .testTag("snapshot_button"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Navy800,
-                    contentColor = CyanAccent
+                    containerColor = WhitePure,
+                    contentColor = SkyBlueDark
                 ),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.4f))
+                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = "Capture Snapshot",
+                    tint = SkyBluePrimary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -298,10 +306,10 @@ fun LiveCameraScreen(
                 onClick = onLockToggle,
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .height(44.dp)
                     .testTag("lock_toggle_button"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (uiState.isLocked) CrimsonAlert else Color(0xFF0284C7),
+                    containerColor = if (uiState.isLocked) CrimsonAlert else SkyBluePrimary,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(12.dp)
@@ -313,7 +321,7 @@ fun LiveCameraScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (uiState.isLocked) "Unlock" else "Lock Now",
+                    text = if (uiState.isLocked) "Unlock" else "Lock Screen",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -323,31 +331,30 @@ fun LiveCameraScreen(
             IconButton(
                 onClick = onRefreshCamera,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Navy800)
-                    .border(1.dp, Navy700, RoundedCornerShape(12.dp))
+                    .background(WhitePure)
+                    .border(1.dp, LightBlue100, RoundedCornerShape(12.dp))
                     .testTag("refresh_camera_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "Refresh Feed",
-                    tint = Slate400,
+                    tint = SkyBluePrimary,
                     modifier = Modifier.size(20.dp)
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(14.dp))
 
         // Intercom & Voice Warning Fast-Launcher Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("intercom_fast_launcher"),
-            colors = CardDefaults.cardColors(containerColor = Navy800),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -363,28 +370,28 @@ fun LiveCameraScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(40.dp)
                             .clip(CircleShape)
-                            .background(CyanAccent.copy(alpha = 0.15f)),
+                            .background(LightBlueSoft),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Microphone",
-                            tint = CyanAccent,
-                            modifier = Modifier.size(22.dp)
+                            tint = SkyBluePrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Column {
                         Text(
-                            text = "Laptop Intercom & Mic",
+                            text = "Laptop Intercom & Speaker",
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = DeepSlate800,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Speak warnings through laptop speakers",
-                            color = Slate400,
+                            text = "Broadcast voice warnings out loud",
+                            color = MutedSlate500,
                             fontSize = 12.sp
                         )
                     }
@@ -393,30 +400,30 @@ fun LiveCameraScreen(
                 Button(
                     onClick = onNavigateToIntercom,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = CyanAccent,
-                        contentColor = Navy900
+                        containerColor = SkyBluePrimary,
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Text("Speak", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Security Status Info
+        // Surveillance Status Info
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Navy800.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(14.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -426,42 +433,41 @@ fun LiveCameraScreen(
                         text = "SURVEILLANCE STATUS",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Slate400,
-                        fontFamily = FontFamily.Monospace
+                        color = SkyBlueDark,
+                        letterSpacing = 1.sp
                     )
                     Text(
-                        text = if (isDemo) "DEMO ACTIVE" else "LIVE LINK",
+                        text = if (isDemo) "DEMO ACTIVE" else "LIVE LINK (${uiState.activeTransport})",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isDemo) AmberWarning else EmeraldSafe,
-                        fontFamily = FontFamily.Monospace
+                        color = if (isDemo) AmberWarning else EmeraldSafe
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     StatusItem(label = "Webcam", value = "Online (HD)")
-                    StatusItem(label = "Motion Sensor", value = "Active")
+                    StatusItem(label = "Motion Sensor", value = if (uiState.isAwayMode) "Away (Ultra)" else "Active")
                     StatusItem(label = "Screen Lock", value = if (uiState.isLocked) "LOCKED" else "Unlocked")
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
 @Composable
 private fun StatusItem(label: String, value: String) {
     Column {
-        Text(text = label, fontSize = 11.sp, color = Slate400)
+        Text(text = label, fontSize = 11.sp, color = MutedSlate500)
         Text(
             text = value,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White
+            color = DeepSlate800
         )
     }
 }
@@ -475,7 +481,7 @@ private fun SurveillanceSimulationCanvas(
         val width = size.width
         val height = size.height
 
-        // Dark tech grid lines
+        // Grid lines
         val gridSpacing = 40.dp.toPx()
         var x = 0f
         while (x < width) {
@@ -504,13 +510,13 @@ private fun SurveillanceSimulationCanvas(
         val maxRadius = (minOf(width, height) / 2f) * 0.85f
 
         drawCircle(
-            color = Color(0xFF0F2A44),
+            color = Color(0xFF0284C7).copy(alpha = 0.2f),
             radius = maxRadius,
             center = center,
             style = Stroke(width = 1.5f)
         )
         drawCircle(
-            color = Color(0xFF0F2A44),
+            color = Color(0xFF0284C7).copy(alpha = 0.15f),
             radius = maxRadius * 0.6f,
             center = center,
             style = Stroke(width = 1.5f)
@@ -518,14 +524,15 @@ private fun SurveillanceSimulationCanvas(
 
         // Center reticle
         val reticleSize = 24.dp.toPx()
+        val reticleColor = if (motionActive) CrimsonAlert else Color(0xFF38BDF8)
         drawLine(
-            color = if (motionActive) CrimsonAlert else CyanAccent,
+            color = reticleColor,
             start = Offset(center.x - reticleSize, center.y),
             end = Offset(center.x + reticleSize, center.y),
             strokeWidth = 2f
         )
         drawLine(
-            color = if (motionActive) CrimsonAlert else CyanAccent,
+            color = reticleColor,
             start = Offset(center.x, center.y - reticleSize),
             end = Offset(center.x, center.y + reticleSize),
             strokeWidth = 2f
@@ -534,31 +541,31 @@ private fun SurveillanceSimulationCanvas(
         // Radar scan line sweep
         val scanYPos = height * scanProgress
         drawLine(
-            color = if (motionActive) CrimsonAlert.copy(alpha = 0.5f) else CyanGlow.copy(alpha = 0.4f),
+            color = if (motionActive) CrimsonAlert.copy(alpha = 0.6f) else Color(0xFF38BDF8).copy(alpha = 0.5f),
             start = Offset(0f, scanYPos),
             end = Offset(width, scanYPos),
             strokeWidth = 3f
         )
 
         // Corner viewfinder brackets
-        val bracketLen = 30.dp.toPx()
-        val p = 16.dp.toPx()
-        val bracketColor = if (motionActive) CrimsonAlert else CyanAccent
+        val bracketLen = 28.dp.toPx()
+        val p = 14.dp.toPx()
+        val bracketColor = if (motionActive) CrimsonAlert else Color(0xFF38BDF8)
 
         // Top Left
-        drawLine(bracketColor, Offset(p, p), Offset(p + bracketLen, p), strokeWidth = 2.5f)
-        drawLine(bracketColor, Offset(p, p), Offset(p, p + bracketLen), strokeWidth = 2.5f)
+        drawLine(bracketColor, Offset(p, p), Offset(p + bracketLen, p), strokeWidth = 2f)
+        drawLine(bracketColor, Offset(p, p), Offset(p, p + bracketLen), strokeWidth = 2f)
 
         // Top Right
-        drawLine(bracketColor, Offset(width - p, p), Offset(width - p - bracketLen, p), strokeWidth = 2.5f)
-        drawLine(bracketColor, Offset(width - p, p), Offset(width - p, p + bracketLen), strokeWidth = 2.5f)
+        drawLine(bracketColor, Offset(width - p, p), Offset(width - p - bracketLen, p), strokeWidth = 2f)
+        drawLine(bracketColor, Offset(width - p, p), Offset(width - p, p + bracketLen), strokeWidth = 2f)
 
         // Bottom Left
-        drawLine(bracketColor, Offset(p, height - p), Offset(p + bracketLen, height - p), strokeWidth = 2.5f)
-        drawLine(bracketColor, Offset(p, height - p), Offset(p, height - p - bracketLen), strokeWidth = 2.5f)
+        drawLine(bracketColor, Offset(p, height - p), Offset(p + bracketLen, height - p), strokeWidth = 2f)
+        drawLine(bracketColor, Offset(p, height - p), Offset(p, height - p - bracketLen), strokeWidth = 2f)
 
         // Bottom Right
-        drawLine(bracketColor, Offset(width - p, height - p), Offset(width - p - bracketLen, height - p), strokeWidth = 2.5f)
-        drawLine(bracketColor, Offset(width - p, height - p), Offset(width - p, height - p - bracketLen), strokeWidth = 2.5f)
+        drawLine(bracketColor, Offset(width - p, height - p), Offset(width - p - bracketLen, height - p), strokeWidth = 2f)
+        drawLine(bracketColor, Offset(width - p, height - p), Offset(width - p, height - p - bracketLen), strokeWidth = 2f)
     }
 }
