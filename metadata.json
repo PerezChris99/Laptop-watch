@@ -1,0 +1,6 @@
+{
+  "name": "Laptop Monitor",
+  "description": "Remote laptop security monitor to stream camera, broadcast voice warnings, lock screen remotely, and detect intruders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
