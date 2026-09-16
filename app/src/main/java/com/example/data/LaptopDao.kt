@@ -38,6 +38,9 @@ interface LaptopDao {
     @Query("UPDATE laptop_config SET autoSnapOnMotion = :autoSnap WHERE id = 1")
     suspend fun updateAutoSnapOnMotion(autoSnap: Boolean)
 
+    @Query("UPDATE laptop_config SET autoRecordOnMotion = :autoRecord WHERE id = 1")
+    suspend fun updateAutoRecordOnMotion(autoRecord: Boolean)
+
     @Query("UPDATE laptop_config SET autoTtsOnMotion = :autoTts WHERE id = 1")
     suspend fun updateAutoTtsOnMotion(autoTts: Boolean)
 

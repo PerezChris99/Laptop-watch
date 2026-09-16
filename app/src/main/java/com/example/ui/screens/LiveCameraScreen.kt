@@ -1,14 +1,18 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,19 +30,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -82,7 +96,15 @@ fun LiveCameraScreen(
     onCaptureSnapshot: () -> Unit,
     onLockToggle: () -> Unit,
     onRefreshCamera: () -> Unit,
+    onToggleAutoStream: () -> Unit,
+    onToggleSubjectRecording: () -> Unit,
+    onToggleAutoRecordOnMotion: () -> Unit,
+    onToggleAutoSnapOnMotion: () -> Unit,
+    onSendVoiceWarning: (String) -> Unit,
     onNavigateToIntercom: () -> Unit,
+    onSetStreamQuality: (String) -> Unit = {},
+    autoRecordOnMotion: Boolean,
+    autoSnapOnMotion: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -94,21 +116,21 @@ fun LiveCameraScreen(
     // Pulsing REC Dot animation
     val infiniteTransition = rememberInfiniteTransition(label = "camPulse")
     val recAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.2f,
+        initialValue = 0.25f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
+            animation = tween(700, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "recAlpha"
     )
 
-    // Radar scanline animation for demo feed
+    // Radar scanline animation for surveillance canvas
     val scanY by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
+            animation = tween(2400, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "scanY"
@@ -125,7 +147,9 @@ fun LiveCameraScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Feed Container
+        // ==========================================
+        // 1. Live Camera Preview Card with Video HUD
+        // ==========================================
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -133,7 +157,7 @@ fun LiveCameraScreen(
                 .clip(RoundedCornerShape(16.dp))
                 .border(
                     1.5.dp,
-                    if (uiState.motionAlertActive) CrimsonAlert else LightBlue100,
+                    if (uiState.motionAlertActive || uiState.isSubjectRecordingActive) CrimsonAlert else LightBlue100,
                     RoundedCornerShape(16.dp)
                 )
                 .testTag("camera_feed_container"),
@@ -141,10 +165,10 @@ fun LiveCameraScreen(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 if (!isDemo && cameraUrl != null) {
-                    // Live camera stream from laptop HTTP server
+                    // Live camera stream / frame from laptop webcam
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(cameraUrl)
+                            .data("$cameraUrl?t=${uiState.cameraRefreshTrigger}")
                             .crossfade(true)
                             .build(),
                         contentDescription = "Laptop Live Camera Feed",
@@ -152,10 +176,11 @@ fun LiveCameraScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    // Surveillance Canvas
+                    // Surveillance Radar / Viewfinder Canvas
                     SurveillanceSimulationCanvas(
                         scanProgress = scanY,
-                        motionActive = uiState.motionAlertActive
+                        motionActive = uiState.motionAlertActive || uiState.isSubjectRecordingActive,
+                        subjectDetected = uiState.subjectDetected || uiState.motionAlertActive
                     )
                 }
 
@@ -165,48 +190,95 @@ fun LiveCameraScreen(
                         .fillMaxSize()
                         .padding(12.dp)
                 ) {
-                    // Top HUD: Camera ID, REC, Timestamp
+                    // Top HUD: Status, Camera Identifier, Latency Badge
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Left: REC / STREAM status
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            val isRecording = uiState.isSubjectRecordingActive
                             Box(
                                 modifier = Modifier
                                     .size(10.dp)
                                     .clip(CircleShape)
-                                    .background(CrimsonAlert.copy(alpha = recAlpha))
+                                    .background(
+                                        if (isRecording) CrimsonAlert
+                                        else if (uiState.isAutoStreamingEnabled) EmeraldSafe.copy(alpha = recAlpha)
+                                        else AmberWarning
+                                    )
                             )
                             Text(
-                                text = "LIVE • REC",
-                                color = CrimsonAlert,
+                                text = if (isRecording) "REC 00:${uiState.subjectRecordingDurationSec.toString().padStart(2, '0')}"
+                                else if (uiState.isAutoStreamingEnabled) "LIVE • STREAM"
+                                else "MANUAL • PREVIEW",
+                                color = if (isRecording) CrimsonAlert else Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
 
+                        // Center: Camera Name
                         Text(
-                            text = "CAM 01 // LAPTOP",
+                            text = "CAM 01 // HD WEBCAM",
                             color = Color(0xFF7DD3FC),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = FontFamily.Monospace
                         )
 
-                        Text(
-                            text = currentTime,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        // Right: Latency & Timestamp
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            uiState.networkLatencyMs?.let { latency ->
+                                Text(
+                                    text = "${latency}ms",
+                                    color = if (latency < 60) EmeraldSafe else AmberWarning,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = currentTime,
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
 
-                    // Bottom HUD: FPS & Lock State
+                    // Center Overlay: Subject Detection Target Bounding Box
+                    if (uiState.subjectDetected || uiState.motionAlertActive || uiState.isSubjectRecordingActive) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(140.dp)
+                                .border(1.5.dp, CrimsonAlert, RoundedCornerShape(8.dp))
+                                .padding(6.dp)
+                        ) {
+                            Text(
+                                text = if (uiState.isSubjectRecordingActive) "RECORDING SUBJECT" else "SUBJECT DETECTED",
+                                color = CrimsonAlert,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .background(Color(0xFF0F172A).copy(alpha = 0.8f))
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Bottom HUD: Transport, FPS & Lock Status
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -215,7 +287,7 @@ fun LiveCameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isDemo) "FEED: SIMULATED (30 FPS)" else "FEED: LIVE STREAM",
+                            text = if (isDemo) "FEED: DEMO SIMULATOR" else "LINK: ${uiState.activeTransport} (HD 30 FPS)",
                             color = Color(0xFF94A3B8),
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace
@@ -234,7 +306,7 @@ fun LiveCameraScreen(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = "Locked",
                                     tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
+                                    modifier = Modifier.size(11.dp)
                                 )
                                 Text(
                                     text = "LAPTOP LOCKED",
@@ -254,9 +326,9 @@ fun LiveCameraScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Security,
-                                    contentDescription = "Active",
+                                    contentDescription = "Armed",
                                     tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
+                                    modifier = Modifier.size(11.dp)
                                 )
                                 Text(
                                     text = "GUARD ARMED",
@@ -271,45 +343,123 @@ fun LiveCameraScreen(
             }
         }
 
-        // Quick Surveillance Action Bar
+        // ==========================================
+        // 1.5 Stream Quality Preset Selector
+        // ==========================================
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Take Snapshot Button
+            Text(
+                text = "STREAM QUALITY:",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MutedSlate500,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    Triple("ECO", "⚡ 360p", "Low bandwidth"),
+                    Triple("BALANCED", "⚖️ 540p", "Recommended"),
+                    Triple("ULTRA", "💎 720p+", "Full Clarity")
+                ).forEach { (preset, label, _) ->
+                    val isSelected = uiState.streamQualityPreset == preset
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) SkyBluePrimary else WhitePure)
+                            .border(
+                                1.dp,
+                                if (isSelected) SkyBluePrimary else LightBlue100,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onSetStreamQuality(preset) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) WhitePure else DeepSlate800
+                        )
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 2. Main Surveillance Action Controls
+        // ==========================================
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Take Manual Snapshot Button
             Button(
                 onClick = onCaptureSnapshot,
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .height(46.dp)
                     .testTag("snapshot_button"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = WhitePure,
                     contentColor = SkyBlueDark
                 ),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+                border = BorderStroke(1.dp, LightBlue100),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Capture Snapshot",
+                    contentDescription = "Take Photo",
                     tint = SkyBluePrimary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Snapshot", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Take Photo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            // Lock / Unlock Screen Button
+            // Record Subject Video (Manual Trigger) Button
+            val isRecording = uiState.isSubjectRecordingActive
+            Button(
+                onClick = onToggleSubjectRecording,
+                modifier = Modifier
+                    .weight(1.2f)
+                    .height(46.dp)
+                    .testTag("record_subject_button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRecording) CrimsonAlert else DeepSlate800,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(12.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+            ) {
+                Icon(
+                    imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Videocam,
+                    contentDescription = "Record Video",
+                    tint = if (isRecording) Color.White else CrimsonAlert,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (isRecording) "Stop (${uiState.subjectRecordingDurationSec}s)" else "Record Video",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Quick Lock / Unlock Screen Button
             Button(
                 onClick = onLockToggle,
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .height(46.dp)
                     .testTag("lock_toggle_button"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (uiState.isLocked) CrimsonAlert else SkyBluePrimary,
+                    containerColor = if (uiState.isLocked) AmberWarning else SkyBluePrimary,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(12.dp)
@@ -317,106 +467,332 @@ fun LiveCameraScreen(
                 Icon(
                     imageVector = if (uiState.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
                     contentDescription = "Toggle Lock",
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(17.dp)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
                     text = if (uiState.isLocked) "Unlock" else "Lock Screen",
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            // Refresh Feed Button
+            // Live Stream Polling Toggle Button
             IconButton(
-                onClick = onRefreshCamera,
+                onClick = onToggleAutoStream,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(46.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(WhitePure)
-                    .border(1.dp, LightBlue100, RoundedCornerShape(12.dp))
-                    .testTag("refresh_camera_button")
+                    .background(if (uiState.isAutoStreamingEnabled) LightBlueSoft else WhitePure)
+                    .border(1.dp, if (uiState.isAutoStreamingEnabled) SkyBluePrimary else LightBlue100, RoundedCornerShape(12.dp))
+                    .testTag("toggle_stream_button")
             ) {
                 Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Refresh Feed",
-                    tint = SkyBluePrimary,
+                    imageVector = if (uiState.isAutoStreamingEnabled) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Toggle Live Stream",
+                    tint = if (uiState.isAutoStreamingEnabled) SkyBluePrimary else DeepSlate800,
                     modifier = Modifier.size(20.dp)
                 )
             }
         }
 
-        // Intercom & Voice Warning Fast-Launcher Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("intercom_fast_launcher"),
-            colors = CardDefaults.cardColors(containerColor = WhitePure),
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(LightBlueSoft),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Microphone",
-                            tint = SkyBluePrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "Laptop Intercom & Speaker",
-                            fontWeight = FontWeight.Bold,
-                            color = DeepSlate800,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            text = "Broadcast voice warnings out loud",
-                            color = MutedSlate500,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                Button(
-                    onClick = onNavigateToIntercom,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SkyBluePrimary,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Text("Speak", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
-        }
-
-        // Surveillance Status Info
+        // ==========================================
+        // 3. Automated Subject Capture Settings Card
+        // ==========================================
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = WhitePure),
             shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+            border = BorderStroke(1.dp, LightBlue100),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = SkyBluePrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "AUTOMATED SUBJECT SURVEILLANCE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SkyBlueDark,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Text(
+                        text = if (autoRecordOnMotion && autoSnapOnMotion) "FULL DEFENSE" else "CUSTOM",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = EmeraldSafe
+                    )
+                }
+
+                // Switch 1: Auto-Snap Photo on Motion
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-Take Photo on Motion",
+                            fontWeight = FontWeight.SemiBold,
+                            color = DeepSlate800,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Immediately snaps intruder photo when movement detected",
+                            color = MutedSlate500,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = autoSnapOnMotion,
+                        onCheckedChange = { onToggleAutoSnapOnMotion() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = SkyBluePrimary
+                        ),
+                        modifier = Modifier.testTag("switch_auto_snap")
+                    )
+                }
+
+                // Switch 2: Auto-Record Subject Video on Motion
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-Record Subject Video",
+                            fontWeight = FontWeight.SemiBold,
+                            color = DeepSlate800,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Records a 12-second surveillance clip to laptop drive",
+                            color = MutedSlate500,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = autoRecordOnMotion,
+                        onCheckedChange = { onToggleAutoRecordOnMotion() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = CrimsonAlert
+                        ),
+                        modifier = Modifier.testTag("switch_auto_record")
+                    )
+                }
+            }
+        }
+
+        // ==========================================
+        // 4. Recent Snapshots Gallery Strip
+        // ==========================================
+        if (uiState.recentSnapshots.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = WhitePure),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, LightBlue100),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "RECENT CAPTURED EVIDENCE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SkyBlueDark,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "${uiState.recentSnapshots.size} photo(s)",
+                            fontSize = 11.sp,
+                            color = MutedSlate500
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        uiState.recentSnapshots.forEachIndexed { index, snapUrl ->
+                            Card(
+                                modifier = Modifier
+                                    .size(width = 110.dp, height = 82.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(1.dp, LightBlue100, RoundedCornerShape(10.dp)),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(snapUrl)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = "Captured Snapshot #$index",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Text(
+                                        text = "#${index + 1}",
+                                        fontSize = 9.sp,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .background(Color.Black.copy(alpha = 0.6f))
+                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. Quick Voice Warning Broadcast Card
+        // ==========================================
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("voice_warning_card"),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, LightBlue100),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(LightBlueSoft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = "Speaker",
+                                tint = SkyBluePrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Text(
+                            text = "INSTANT VOICE WARNINGS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SkyBlueDark,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    TextButton(onClick = onNavigateToIntercom) {
+                        Text("Open Intercom", fontSize = 11.sp, color = SkyBluePrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Quick One-Tap Warning Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = { onSendVoiceWarning("Step away from this computer! You are being recorded!") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFF1F2),
+                            contentColor = CrimsonAlert
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Text("📢 \"Step Away!\"", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { onSendVoiceWarning("Security alert! Intruder detected on camera.") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFEF3C7),
+                            contentColor = Color(0xFF92400E)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Text("⚠️ \"Alert Camera\"", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { onSendVoiceWarning("Warning: Computer is locked and alarm is active.") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LightBlueSoft,
+                            contentColor = SkyBlueDark
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                    ) {
+                        Text("🔒 \"Locked\"", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 6. Network & Connection Status Details Card
+        // ==========================================
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, LightBlue100),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(
@@ -430,14 +806,14 @@ fun LiveCameraScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "SURVEILLANCE STATUS",
+                        text = "NETWORK & SURVEILLANCE STATUS",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = SkyBlueDark,
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = if (isDemo) "DEMO ACTIVE" else "LIVE LINK (${uiState.activeTransport})",
+                        text = if (isDemo) "DEMO ACTIVE" else "ONLINE (${uiState.activeTransport})",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isDemo) AmberWarning else EmeraldSafe
@@ -448,14 +824,37 @@ fun LiveCameraScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    StatusItem(label = "Webcam", value = "Online (HD)")
-                    StatusItem(label = "Motion Sensor", value = if (uiState.isAwayMode) "Away (Ultra)" else "Active")
-                    StatusItem(label = "Screen Lock", value = if (uiState.isLocked) "LOCKED" else "Unlocked")
+                    StatusItem(
+                        label = "Network Latency",
+                        value = "${uiState.networkLatencyMs ?: 28} ms"
+                    )
+                    StatusItem(
+                        label = "Motion Sensor",
+                        value = if (uiState.isAwayMode) "Away (Ultra 2%)" else "Active (5%)"
+                    )
+                    StatusItem(
+                        label = "Screen Lock",
+                        value = if (uiState.isLocked) "LOCKED" else "Unlocked"
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun TextButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(4.dp)
+    ) {
+        content()
     }
 }
 
@@ -475,7 +874,8 @@ private fun StatusItem(label: String, value: String) {
 @Composable
 private fun SurveillanceSimulationCanvas(
     scanProgress: Float,
-    motionActive: Boolean
+    motionActive: Boolean,
+    subjectDetected: Boolean
 ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width

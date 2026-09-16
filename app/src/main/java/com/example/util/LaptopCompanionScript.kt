@@ -61,12 +61,19 @@ copy /y "%VBS_PATH%" "%STARTUP_SHORTCUT%" >nul
 echo [+] Registered in Windows Startup: %STARTUP_SHORTCUT%
 echo.
 
-:: 4. Start the daemon right now in background
+:: 4. Prevent Laptop Sleep when Lid is Closed on AC Power (Surveillance stays online!)
+powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 >nul 2>&1
+powercfg /setactive SCHEME_CURRENT >nul 2>&1
+echo [+] Power policy configured: Laptop stays vigilant with lid closed on AC power.
+echo.
+
+:: 5. Start the daemon right now in background
 wscript "%VBS_PATH%"
 echo =======================================================
 echo [SUCCESS] Laptop Security Guard is now ACTIVE in background!
 echo - Camera surveillance: ACTIVE
 echo - Motion detection:    ACTIVE
+echo - Lid-Close Surveillance: ENABLED
 echo - Port:                5000
 echo - To test or view IP, run: python laptop_guard.py
 echo =======================================================
@@ -83,7 +90,10 @@ echo [*] Removing from Windows Startup...
 del /f /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LaptopGuard.vbs" >nul 2>&1
 del /f /q "%~dp0start_silent.vbs" >nul 2>&1
 
-echo [OK] Laptop Security Guard uninstalled successfully.
+:: Restore default Windows lid close action (Sleep)
+powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 1 >nul 2>&1
+powercfg /setactive SCHEME_CURRENT >nul 2>&1
+echo [OK] Laptop Security Guard uninstalled and power policy restored.
 pause
     """.trimIndent()
 
@@ -289,16 +299,71 @@ def status():
         "timestamp": now
     })
 
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    if not authenticate():
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"pong": True, "timestamp": int(time.time() * 1000)})
+
 @app.route('/api/camera/frame', methods=['GET'])
 def camera_frame():
     if not authenticate():
         return "Unauthorized", 401
     
+    quality = int(request.args.get('quality', 75))
+    try:
+        scale = float(request.args.get('scale', 1.0))
+    except (ValueError, TypeError):
+        scale = 1.0
+
     with camera_lock:
         if latest_frame is not None:
-            _, buffer = cv2.imencode('.jpg', latest_frame)
+            frame_to_send = latest_frame
+            if scale < 0.95:
+                h, w = frame_to_send.shape[:2]
+                new_w = max(160, int(w * scale))
+                new_h = max(120, int(h * scale))
+                frame_to_send = cv2.resize(frame_to_send, (new_w, new_h))
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), max(15, min(95, quality))]
+            _, buffer = cv2.imencode('.jpg', frame_to_send, encode_param)
             return Response(buffer.tobytes(), mimetype='image/jpeg')
     return "Camera unavailable", 503
+
+@app.route('/api/camera/snapshot', methods=['POST', 'GET'])
+def camera_snapshot():
+    if not authenticate():
+        return jsonify({"error": "Unauthorized"}), 401
+    filename = f"snapshot_{int(time.time())}.jpg"
+    with camera_lock:
+        if latest_frame is not None:
+            cv2.imwrite(filename, latest_frame)
+            return jsonify({"success": True, "filename": filename, "url": f"/api/camera/frame?t={int(time.time())}"})
+    return jsonify({"error": "Camera frame not available"}), 500
+
+active_video_writer = None
+video_record_lock = threading.Lock()
+
+@app.route('/api/camera/record/start', methods=['POST'])
+def record_start():
+    global active_video_writer
+    if not authenticate():
+        return jsonify({"error": "Unauthorized"}), 401
+    with video_record_lock:
+        filename = f"surveillance_{int(time.time())}.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        active_video_writer = cv2.VideoWriter(filename, fourcc, 15.0, (640, 480))
+        return jsonify({"success": True, "recording": True, "filename": filename})
+
+@app.route('/api/camera/record/stop', methods=['POST'])
+def record_stop():
+    global active_video_writer
+    if not authenticate():
+        return jsonify({"error": "Unauthorized"}), 401
+    with video_record_lock:
+        if active_video_writer is not None:
+            active_video_writer.release()
+            active_video_writer = None
+        return jsonify({"success": True, "recording": False})
 
 @app.route('/api/motion/config', methods=['POST'])
 def motion_config():

@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -13,22 +18,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,6 +46,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,8 +89,10 @@ fun IntruderLogsScreen(
     onClearAllLogs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var selectedFilter by remember { mutableStateOf("ALL") }
     var showClearDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     val timeFormat = remember { SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()) }
 
     val filteredLogs = remember(logs, selectedFilter) {
@@ -91,19 +104,72 @@ fun IntruderLogsScreen(
         }
     }
 
+    fun generateTextReport(): String {
+        val sb = StringBuilder()
+        sb.appendLine("========================================")
+        sb.appendLine("LAPTOP SENTINEL SECURITY LOG AUDIT")
+        sb.appendLine("Generated: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
+        sb.appendLine("Total Incidents & Events: ${logs.size}")
+        sb.appendLine("========================================\n")
+
+        logs.forEachIndexed { index, item ->
+            sb.appendLine("#${index + 1} [${timeFormat.format(Date(item.timestamp))}] - ${item.eventType}")
+            sb.appendLine("  Severity: ${item.severity} | Category: ${item.category} | Locked: ${item.wasLocked}")
+            sb.appendLine("  Description: ${item.description}")
+            if (!item.warningIssued.isNullOrBlank()) {
+                sb.appendLine("  Warning Issued: ${item.warningIssued}")
+            }
+            if (!item.snapshotUrl.isNullOrBlank()) {
+                sb.appendLine("  Snapshot: ${item.snapshotUrl}")
+            }
+            sb.appendLine("----------------------------------------")
+        }
+        return sb.toString()
+    }
+
+    fun generateCsvReport(): String {
+        val sb = StringBuilder()
+        sb.appendLine("Timestamp,Date_Time,Event_Type,Severity,Category,Was_Locked,Description,Warning_Issued,Snapshot_URL")
+        logs.forEach { item ->
+            val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(item.timestamp))
+            val cleanDesc = "\"${item.description.replace("\"", "\"\"")}\""
+            val cleanWarn = "\"${(item.warningIssued ?: "").replace("\"", "\"\"")}\""
+            val cleanSnap = "\"${(item.snapshotUrl ?: "").replace("\"", "\"\"")}\""
+            sb.appendLine("${item.timestamp},$formattedTime,${item.eventType},${item.severity},${item.category},${item.wasLocked},$cleanDesc,$cleanWarn,$cleanSnap")
+        }
+        return sb.toString()
+    }
+
+    fun shareReport(content: String, mimeType: String, title: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, content)
+        }
+        val shareIntent = Intent.createChooser(sendIntent, "Export Security Audit Log")
+        context.startActivity(shareIntent)
+    }
+
+    fun copyToClipboard(content: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Laptop Security Logs", content)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(context, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(WhiteSmoke)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Top row: Header & Clear button
+        // Top row: Header & Action buttons (Export + Clear)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Activity & Security Logs",
                     fontSize = 18.sp,
@@ -117,16 +183,41 @@ fun IntruderLogsScreen(
                 )
             }
 
-            if (logs.isNotEmpty()) {
-                IconButton(
-                    onClick = { showClearDialog = true },
-                    modifier = Modifier.testTag("clear_logs_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "Clear All Logs",
-                        tint = MutedSlate500
-                    )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (logs.isNotEmpty()) {
+                    // Export Button
+                    IconButton(
+                        onClick = { showExportDialog = true },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(LightBlueSoft)
+                            .testTag("export_logs_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Export Logs",
+                            tint = SkyBluePrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Clear All Button
+                    IconButton(
+                        onClick = { showClearDialog = true },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFF1F2))
+                            .testTag("clear_logs_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "Clear All Logs",
+                            tint = CrimsonAlert,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -275,6 +366,96 @@ fun IntruderLogsScreen(
                     Text("Cancel", color = MutedSlate500)
                 }
             },
+            containerColor = WhitePure,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // Export Logs Dialog
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FileDownload,
+                        contentDescription = null,
+                        tint = SkyBluePrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        "Export Security Logs",
+                        color = DeepSlate800,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Export ${logs.size} recorded incidents and activity events for documentation or forensic review:",
+                        color = MutedSlate500,
+                        fontSize = 13.sp
+                    )
+
+                    // Option 1: Share Text Audit Report
+                    Button(
+                        onClick = {
+                            shareReport(generateTextReport(), "text/plain", "Laptop Surveillance Audit Report")
+                            showExportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = SkyBluePrimary),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Share Formatted Audit Report", fontSize = 13.sp)
+                    }
+
+                    // Option 2: Export CSV
+                    Button(
+                        onClick = {
+                            shareReport(generateCsvReport(), "text/csv", "laptop_security_logs.csv")
+                            showExportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = SkyBlueDark),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Export as CSV Spreadsheet", fontSize = 13.sp)
+                    }
+
+                    // Option 3: Copy to Clipboard
+                    OutlinedButton(
+                        onClick = {
+                            copyToClipboard(generateTextReport())
+                            showExportDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Full Report to Clipboard", fontSize = 13.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) {
+                    Text("Close", color = MutedSlate500)
+                }
+            },
+            confirmButton = {},
             containerColor = WhitePure,
             shape = RoundedCornerShape(16.dp)
         )

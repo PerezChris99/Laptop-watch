@@ -74,6 +74,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import com.example.data.LaptopConfigEntity
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
@@ -101,6 +105,7 @@ fun LaptopSetupScreen(
     onToggleDemoMode: () -> Unit,
     onToggleAwayMode: () -> Unit = {},
     onSetAwaySensitivity: (String) -> Unit = {},
+    onToggleBackgroundService: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -794,6 +799,218 @@ fun LaptopSetupScreen(
                             lineHeight = 16.sp
                         )
                     }
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. Persistent Background Android Service Card
+        // ==========================================
+        val clipboardManager = LocalClipboardManager.current
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, LightBlue100, RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(if (uiState.isBackgroundServiceActive) EmeraldSafe.copy(alpha = 0.15f) else AmberWarning.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
+                                contentDescription = "Sentinel Service",
+                                tint = if (uiState.isBackgroundServiceActive) EmeraldSafe else AmberWarning,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Background Vigilance Sentinel",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DeepSlate800
+                            )
+                            Text(
+                                text = if (uiState.isBackgroundServiceActive) "ACTIVE (With Low-Power WakeLock)" else "STOPPED",
+                                fontSize = 11.sp,
+                                color = if (uiState.isBackgroundServiceActive) EmeraldSafe else AmberWarning,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = uiState.isBackgroundServiceActive,
+                        onCheckedChange = { onToggleBackgroundService() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = WhitePure,
+                            checkedTrackColor = SkyBluePrimary,
+                            uncheckedThumbColor = WhitePure,
+                            uncheckedTrackColor = LightBlue100
+                        ),
+                        modifier = Modifier.testTag("bg_service_switch")
+                    )
+                }
+
+                Text(
+                    text = "Maintains a persistent system service so intruder alerts, motion snapshots, and lockscreen 1-tap buttons continue guarding your laptop even when your phone screen is off or you switch apps.",
+                    fontSize = 12.sp,
+                    color = MutedSlate500,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        // ==========================================
+        // 6. Laptop Lid-Close & Sleep Policy Guide
+        // ==========================================
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, LightBlue100, RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(SkyBlueSoft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = "Power Policy",
+                            tint = SkyBluePrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Lid-Close & Sleep Prevention",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepSlate800
+                        )
+                        Text(
+                            text = "Keep surveillance awake when laptop lid is closed",
+                            fontSize = 11.sp,
+                            color = MutedSlate500
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Laptops naturally enter sleep mode when closed. Use these 1-line commands to keep the laptop security daemon and webcam operational even with the lid shut:",
+                    fontSize = 12.sp,
+                    color = DeepSlate800,
+                    lineHeight = 16.sp
+                )
+
+                // Windows Command Box
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(LightBlue50)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Windows (PowerCfg)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DeepSlate800)
+                        OutlinedButton(
+                            onClick = {
+                                val cmd = "powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 && powercfg /setactive SCHEME_CURRENT"
+                                clipboardManager.setText(AnnotatedString(cmd))
+                                Toast.makeText(context, "Windows command copied!", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Copy CMD", fontSize = 10.sp)
+                        }
+                    }
+                    Text(
+                        text = "powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 && powercfg /setactive SCHEME_CURRENT",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = SkyBlueDark
+                    )
+                }
+
+                // macOS Command Box
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(LightBlue50)
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("macOS (Terminal)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DeepSlate800)
+                        OutlinedButton(
+                            onClick = {
+                                val cmd = "sudo pmset -a disablesleep 1"
+                                clipboardManager.setText(AnnotatedString(cmd))
+                                Toast.makeText(context, "macOS command copied!", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Copy CMD", fontSize = 10.sp)
+                        }
+                    }
+                    Text(
+                        text = "sudo pmset -a disablesleep 1",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = SkyBlueDark
+                    )
                 }
             }
         }

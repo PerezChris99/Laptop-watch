@@ -162,6 +162,32 @@ fun TopStatusHeader(
                             )
                         }
 
+                        // Network Latency Badge
+                        uiState.networkLatencyMs?.let { latency ->
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFF1F5F9))
+                                    .border(0.8.dp, Color(0xFFE2E8F0), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (latency < 60) EmeraldSafe else AmberWarning)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "${latency}ms",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DeepSlate800
+                                )
+                            }
+                        }
+
                         // Away Mode Badge if active
                         if (uiState.isAwayMode) {
                             Row(

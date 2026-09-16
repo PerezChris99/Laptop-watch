@@ -11,7 +11,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 data class LaptopStatusResponse(
     val online: Boolean,
@@ -35,11 +40,34 @@ data class RemoteLogItem(
 )
 
 class LaptopApiClient {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .writeTimeout(6, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = createClient()
+
+    private fun createClient(): OkHttpClient {
+        return try {
+            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            })
+            val sslContext = SSLContext.getInstance("SSL")
+            sslContext.init(null, trustAllCerts, SecureRandom())
+            OkHttpClient.Builder()
+                .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                .hostnameVerifier { _, _ -> true }
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .writeTimeout(8, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build()
+        } catch (_: Exception) {
+            OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .writeTimeout(8, TimeUnit.SECONDS)
+                .retryOnConnectionFailure(true)
+                .build()
+        }
+    }
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -57,8 +85,8 @@ class LaptopApiClient {
         return resolveBaseUrl(ip, port)
     }
 
-    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String): String {
-        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/frame?pin=$pin&t=${System.currentTimeMillis()}"
+    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String, quality: Int = 75, scale: Float = 1.0f): String {
+        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/frame?pin=$pin&quality=$quality&scale=$scale&t=${System.currentTimeMillis()}"
     }
 
     fun getCameraStreamUrl(ipOrUrl: String, port: Int, pin: String): String {
@@ -288,6 +316,100 @@ class LaptopApiClient {
                     )
                 }
                 Result.success(list)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun pingLatencyMs(targetUrl: String, pin: String): Long? = withContext(Dispatchers.IO) {
+        try {
+            val quickClient = client.newBuilder()
+                .connectTimeout(3, TimeUnit.SECONDS)
+                .readTimeout(3, TimeUnit.SECONDS)
+                .build()
+
+            val url = "${resolveBaseUrl(targetUrl)}/api/status"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .get()
+                .build()
+
+            val start = System.currentTimeMillis()
+            quickClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    System.currentTimeMillis() - start
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun captureSnapshot(ip: String, port: Int, pin: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl(ip, port)}/api/camera/snapshot"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: "{}"
+                    val json = JSONObject(body)
+                    val snapshotUrl = json.optString("url", getCameraSnapshotUrl(ip, port, pin))
+                    Result.success(snapshotUrl)
+                } else {
+                    Result.failure(Exception("Snapshot capture failed: HTTP ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun startRecording(ip: String, port: Int, pin: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl(ip, port)}/api/camera/record/start"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Result.success(true)
+                } else {
+                    Result.failure(Exception("Start recording failed: HTTP ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun stopRecording(ip: String, port: Int, pin: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl(ip, port)}/api/camera/record/stop"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: "{}"
+                    val json = JSONObject(body)
+                    val filename = json.optString("filename", "recording.mp4")
+                    Result.success(filename)
+                } else {
+                    Result.failure(Exception("Stop recording failed: HTTP ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)

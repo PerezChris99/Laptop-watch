@@ -22,6 +22,7 @@ data class LaptopConfigEntity(
     val autoLockOnMotion: Boolean = true,
     val autoAlarmOnMotion: Boolean = false,
     val autoSnapOnMotion: Boolean = true,
+    val autoRecordOnMotion: Boolean = true,
     val autoTtsOnMotion: Boolean = false,
     val ttsWarningPhrase: String = "Step away from this computer! You are being recorded!",
     val lastConnectedTime: Long = 0L,

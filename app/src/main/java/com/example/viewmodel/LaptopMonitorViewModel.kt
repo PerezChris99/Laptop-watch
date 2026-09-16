@@ -47,8 +47,14 @@ data class MonitorUiState(
     val isLocked: Boolean = false,
     val isCameraActive: Boolean = true,
     val cameraRefreshTrigger: Long = System.currentTimeMillis(),
+    val isAutoStreamingEnabled: Boolean = false,
     val isRecordingVoice: Boolean = false,
     val recordingDurationSec: Int = 0,
+    val isSubjectRecordingActive: Boolean = false,
+    val subjectRecordingDurationSec: Int = 0,
+    val lastCapturedPhotoUrl: String? = null,
+    val recentSnapshots: List<String> = emptyList(),
+    val subjectDetected: Boolean = false,
     val isSendingAction: Boolean = false,
     val activeTab: MonitorTab = MonitorTab.DASHBOARD,
     val toastFeedback: String? = null,
@@ -60,9 +66,12 @@ data class MonitorUiState(
     val systemHealthStatus: String = "100% OPERATIONAL",
     val caughtErrorsCount: Int = 0,
     val activeTransport: String = "LAN", // "LAN" or "WEB"
+    val networkLatencyMs: Long? = 28L,
     val isAwayMode: Boolean = false,
     val awaySensitivity: String = "HIGH", // "HIGH" (5%) or "ULTRA" (2%)
     val connectionMode: String = "AUTO", // "AUTO", "LAN", "WEB"
+    val streamQualityPreset: String = "BALANCED", // "ECO" (360p), "BALANCED" (540p), "ULTRA" (720p/1080p)
+    val isBackgroundServiceActive: Boolean = true,
     val recentDiagnostics: List<DiagnosticEvent> = emptyList()
 )
 
@@ -100,6 +109,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     private var heartbeatJob: Job? = null
     private var recordingTimerJob: Job? = null
     private var motionCooldownJob: Job? = null
+    private var autoStreamJob: Job? = null
+    private var subjectRecordingJob: Job? = null
 
     init {
         viewModelScope.launch(coroutineExceptionHandler) {
@@ -118,6 +129,11 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 status = "HEALTHY",
                 message = "Laptop Security Engine started. Ready for LAN & Web connections."
             )
+            try {
+                com.example.service.LaptopMonitorService.start(application)
+            } catch (e: Exception) {
+                Log.w("LaptopMonitorVM", "Foreground service init notice: ${e.message}")
+            }
             startHeartbeat()
         }
     }
@@ -351,6 +367,17 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    fun toggleAutoRecordOnMotion() {
+        val config = laptopConfig.value ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val newState = !config.autoRecordOnMotion
+            repository.setAutoRecordOnMotion(newState)
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = if (newState) "Auto-Record Subject ON motion enabled" else "Auto-Record Subject disabled"
+            )
+        }
+    }
+
     fun toggleAutoTtsOnMotion() {
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
@@ -406,6 +433,14 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 sendTTSWarning(config.ttsWarningPhrase)
             }
 
+            if (config.autoSnapOnMotion) {
+                captureAutoMotionSnapshot(config)
+            }
+
+            if (config.autoRecordOnMotion) {
+                startSubjectRecording(isAuto = true)
+            }
+
             // Trigger Push Notification immediately
             notificationHelper.showMotionAlertNotification(
                 title = if (_uiState.value.isAwayMode) "🚨 Intruder Detected (Away Radar)" else "🚨 Intruder Movement Detected!",
@@ -453,7 +488,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         if (config.isDemoMode) {
             _uiState.value = _uiState.value.copy(
                 connectionState = ConnectionState.DEMO_MODE,
-                statusMessage = "Demo Laptop Connected (Ready)"
+                statusMessage = "Demo Laptop Connected (Ready)",
+                networkLatencyMs = (18..32).random().toLong()
             )
             return
         }
@@ -464,6 +500,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 statusMessage = "Auto-detecting link (LAN / Web)..."
             )
             val (activeTarget, transport) = repository.resolveActiveTarget(config)
+            val latency = repository.pingLatencyMs(activeTarget, config.pin) ?: 28L
             val result = repository.checkLaptopStatus(activeTarget, config.port, config.pin)
             if (result.isSuccess) {
                 val res = result.getOrNull()!!
@@ -472,6 +509,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     connectionState = ConnectionState.CONNECTED,
                     statusMessage = "$routeLabel: ${res.hostname}",
                     activeTransport = transport,
+                    networkLatencyMs = latency,
                     batteryLevel = res.battery,
                     isLocked = res.isLocked,
                     isCameraActive = res.cameraActive,
@@ -795,22 +833,160 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         _uiState.value = _uiState.value.copy(isRecordingVoice = false)
     }
 
+    fun toggleLockscreen() {
+        if (_uiState.value.isLocked) {
+            unlockLaptopSimulation()
+        } else {
+            lockLaptopRemotely()
+        }
+    }
+
     fun refreshCameraFrame() {
         _uiState.value = _uiState.value.copy(cameraRefreshTrigger = System.currentTimeMillis())
     }
 
+    fun toggleAutoStreaming() {
+        val willEnable = !_uiState.value.isAutoStreamingEnabled
+        _uiState.value = _uiState.value.copy(
+            isAutoStreamingEnabled = willEnable,
+            toastFeedback = if (willEnable) "🟢 Live auto-stream preview active" else "Stream paused (Manual mode)"
+        )
+        autoStreamJob?.cancel()
+        if (willEnable) {
+            autoStreamJob = viewModelScope.launch {
+                while (isActive) {
+                    delay(1200)
+                    _uiState.value = _uiState.value.copy(cameraRefreshTrigger = System.currentTimeMillis())
+                }
+            }
+        }
+    }
+
     fun captureManualSnapshot() {
+        val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
             vibrateDevice(false)
+            val now = System.currentTimeMillis()
+            val snapshotUrl: String?
+            if (config.isDemoMode) {
+                snapshotUrl = "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80"
+            } else {
+                val (target, _) = repository.resolveActiveTarget(config)
+                val snapResult = repository.captureSnapshot(target, config.port, config.pin)
+                snapshotUrl = snapResult.getOrNull() ?: repository.getCameraSnapshotUrl(target, config.port, config.pin)
+            }
+            val updatedList = listOfNotNull(snapshotUrl) + _uiState.value.recentSnapshots.take(7)
             _uiState.value = _uiState.value.copy(
-                toastFeedback = "📸 Snapshot saved to Intruder Log"
+                toastFeedback = "📸 Snapshot captured & saved to log!",
+                lastCapturedPhotoUrl = snapshotUrl,
+                recentSnapshots = updatedList
             )
             repository.recordEvent(
                 eventType = "Manual Snapshot",
-                description = "Photo captured by laptop webcam",
-                warningIssued = "Surveillance Snapshot",
+                description = "High-definition photo captured by laptop webcam",
+                snapshotUrl = snapshotUrl,
+                warningIssued = "Manual Shutter",
                 wasLocked = _uiState.value.isLocked,
-                severity = "INFO"
+                severity = "INFO",
+                category = "USER_ACTION"
+            )
+        }
+    }
+
+    fun captureAutoMotionSnapshot(config: LaptopConfigEntity) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val snapshotUrl: String?
+            if (config.isDemoMode) {
+                snapshotUrl = "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=600&q=80"
+            } else {
+                val (target, _) = repository.resolveActiveTarget(config)
+                val snapResult = repository.captureSnapshot(target, config.port, config.pin)
+                snapshotUrl = snapResult.getOrNull() ?: repository.getCameraSnapshotUrl(target, config.port, config.pin)
+            }
+            val updatedList = listOfNotNull(snapshotUrl) + _uiState.value.recentSnapshots.take(7)
+            _uiState.value = _uiState.value.copy(
+                lastCapturedPhotoUrl = snapshotUrl,
+                recentSnapshots = updatedList,
+                subjectDetected = true
+            )
+            repository.recordEvent(
+                eventType = "Auto Snapshot",
+                description = "Subject auto-photographed upon motion trigger",
+                snapshotUrl = snapshotUrl,
+                warningIssued = "Intruder Auto-Snap",
+                wasLocked = _uiState.value.isLocked,
+                severity = "ALERT",
+                category = "SECURITY"
+            )
+        }
+    }
+
+    fun toggleSubjectRecording() {
+        if (_uiState.value.isSubjectRecordingActive) {
+            stopSubjectRecording(isAuto = false)
+        } else {
+            startSubjectRecording(isAuto = false)
+        }
+    }
+
+    fun startSubjectRecording(isAuto: Boolean = false) {
+        val config = laptopConfig.value ?: return
+        if (_uiState.value.isSubjectRecordingActive) return
+
+        viewModelScope.launch(coroutineExceptionHandler) {
+            _uiState.value = _uiState.value.copy(
+                isSubjectRecordingActive = true,
+                subjectRecordingDurationSec = 0,
+                subjectDetected = true,
+                toastFeedback = if (isAuto) "🔴 AUTO-RECORDING Subject in progress..." else "🔴 Recording Subject video started..."
+            )
+            vibrateDevice(true)
+            if (!config.isDemoMode) {
+                val (target, _) = repository.resolveActiveTarget(config)
+                repository.startRecording(target, config.port, config.pin)
+            }
+            // Start recording duration timer
+            subjectRecordingJob?.cancel()
+            subjectRecordingJob = viewModelScope.launch {
+                var seconds = 0
+                while (isActive && _uiState.value.isSubjectRecordingActive) {
+                    delay(1000)
+                    seconds++
+                    _uiState.value = _uiState.value.copy(subjectRecordingDurationSec = seconds)
+                    if (isAuto && seconds >= 12) {
+                        // Auto-recorded clip ends after 12 seconds
+                        stopSubjectRecording(isAuto = true)
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    fun stopSubjectRecording(isAuto: Boolean = false) {
+        val config = laptopConfig.value ?: return
+        subjectRecordingJob?.cancel()
+        subjectRecordingJob = null
+        val duration = _uiState.value.subjectRecordingDurationSec
+        _uiState.value = _uiState.value.copy(isSubjectRecordingActive = false)
+
+        viewModelScope.launch(coroutineExceptionHandler) {
+            var filename = "subject_recording_${System.currentTimeMillis()}.mp4"
+            if (!config.isDemoMode) {
+                val (target, _) = repository.resolveActiveTarget(config)
+                val stopRes = repository.stopRecording(target, config.port, config.pin)
+                filename = stopRes.getOrNull() ?: filename
+            }
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "💾 Subject recording saved (${duration}s, $filename)"
+            )
+            repository.recordEvent(
+                eventType = if (isAuto) "Auto Subject Recording" else "Subject Video Recording",
+                description = "Recorded ${duration}s video clip of subject saved to laptop storage ($filename)",
+                warningIssued = if (isAuto) "Auto Surveillance Video" else "Manual Video Record",
+                wasLocked = _uiState.value.isLocked,
+                severity = if (isAuto) "ALERT" else "INFO",
+                category = if (isAuto) "SECURITY" else "USER_ACTION"
             )
         }
     }
@@ -836,7 +1012,33 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         } else {
             "${config.ipAddress}:${config.port}"
         }
-        return repository.getCameraSnapshotUrl(target, config.port, config.pin)
+        val (quality, scale) = when (_uiState.value.streamQualityPreset) {
+            "ECO" -> Pair(40, 0.5f)
+            "ULTRA" -> Pair(90, 1.0f)
+            else -> Pair(70, 0.75f)
+        }
+        return repository.getCameraSnapshotUrl(target, config.port, config.pin, quality, scale)
+    }
+
+    fun setStreamQuality(preset: String) {
+        _uiState.value = _uiState.value.copy(
+            streamQualityPreset = preset,
+            toastFeedback = "Webcam stream quality: $preset"
+        )
+    }
+
+    fun toggleBackgroundService() {
+        val newState = !_uiState.value.isBackgroundServiceActive
+        _uiState.value = _uiState.value.copy(
+            isBackgroundServiceActive = newState,
+            toastFeedback = if (newState) "Background surveillance service ACTIVE" else "Background service STOPPED"
+        )
+        val app = getApplication<Application>()
+        if (newState) {
+            com.example.service.LaptopMonitorService.start(app)
+        } else {
+            com.example.service.LaptopMonitorService.stop(app)
+        }
     }
 
     private fun startRecordingTimer() {
@@ -881,6 +1083,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                                 )
                                 if (config.autoLockOnMotion && !status.isLocked) {
                                     lockLaptopRemotely()
+                                }
+                                if (config.autoSnapOnMotion) {
+                                    captureAutoMotionSnapshot(config)
+                                }
+                                if (config.autoRecordOnMotion) {
+                                    startSubjectRecording(isAuto = true)
                                 }
                                 repository.recordEvent(
                                     eventType = "Motion Detected",
@@ -937,6 +1145,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         heartbeatJob?.cancel()
         recordingTimerJob?.cancel()
         motionCooldownJob?.cancel()
+        autoStreamJob?.cancel()
+        subjectRecordingJob?.cancel()
         voiceRecorder.cancelRecording()
     }
 }

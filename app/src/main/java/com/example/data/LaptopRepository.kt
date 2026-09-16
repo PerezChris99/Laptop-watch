@@ -85,6 +85,10 @@ class LaptopRepository(
         laptopDao.updateAutoSnapOnMotion(autoSnap)
     }
 
+    suspend fun setAutoRecordOnMotion(autoRecord: Boolean) {
+        laptopDao.updateAutoRecordOnMotion(autoRecord)
+    }
+
     suspend fun setAutoTtsOnMotion(autoTts: Boolean) {
         laptopDao.updateAutoTtsOnMotion(autoTts)
     }
@@ -243,7 +247,23 @@ class LaptopRepository(
         }
     }
 
-    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String): String {
-        return apiClient.getCameraSnapshotUrl(ipOrUrl, port, pin)
+    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String, quality: Int = 75, scale: Float = 1.0f): String {
+        return apiClient.getCameraSnapshotUrl(ipOrUrl, port, pin, quality, scale)
+    }
+
+    suspend fun pingLatencyMs(ipOrUrl: String, pin: String): Long? {
+        return apiClient.pingLatencyMs(ipOrUrl, pin)
+    }
+
+    suspend fun captureSnapshot(ipOrUrl: String, port: Int, pin: String): Result<String> {
+        return apiClient.captureSnapshot(ipOrUrl, port, pin)
+    }
+
+    suspend fun startRecording(ipOrUrl: String, port: Int, pin: String): Result<Boolean> {
+        return apiClient.startRecording(ipOrUrl, port, pin)
+    }
+
+    suspend fun stopRecording(ipOrUrl: String, port: Int, pin: String): Result<String> {
+        return apiClient.stopRecording(ipOrUrl, port, pin)
     }
 }

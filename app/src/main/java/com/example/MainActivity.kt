@@ -284,7 +284,15 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                             }
                         },
                         onRefreshCamera = { viewModel.refreshCameraFrame() },
-                        onNavigateToIntercom = { viewModel.switchTab(MonitorTab.INTERCOM) }
+                        onToggleAutoStream = { viewModel.toggleAutoStreaming() },
+                        onToggleSubjectRecording = { viewModel.toggleSubjectRecording() },
+                        onToggleAutoRecordOnMotion = { viewModel.toggleAutoRecordOnMotion() },
+                        onToggleAutoSnapOnMotion = { viewModel.toggleAutoSnapOnMotion() },
+                        onSendVoiceWarning = { phrase -> viewModel.sendTTSWarning(phrase) },
+                        onNavigateToIntercom = { viewModel.switchTab(MonitorTab.INTERCOM) },
+                        onSetStreamQuality = { preset -> viewModel.setStreamQuality(preset) },
+                        autoRecordOnMotion = config?.autoRecordOnMotion ?: false,
+                        autoSnapOnMotion = config?.autoSnapOnMotion ?: false
                     )
                 }
 
@@ -317,7 +325,8 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onTestConnection = { viewModel.testConnection() },
                         onToggleDemoMode = { viewModel.toggleDemoMode() },
                         onToggleAwayMode = { viewModel.toggleAwayMode() },
-                        onSetAwaySensitivity = { viewModel.setAwaySensitivity(it) }
+                        onSetAwaySensitivity = { viewModel.setAwaySensitivity(it) },
+                        onToggleBackgroundService = { viewModel.toggleBackgroundService() }
                     )
                 }
             }

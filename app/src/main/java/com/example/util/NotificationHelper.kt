@@ -18,10 +18,16 @@ class NotificationHelper(private val context: Context) {
     companion object {
         const val CHANNEL_ID_ALERTS = "laptop_security_alerts"
         const val CHANNEL_ID_ACTIVITY = "laptop_activity_events"
+        const val CHANNEL_ID_FOREGROUND = "laptop_surveillance_foreground"
+        const val NOTIFICATION_ID_FOREGROUND = 1000
         private const val NOTIFICATION_ID_MOTION = 1001
         private const val NOTIFICATION_ID_LOCK = 1002
         private const val NOTIFICATION_ID_ALARM = 1003
         private const val NOTIFICATION_ID_ACTIVITY = 1004
+
+        const val ACTION_LOCK_NOW = "com.example.action.LOCK_NOW"
+        const val ACTION_TRIGGER_SIREN = "com.example.action.TRIGGER_SIREN"
+        const val ACTION_STOP_SERVICE = "com.example.action.STOP_SERVICE"
     }
 
     init {
@@ -55,6 +61,19 @@ class NotificationHelper(private val context: Context) {
                 description = "Updates on remote lock, intercom messages, and system connectivity changes."
             }
             notificationManager.createNotificationChannel(activityChannel)
+
+            // Silent Persistent Channel for Foreground Surveillance
+            val foregroundChannel = NotificationChannel(
+                CHANNEL_ID_FOREGROUND,
+                "Active Surveillance Monitor",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Ongoing notification keeping laptop surveillance active in the background."
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+            }
+            notificationManager.createNotificationChannel(foregroundChannel)
         }
     }
 
@@ -148,6 +167,52 @@ class NotificationHelper(private val context: Context) {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_ALARM, builder.build())
         } catch (_: SecurityException) {
         }
+    }
+
+    fun buildForegroundNotification(
+        statusText: String,
+        isArmed: Boolean,
+        isLocked: Boolean,
+        routeText: String
+    ): android.app.Notification {
+        val lockIntent = Intent(context, com.example.service.LaptopMonitorService::class.java).apply {
+            action = ACTION_LOCK_NOW
+        }
+        val lockPendingIntent = PendingIntent.getService(
+            context,
+            101,
+            lockIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val sirenIntent = Intent(context, com.example.service.LaptopMonitorService::class.java).apply {
+            action = ACTION_TRIGGER_SIREN
+        }
+        val sirenPendingIntent = PendingIntent.getService(
+            context,
+            102,
+            sirenIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = if (isArmed) "🛡️ Laptop Sentinel Active" else "⚠️ Surveillance Paused"
+        val stateDesc = if (isLocked) "Screen Locked" else "Screen Unlocked"
+        val subtitle = "$statusText • $stateDesc • $routeText"
+
+        return NotificationCompat.Builder(context, CHANNEL_ID_FOREGROUND)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(title)
+            .setContentText(subtitle)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("$subtitle\nBackground vigilance is guarding your laptop against movement.")
+            )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setContentIntent(getPendingIntent())
+            .addAction(android.R.drawable.ic_lock_lock, "🔒 Lock Screen", lockPendingIntent)
+            .addAction(android.R.drawable.stat_notify_chat, "🚨 Sound Siren", sirenPendingIntent)
+            .build()
     }
 
     fun showActivityNotification(title: String, message: String) {
