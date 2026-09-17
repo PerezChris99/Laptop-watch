@@ -56,6 +56,7 @@ import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
+import com.example.util.rememberAppHaptics
 import com.example.viewmodel.LaptopMonitorViewModel
 import com.example.viewmodel.MonitorTab
 
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
     val context = LocalContext.current
+    val haptics = rememberAppHaptics()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config by viewModel.laptopConfig.collectAsStateWithLifecycle()
     val logs by viewModel.intruderLogs.collectAsStateWithLifecycle()
@@ -102,22 +104,30 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         viewModel.lockLaptopRemotely()
                     }
                 },
-                onAlarmClick = { viewModel.triggerDeterrentAlarm() },
-                onMotionAlertClick = { viewModel.switchTab(MonitorTab.DASHBOARD) }
+                onAlarmClick = {
+                    haptics.alarmWarning()
+                    viewModel.triggerDeterrentAlarm()
+                },
+                onMotionAlertClick = {
+                    haptics.tick()
+                    viewModel.switchTab(MonitorTab.DASHBOARD)
+                }
             )
         },
         bottomBar = {
             NavigationBar(
                 containerColor = WhitePure,
                 modifier = Modifier
-                    .navigationBarsPadding()
                     .border(androidx.compose.foundation.BorderStroke(1.dp, LightBlue100))
                     .testTag("bottom_nav_bar")
             ) {
                 // Tab 1: Alert Dashboard
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.DASHBOARD,
-                    onClick = { viewModel.switchTab(MonitorTab.DASHBOARD) },
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.DASHBOARD)
+                    },
                     icon = {
                         BadgedBox(
                             badge = {
@@ -148,7 +158,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                 // Tab 2: Camera
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.CAMERA,
-                    onClick = { viewModel.switchTab(MonitorTab.CAMERA) },
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.CAMERA)
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Videocam,
@@ -169,7 +182,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                 // Tab 3: Intercom / Mic
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.INTERCOM,
-                    onClick = { viewModel.switchTab(MonitorTab.INTERCOM) },
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.INTERCOM)
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Mic,
@@ -190,7 +206,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                 // Tab 4: Intruder Logs
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.LOGS,
-                    onClick = { viewModel.switchTab(MonitorTab.LOGS) },
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.LOGS)
+                    },
                     icon = {
                         BadgedBox(
                             badge = {
@@ -221,7 +240,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                 // Tab 5: Setup
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.SETUP,
-                    onClick = { viewModel.switchTab(MonitorTab.SETUP) },
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.SETUP)
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Settings,

@@ -41,7 +41,9 @@ import androidx.compose.material.icons.filled.MotionPhotosOn
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -56,8 +58,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -90,6 +95,7 @@ import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
+import com.example.util.rememberAppHaptics
 import com.example.viewmodel.MonitorTab
 import com.example.viewmodel.MonitorUiState
 import java.text.SimpleDateFormat
@@ -118,7 +124,9 @@ fun AlertDashboardScreen(
     modifier: Modifier = Modifier
 ) {
     var showDiagnosticsDetails by remember { mutableStateOf(false) }
+    var selectedDashboardSection by remember { mutableStateOf(0) } // 0: Overview, 1: Detection & Rules, 2: System Health
 
+    val haptics = rememberAppHaptics()
     val infiniteTransition = rememberInfiniteTransition(label = "alertPulse")
     val pulseGlow by infiniteTransition.animateFloat(
         initialValue = 0.4f,
@@ -143,141 +151,343 @@ fun AlertDashboardScreen(
         label = "statusColor"
     )
 
-    LazyColumn(
+    Column(
         modifier = modifier
             .fillMaxSize()
             .background(WhiteSmoke)
-            .testTag("alert_dashboard_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .testTag("alert_dashboard_screen")
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // 1. MASTER DEFENSE & THREAT LEVEL STATUS CARD
-        item {
-            ThreatLevelBannerCard(
-                threatLevel = threatLevel,
-                isArmed = isArmed,
-                isLocked = uiState.isLocked,
-                isAwayMode = uiState.isAwayMode,
-                statusColor = statusColor,
-                pulseGlow = pulseGlow,
-                motionAlertActive = uiState.motionAlertActive,
-                onDismissAlert = onDismissAlert,
-                onToggleMotionArmed = onToggleMotionArmed,
-                onLockLaptop = onLockLaptop,
-                onUnlockLaptop = onUnlockLaptop,
-                onTriggerAlarm = onTriggerAlarm
-            )
-        }
-
-        // 2. REAL-TIME MOTION RADAR & SENSITIVITY CONTROLS
-        item {
-            MotionRadarControlCard(
-                isArmed = isArmed,
-                sensitivity = sensitivity,
-                isAwayMode = uiState.isAwayMode,
-                awaySensitivity = uiState.awaySensitivity,
-                motionIntensity = uiState.motionIntensity,
-                motionAlertActive = uiState.motionAlertActive,
-                onSetSensitivity = onSetSensitivity,
-                onToggleAwayMode = onToggleAwayMode,
-                onSetAwaySensitivity = onSetAwaySensitivity,
-                onSimulateMotion = onSimulateMotion
-            )
-        }
-
-        // 3. AUTOMATED DEFENSE RULES (Action-on-Motion)
-        item {
-            DefenseAutomationRulesCard(
-                config = config,
-                onToggleAutoLock = onToggleAutoLock,
-                onToggleAutoAlarm = onToggleAutoAlarm,
-                onToggleAutoSnap = onToggleAutoSnap,
-                onToggleAutoTts = onToggleAutoTts
-            )
-        }
-
-        // 4. PROACTIVE SYSTEM HEALTH & ERROR MONITORING
-        item {
-            SystemHealthWatchdogCard(
-                uiState = uiState,
-                showDetails = showDiagnosticsDetails,
-                onToggleDetails = { showDiagnosticsDetails = !showDiagnosticsDetails }
-            )
-        }
-
-        // 5. RECENT HIGH-PRIORITY INCIDENTS FEED
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "RECENT SECURITY EVENTS",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SkyBlueDark,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "View All (${intruderLogs.size})",
-                    fontSize = 12.sp,
-                    color = SkyBluePrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable { onNavigateToTab(MonitorTab.LOGS) }
-                )
+        ThreatLevelBannerCard(
+            threatLevel = threatLevel,
+            isArmed = isArmed,
+            isLocked = uiState.isLocked,
+            isAwayMode = uiState.isAwayMode,
+            statusColor = statusColor,
+            pulseGlow = pulseGlow,
+            motionAlertActive = uiState.motionAlertActive,
+            onDismissAlert = {
+                haptics.tick()
+                onDismissAlert()
+            },
+            onToggleMotionArmed = {
+                haptics.click()
+                onToggleMotionArmed()
+            },
+            onLockLaptop = {
+                haptics.lockToggle(false)
+                onLockLaptop()
+            },
+            onUnlockLaptop = {
+                haptics.lockToggle(true)
+                onUnlockLaptop()
+            },
+            onTriggerAlarm = {
+                haptics.alarmWarning()
+                onTriggerAlarm()
             }
-        }
+        )
 
-        if (intruderLogs.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = WhitePure),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
-                ) {
+        // 2. SECTION SELECTOR TABS
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(10.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                val sections = listOf(
+                    Triple(0, "Overview", Icons.Default.Shield),
+                    Triple(1, "Radar & Rules", Icons.Default.Tune),
+                    Triple(2, "Diagnostics", Icons.Default.BugReport)
+                )
+                sections.forEach { (index, title, icon) ->
+                    val isSelected = selectedDashboardSection == index
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
+                            .weight(1f)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(if (isSelected) SkyBluePrimary else Color.Transparent)
+                            .clickable {
+                                haptics.tick()
+                                selectedDashboardSection = index
+                            }
+                            .padding(vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Shield,
+                                imageVector = icon,
                                 contentDescription = null,
-                                tint = EmeraldSafe,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Zero Intrusion Events Recorded",
-                                color = DeepSlate800,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                tint = if (isSelected) Color.White else MutedSlate500,
+                                modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = "Your laptop workspace is safe and guarded.",
-                                color = MutedSlate500,
-                                fontSize = 12.sp
+                                text = title,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else DeepSlate800
                             )
                         }
                     }
                 }
             }
-        } else {
-            items(intruderLogs.take(4), key = { it.id }) { log ->
-                IncidentAlertItem(
-                    log = log,
-                    onViewFeed = { onNavigateToTab(MonitorTab.CAMERA) },
-                    onIntercom = { onNavigateToTab(MonitorTab.INTERCOM) }
-                )
-            }
         }
 
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
+        // 3. MAIN SECTION CONTENT (Fits viewport without scrolling)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            when (selectedDashboardSection) {
+                0 -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Quick Metrics Strip
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = WhitePure),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "RADAR MOTION",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MutedSlate500
+                                    )
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = "${uiState.motionIntensity}% intensity",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (uiState.motionIntensity > 20) CrimsonAlert else DeepSlate800
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .height(20.dp)
+                                        .background(LightBlue100)
+                                )
+
+                                Column {
+                                    Text(
+                                        text = "POLICY",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MutedSlate500
+                                    )
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = if (config?.autoLockOnMotion == true) "Auto-Lock" else "Manual",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SkyBlueDark
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .height(20.dp)
+                                        .background(LightBlue100)
+                                )
+
+                                Column {
+                                    Text(
+                                        text = "WATCHDOG",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MutedSlate500
+                                    )
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = "Normal",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = EmeraldSafe
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick access to Radar & Rules
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(LightBlueSoft)
+                                .border(0.8.dp, LightBlue100, RoundedCornerShape(8.dp))
+                                .clickable { selectedDashboardSection = 1 }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = SkyBluePrimary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "Sensitivity: $sensitivity • Rules Active: 4",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DeepSlate800
+                                )
+                            }
+                            Text(
+                                text = "Customize →",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SkyBluePrimary
+                            )
+                        }
+
+                        // Recent Incidents Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "RECENT SECURITY EVENTS",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SkyBlueDark,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = "View All (${intruderLogs.size}) →",
+                                fontSize = 11.sp,
+                                color = SkyBluePrimary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onNavigateToTab(MonitorTab.LOGS) }
+                            )
+                        }
+
+                        if (intruderLogs.isEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = WhitePure),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Shield,
+                                            contentDescription = null,
+                                            tint = EmeraldSafe,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Text(
+                                            text = "Zero Intrusion Events Recorded",
+                                            color = DeepSlate800,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "Your laptop workspace is safe and guarded.",
+                                            color = MutedSlate500,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val displayLogs = intruderLogs.take(2)
+                                displayLogs.forEach { log ->
+                                    IncidentAlertItem(
+                                        log = log,
+                                        onViewFeed = { onNavigateToTab(MonitorTab.CAMERA) },
+                                        onIntercom = { onNavigateToTab(MonitorTab.INTERCOM) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                1 -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        MotionRadarControlCard(
+                            isArmed = isArmed,
+                            sensitivity = sensitivity,
+                            isAwayMode = uiState.isAwayMode,
+                            awaySensitivity = uiState.awaySensitivity,
+                            motionIntensity = uiState.motionIntensity,
+                            motionAlertActive = uiState.motionAlertActive,
+                            onSetSensitivity = onSetSensitivity,
+                            onToggleAwayMode = onToggleAwayMode,
+                            onSetAwaySensitivity = onSetAwaySensitivity,
+                            onSimulateMotion = onSimulateMotion
+                        )
+
+                        DefenseAutomationRulesCard(
+                            config = config,
+                            onToggleAutoLock = onToggleAutoLock,
+                            onToggleAutoAlarm = onToggleAutoAlarm,
+                            onToggleAutoSnap = onToggleAutoSnap,
+                            onToggleAutoTts = onToggleAutoTts
+                        )
+                    }
+                }
+
+                2 -> {
+                    SystemHealthWatchdogCard(
+                        uiState = uiState,
+                        showDetails = showDiagnosticsDetails,
+                        onToggleDetails = { showDiagnosticsDetails = !showDiagnosticsDetails }
+                    )
+                }
+            }
         }
     }
 }
@@ -307,19 +517,20 @@ private fun ThreatLevelBannerCard(
         modifier = Modifier
             .fillMaxWidth()
             .border(
-                1.2.dp,
+                1.dp,
                 if (motionAlertActive) CrimsonAlert.copy(alpha = pulseGlow) else LightBlue100,
-                RoundedCornerShape(16.dp)
+                RoundedCornerShape(12.dp)
             )
             .testTag("threat_level_card"),
         colors = CardDefaults.cardColors(containerColor = containerBg),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Header Row with Shield and Status
             Row(
@@ -329,15 +540,15 @@ private fun ThreatLevelBannerCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(30.dp)
                             .clip(CircleShape)
                             .background(statusColor.copy(alpha = 0.15f))
-                            .border(1.5.dp, statusColor.copy(alpha = 0.4f), CircleShape),
+                            .border(1.dp, statusColor.copy(alpha = 0.4f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -349,7 +560,7 @@ private fun ThreatLevelBannerCard(
                             contentDescription = "Threat Level Icon",
                             tint = statusColor,
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(16.dp)
                                 .then(if (motionAlertActive) Modifier.alpha(pulseGlow) else Modifier)
                         )
                     }
@@ -357,25 +568,25 @@ private fun ThreatLevelBannerCard(
                     Column {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "STATUS:",
+                                text = if (isArmed) "DEFENSE ARMED" else "DISARMED",
                                 fontSize = 11.sp,
-                                color = MutedSlate500,
+                                color = if (isArmed) EmeraldSafe else MutedSlate500,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = threatLevel,
-                                fontSize = 13.sp,
+                                text = "• $threatLevel",
+                                fontSize = 11.sp,
                                 color = statusColor,
                                 fontWeight = FontWeight.ExtraBold
                             )
 
                             if (isAwayMode) {
                                 Text(
-                                    text = "• AWAY ACTIVE",
-                                    fontSize = 11.sp,
+                                    text = "• AWAY",
+                                    fontSize = 10.sp,
                                     color = Color(0xFFB45309),
                                     fontWeight = FontWeight.Bold
                                 )
@@ -388,8 +599,10 @@ private fun ThreatLevelBannerCard(
                                 else -> if (isArmed) "Laptop workspace safe & guarded" else "Motion sensor is disarmed"
                             },
                             color = DeepSlate800,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -399,7 +612,7 @@ private fun ThreatLevelBannerCard(
                     IconButton(
                         onClick = onDismissAlert,
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFFECDD3))
                     ) {
@@ -407,30 +620,29 @@ private fun ThreatLevelBannerCard(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Dismiss Alert",
                             tint = CrimsonAlert,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Master Arm/Disarm Button
                 OutlinedButton(
                     onClick = onToggleMotionArmed,
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
+                        .height(32.dp)
                         .testTag("arm_motion_button"),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = if (isArmed) EmeraldSafe else MutedSlate500
                     ),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
                         if (isArmed) EmeraldSafe.copy(alpha = 0.5f) else LightBlue100
@@ -439,13 +651,13 @@ private fun ThreatLevelBannerCard(
                     Icon(
                         imageVector = if (isArmed) Icons.Default.CheckCircle else Icons.Default.Shield,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isArmed) "ARMED" else "DISARMED",
+                        text = if (isArmed) "ARMED" else "DISARM",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                 }
 
@@ -454,24 +666,25 @@ private fun ThreatLevelBannerCard(
                     onClick = { if (isLocked) onUnlockLaptop() else onLockLaptop() },
                     modifier = Modifier
                         .weight(1.2f)
-                        .height(42.dp)
+                        .height(32.dp)
                         .testTag("dashboard_lock_button"),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isLocked) CrimsonAlert else SkyBluePrimary,
                         contentColor = Color.White
                     ),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                 ) {
                     Icon(
                         imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (isLocked) "LOCKED" else "LOCK SCREEN",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                 }
 
@@ -479,17 +692,17 @@ private fun ThreatLevelBannerCard(
                 IconButton(
                     onClick = onTriggerAlarm,
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(Color(0xFFFFF1F2))
-                        .border(1.dp, Color(0xFFFECDD3), RoundedCornerShape(10.dp))
+                        .border(1.dp, Color(0xFFFECDD3), RoundedCornerShape(8.dp))
                         .testTag("dashboard_alarm_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.NotificationsActive,
                         contentDescription = "Trigger Siren",
                         tint = CrimsonAlert,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -510,20 +723,21 @@ private fun MotionRadarControlCard(
     onSetAwaySensitivity: (String) -> Unit,
     onSimulateMotion: () -> Unit
 ) {
+    val haptics = rememberAppHaptics()
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("motion_radar_card"),
         colors = CardDefaults.cardColors(containerColor = WhitePure),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -532,32 +746,32 @@ private fun MotionRadarControlCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MotionPhotosOn,
                         contentDescription = null,
                         tint = SkyBluePrimary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = "MOTION DETECTION RADAR",
                         fontWeight = FontWeight.Bold,
                         color = DeepSlate800,
-                        fontSize = 14.sp
+                        fontSize = 12.sp
                     )
                 }
 
                 Text(
                     text = if (isArmed) "ACTIVE (12 FPS)" else "STANDBY",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isArmed) SkyBluePrimary else MutedSlate500
                 )
             }
 
             // Live Motion Intensity Meter
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -565,12 +779,12 @@ private fun MotionRadarControlCard(
                 ) {
                     Text(
                         text = "Webcam Motion Intensity",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MutedSlate500
                     )
                     Text(
                         text = "$motionIntensity%",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (motionIntensity > 20) CrimsonAlert else SkyBlueDark
                     )
@@ -580,7 +794,7 @@ private fun MotionRadarControlCard(
                     progress = { (motionIntensity / 100f).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp)
+                        .height(6.dp)
                         .clip(CircleShape),
                     color = if (motionAlertActive) CrimsonAlert else SkyBluePrimary,
                     trackColor = LightBlueSoft
@@ -588,120 +802,80 @@ private fun MotionRadarControlCard(
             }
 
             // Standard Sensitivity
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "Standard Trigger Sensitivity",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = DeepSlate800
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "LOW" to "Low (25%)",
-                        "MEDIUM" to "Med (15%)",
-                        "HIGH" to "High (5%)"
-                    ).forEach { (key, label) ->
-                        val isSelected = sensitivity.equals(key, ignoreCase = true)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) SkyBluePrimary else LightBlueSoft)
-                                .border(
-                                    1.dp,
-                                    if (isSelected) SkyBluePrimary else LightBlue100,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable { onSetSensitivity(key) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else DeepSlate800
-                            )
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = LightBlue100)
-
-            // Away Mode Quick Radar Controls
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
-                        contentDescription = null,
-                        tint = if (isAwayMode) Color(0xFFD97706) else MutedSlate500,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Column {
+                Text(
+                    text = "Sensitivity:",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MutedSlate500
+                )
+
+                listOf(
+                    "LOW" to "Low (25%)",
+                    "MEDIUM" to "Med (15%)",
+                    "HIGH" to "High (5%)"
+                ).forEach { (key, label) ->
+                    val isSelected = sensitivity.equals(key, ignoreCase = true)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isSelected) SkyBluePrimary else LightBlueSoft)
+                            .border(
+                                0.8.dp,
+                                if (isSelected) SkyBluePrimary else LightBlue100,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                haptics.tick()
+                                onSetSensitivity(key)
+                            }
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "Away Mode Surveillance",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = DeepSlate800
-                        )
-                        Text(
-                            text = if (isAwayMode) "Active: Ultra sensitivity ($awaySensitivity)" else "Toggle when stepping away",
-                            fontSize = 11.sp,
-                            color = MutedSlate500
+                            text = label,
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) Color.White else DeepSlate800
                         )
                     }
                 }
-
-                Switch(
-                    checked = isAwayMode,
-                    onCheckedChange = { onToggleAwayMode() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = SkyBluePrimary,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = LightBlue100
-                    )
-                )
             }
 
             // Simulate Motion Button
             Button(
-                onClick = onSimulateMotion,
+                onClick = {
+                    haptics.click()
+                    onSimulateMotion()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(42.dp)
+                    .height(30.dp)
                     .testTag("simulate_motion_button"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = LightBlueSoft,
                     contentColor = SkyBlueDark
                 ),
-                shape = RoundedCornerShape(10.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
+                shape = RoundedCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+                contentPadding = PaddingValues(0.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Bolt,
                     contentDescription = null,
                     tint = SkyBluePrimary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(13.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Simulate Motion (Instant Test)",
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
         }
@@ -721,84 +895,124 @@ private fun DefenseAutomationRulesCard(
             .fillMaxWidth()
             .testTag("defense_rules_card"),
         colors = CardDefaults.cardColors(containerColor = WhitePure),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Security,
                     contentDescription = null,
                     tint = SkyBluePrimary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = "AUTOMATED DEFENSE ON MOTION",
                     fontWeight = FontWeight.Bold,
                     color = DeepSlate800,
-                    fontSize = 14.sp
+                    fontSize = 12.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "When motion triggers, automatically execute these counter-measures:",
-                color = MutedSlate500,
-                fontSize = 12.sp
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            RuleSwitchRow(
+            CompactRuleSwitchRow(
                 icon = Icons.Default.Lock,
                 title = "Auto-Lock Laptop Screen",
-                subtitle = "Immediately lock workstation to protect open files and privacy",
                 checked = config?.autoLockOnMotion ?: true,
                 onCheckedChange = { onToggleAutoLock() },
                 testTag = "rule_autolock_switch"
             )
 
-            HorizontalDivider(color = LightBlue100, modifier = Modifier.padding(vertical = 4.dp))
+            HorizontalDivider(color = LightBlue100)
 
-            RuleSwitchRow(
+            CompactRuleSwitchRow(
                 icon = Icons.Default.PhotoCamera,
                 title = "Capture Intruder Photo",
-                subtitle = "Take instant snapshot from webcam and store in local security log",
                 checked = config?.autoSnapOnMotion ?: true,
                 onCheckedChange = { onToggleAutoSnap() },
                 testTag = "rule_autosnap_switch"
             )
 
-            HorizontalDivider(color = LightBlue100, modifier = Modifier.padding(vertical = 4.dp))
+            HorizontalDivider(color = LightBlue100)
 
-            RuleSwitchRow(
+            CompactRuleSwitchRow(
                 icon = Icons.Default.VolumeUp,
                 title = "Broadcast Voice Warning",
-                subtitle = "Speak deterrent message out loud through laptop speakers",
                 checked = config?.autoTtsOnMotion ?: false,
                 onCheckedChange = { onToggleAutoTts() },
                 testTag = "rule_autotts_switch"
             )
 
-            HorizontalDivider(color = LightBlue100, modifier = Modifier.padding(vertical = 4.dp))
+            HorizontalDivider(color = LightBlue100)
 
-            RuleSwitchRow(
+            CompactRuleSwitchRow(
                 icon = Icons.Default.NotificationsActive,
                 title = "Sound Deterrent Siren",
-                subtitle = "Blast high-decibel alarm beeps through laptop speakers",
                 checked = config?.autoAlarmOnMotion ?: false,
                 onCheckedChange = { onToggleAutoAlarm() },
                 testTag = "rule_autoalarm_switch"
             )
         }
+    }
+}
+
+@Composable
+private fun CompactRuleSwitchRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    testTag: String
+) {
+    val haptics = rememberAppHaptics()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = SkyBluePrimary,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = DeepSlate800
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = {
+                haptics.tick()
+                onCheckedChange(it)
+            },
+            modifier = Modifier
+                .scale(0.75f)
+                .testTag(testTag),
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = WhitePure,
+                checkedTrackColor = SkyBluePrimary,
+                uncheckedThumbColor = WhitePure,
+                uncheckedTrackColor = LightBlue100
+            )
+        )
     }
 }
 
@@ -811,6 +1025,7 @@ private fun RuleSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
     testTag: String
 ) {
+    val haptics = rememberAppHaptics()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -858,7 +1073,10 @@ private fun RuleSwitchRow(
 
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = {
+                haptics.tick()
+                onCheckedChange(it)
+            },
             modifier = Modifier.testTag(testTag),
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,

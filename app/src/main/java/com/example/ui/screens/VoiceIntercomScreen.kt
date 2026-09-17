@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -65,12 +67,14 @@ import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
 import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.LightBlue100
+import com.example.ui.theme.LightBlue50
 import com.example.ui.theme.LightBlueSoft
 import com.example.ui.theme.MutedSlate500
 import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
+import com.example.util.rememberAppHaptics
 import com.example.viewmodel.MonitorUiState
 
 @Composable
@@ -116,6 +120,8 @@ fun VoiceIntercomScreen(
     )
 
     val scrollState = rememberScrollState()
+    var selectedIntercomTab by remember { mutableStateOf(0) }
+    val haptics = rememberAppHaptics()
 
     Column(
         modifier = modifier
@@ -161,7 +167,57 @@ fun VoiceIntercomScreen(
             }
         }
 
-        // PUSH-TO-TALK HERO CARD
+        // Clean Segmented Tabs to Declutter Screen
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(LightBlue50)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val tabs = listOf(
+                "Live Mic" to Icons.Default.Mic,
+                "Presets" to Icons.Default.Campaign,
+                "Custom Text" to Icons.Default.ChatBubbleOutline
+            )
+            tabs.forEachIndexed { index, (label, icon) ->
+                val isSelected = selectedIntercomTab == index
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) WhitePure else Color.Transparent)
+                        .clickable {
+                            haptics.tick()
+                            selectedIntercomTab = index
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) SkyBluePrimary else MutedSlate500,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) DeepSlate800 else MutedSlate500
+                        )
+                    }
+                }
+            }
+        }
+
+        // TAB 0: PUSH-TO-TALK HERO CARD
+        if (selectedIntercomTab == 0) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -211,8 +267,10 @@ fun VoiceIntercomScreen(
                                     if (!hasMicPermission) {
                                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     } else {
+                                        haptics.click()
                                         onStartRecording()
                                         tryAwaitRelease()
+                                        haptics.tick()
                                         onStopAndSendRecording()
                                     }
                                 }
@@ -246,8 +304,10 @@ fun VoiceIntercomScreen(
                 }
             }
         }
+        }
 
-        // QUICK WARNING PRESETS (TTS)
+        // TAB 1: QUICK WARNING PRESETS (TTS)
+        if (selectedIntercomTab == 1) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "INSTANT VOICE WARNING PRESETS",
@@ -274,7 +334,10 @@ fun VoiceIntercomScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSendTTS(preset) }
+                            .clickable {
+                                haptics.click()
+                                onSendTTS(preset)
+                            }
                             .testTag("warning_preset_$index"),
                         colors = CardDefaults.cardColors(containerColor = WhitePure),
                         border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
@@ -316,8 +379,10 @@ fun VoiceIntercomScreen(
                 }
             }
         }
+        }
 
-        // CUSTOM TEXT-TO-SPEECH ANNOUNCEMENT
+        // TAB 2: CUSTOM TEXT-TO-SPEECH ANNOUNCEMENT
+        if (selectedIntercomTab == 2) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "CUSTOM VOICE ANNOUNCEMENT",
@@ -366,6 +431,7 @@ fun VoiceIntercomScreen(
                     Button(
                         onClick = {
                             if (customMessage.isNotBlank()) {
+                                haptics.click()
                                 onSendTTS(customMessage)
                                 customMessage = ""
                             }
@@ -393,6 +459,7 @@ fun VoiceIntercomScreen(
                     }
                 }
             }
+        }
         }
 
         // DETERRENT HIGH-DECIBEL SIREN ALARM
@@ -446,7 +513,10 @@ fun VoiceIntercomScreen(
                 }
 
                 Button(
-                    onClick = onTriggerAlarm,
+                    onClick = {
+                        haptics.alarmWarning()
+                        onTriggerAlarm()
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = CrimsonAlert,
                         contentColor = Color.White
