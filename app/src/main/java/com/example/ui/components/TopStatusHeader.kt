@@ -91,108 +91,117 @@ fun TopStatusHeader(
         tonalElevation = 1.dp,
         shadowElevation = 1.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(42.dp)
-                .border(width = 0.8.dp, color = LightBlue100)
-                .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .statusBarsPadding()
         ) {
-            // Left Group: Status Indicator Dot + Title + Battery Badge
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f, fill = false)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Connection status dot
-                val dotColor = when (uiState.connectionState) {
-                    ConnectionState.CONNECTED -> EmeraldSafe
-                    ConnectionState.DEMO_MODE -> AmberWarning
-                    ConnectionState.CONNECTING -> SkyBluePrimary
-                    ConnectionState.DISCONNECTED, ConnectionState.ERROR -> CrimsonAlert
-                }
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
-                        .then(
-                            if (uiState.connectionState == ConnectionState.CONNECTING)
-                                Modifier.alpha(pulseAlpha) else Modifier
-                        )
-                )
-
-                // Laptop Title
-                Text(
-                    text = config?.laptopName ?: "Laptop Guard",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DeepSlate800,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Battery Badge
+                // Left Group: Status Indicator Dot + Title + Battery Badge
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(LightBlue50)
-                        .border(0.6.dp, LightBlue100, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 5.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    // Connection status dot
+                    val dotColor = when (uiState.connectionState) {
+                        ConnectionState.CONNECTED -> EmeraldSafe
+                        ConnectionState.DEMO_MODE -> AmberWarning
+                        ConnectionState.CONNECTING -> SkyBluePrimary
+                        ConnectionState.DISCONNECTED, ConnectionState.ERROR -> CrimsonAlert
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                            .then(
+                                if (uiState.connectionState == ConnectionState.CONNECTING)
+                                    Modifier.alpha(pulseAlpha) else Modifier
+                            )
+                    )
+
+                    // Laptop Title
+                    Text(
+                        text = config?.laptopName ?: "Laptop Guard",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepSlate800,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    // Battery Badge
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(LightBlue50)
+                            .border(0.6.dp, LightBlue100, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BatteryChargingFull,
+                            contentDescription = "Battery",
+                            tint = EmeraldSafe,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = uiState.batteryLevel,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DeepSlate800
+                        )
+                    }
+                }
+
+                // Right Group: Lock Button ONLY
+                val isLocked = uiState.isLocked
+                val lockBtnBg by animateColorAsState(
+                    targetValue = if (isLocked) CrimsonAlert else SkyBluePrimary,
+                    label = "lockBg"
+                )
+
+                Button(
+                    onClick = {
+                        haptics.lockToggle(isLocked)
+                        onLockClick()
+                    },
+                    modifier = Modifier
+                        .height(30.dp)
+                        .testTag("quick_lock_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = lockBtnBg,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.BatteryChargingFull,
-                        contentDescription = "Battery",
-                        tint = EmeraldSafe,
-                        modifier = Modifier.size(12.dp)
+                        imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (isLocked) "Locked" else "Lock Laptop",
+                        modifier = Modifier.size(13.dp)
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = uiState.batteryLevel,
-                        fontSize = 10.sp,
+                        text = if (isLocked) "LOCKED" else "LOCK",
                         fontWeight = FontWeight.Bold,
-                        color = DeepSlate800
+                        fontSize = 11.sp
                     )
                 }
             }
-
-            // Right Group: Lock Button ONLY
-            val isLocked = uiState.isLocked
-            val lockBtnBg by animateColorAsState(
-                targetValue = if (isLocked) CrimsonAlert else SkyBluePrimary,
-                label = "lockBg"
+            HorizontalDivider(
+                thickness = 0.8.dp,
+                color = LightBlue100
             )
-
-            Button(
-                onClick = {
-                    haptics.lockToggle(isLocked)
-                    onLockClick()
-                },
-                modifier = Modifier
-                    .height(30.dp)
-                    .testTag("quick_lock_button"),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = lockBtnBg,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(6.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-            ) {
-                Icon(
-                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    contentDescription = if (isLocked) "Locked" else "Lock Laptop",
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (isLocked) "LOCKED" else "LOCK",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                )
-            }
         }
     }
 }
