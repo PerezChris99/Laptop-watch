@@ -6,13 +6,20 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [LaptopConfigEntity::class, IntruderLogEntity::class],
-    version = 4,
+    entities = [
+        LaptopConfigEntity::class,
+        IntruderLogEntity::class,
+        LaptopLocationEntity::class,
+        SubjectProfileEntity::class
+    ],
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun laptopDao(): LaptopDao
     abstract fun intruderLogDao(): IntruderLogDao
+    abstract fun locationDao(): LocationDao
+    abstract fun subjectProfileDao(): SubjectProfileDao
 
     companion object {
         @Volatile

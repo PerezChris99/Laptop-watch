@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -45,6 +47,7 @@ import com.example.ui.screens.AlertDashboardScreen
 import com.example.ui.screens.IntruderLogsScreen
 import com.example.ui.screens.LaptopSetupScreen
 import com.example.ui.screens.LiveCameraScreen
+import com.example.ui.screens.LocationTrackerScreen
 import com.example.ui.screens.VoiceIntercomScreen
 import com.example.ui.theme.CrimsonAlert
 import com.example.ui.theme.DeepSlate800
@@ -81,6 +84,8 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config by viewModel.laptopConfig.collectAsStateWithLifecycle()
     val logs by viewModel.intruderLogs.collectAsStateWithLifecycle()
+    val locationHistory by viewModel.locationHistory.collectAsStateWithLifecycle()
+    val subjectProfiles by viewModel.subjectProfiles.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.toastFeedback) {
@@ -179,7 +184,41 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     modifier = Modifier.testTag("tab_camera")
                 )
 
-                // Tab 3: Intercom / Mic
+                // Tab 3: GPS Location & OpenStreetMap Tracker
+                NavigationBarItem(
+                    selected = uiState.activeTab == MonitorTab.TRACKER,
+                    onClick = {
+                        haptics.tick()
+                        viewModel.switchTab(MonitorTab.TRACKER)
+                    },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (uiState.isOutsideGeofence) {
+                                    Badge(containerColor = CrimsonAlert, contentColor = Color.White) {
+                                        Text("!")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GpsFixed,
+                                contentDescription = "GPS Hardware Location Tracker"
+                            )
+                        }
+                    },
+                    label = { Text("Map GPS", fontSize = 11.sp) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = SkyBlueDark,
+                        selectedTextColor = SkyBlueDark,
+                        indicatorColor = LightBlueSoft,
+                        unselectedIconColor = MutedSlate500,
+                        unselectedTextColor = MutedSlate500
+                    ),
+                    modifier = Modifier.testTag("tab_tracker")
+                )
+
+                // Tab 4: Intercom / Mic
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.INTERCOM,
                     onClick = {
@@ -203,7 +242,7 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     modifier = Modifier.testTag("tab_intercom")
                 )
 
-                // Tab 4: Intruder Logs
+                // Tab 4: Activity Timeline Log
                 NavigationBarItem(
                     selected = uiState.activeTab == MonitorTab.LOGS,
                     onClick = {
@@ -221,12 +260,12 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                             }
                         ) {
                             Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = "Intruder Logs"
+                                imageVector = Icons.Default.Timeline,
+                                contentDescription = "Activity Timeline Log"
                             )
                         }
                     },
-                    label = { Text("Intruders", fontSize = 11.sp) },
+                    label = { Text("Timeline", fontSize = 11.sp) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = SkyBlueDark,
                         selectedTextColor = SkyBlueDark,
@@ -315,6 +354,15 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onSetStreamQuality = { preset -> viewModel.setStreamQuality(preset) },
                         autoRecordOnMotion = config?.autoRecordOnMotion ?: false,
                         autoSnapOnMotion = config?.autoSnapOnMotion ?: false
+                    )
+                }
+
+                MonitorTab.TRACKER -> {
+                    LocationTrackerScreen(
+                        viewModel = viewModel,
+                        uiState = uiState,
+                        locationHistory = locationHistory,
+                        subjectProfiles = subjectProfiles
                     )
                 }
 

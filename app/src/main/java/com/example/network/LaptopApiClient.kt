@@ -28,7 +28,19 @@ data class LaptopStatusResponse(
     val motionIntensity: Int = 0,
     val lastMotionTime: Long = 0L,
     val threatLevel: String = "SECURE",
-    val message: String = "Connected"
+    val message: String = "Connected",
+    // GPS Hardware Telemetry
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val gpsAccuracy: Float? = null,
+    val gpsSpeed: Float? = null,
+    val gpsAltitude: Double? = null,
+    val gpsProvider: String? = null,
+    val lastGpsFixTime: Long? = null,
+    // Active Face / Subject detection telemetry
+    val subjectCount: Int = 0,
+    val subjectIdentified: String? = null,
+    val subjectConfidence: Float = 0f
 )
 
 data class RemoteLogItem(
@@ -140,7 +152,17 @@ class LaptopApiClient {
                     motionIntensity = json.optInt("motion_intensity", 0),
                     lastMotionTime = json.optLong("last_motion_time", 0L),
                     threatLevel = json.optString("threat_level", "SECURE"),
-                    message = json.optString("message", "OK")
+                    message = json.optString("message", "OK"),
+                    latitude = if (json.has("latitude") && !json.isNull("latitude")) json.optDouble("latitude") else null,
+                    longitude = if (json.has("longitude") && !json.isNull("longitude")) json.optDouble("longitude") else null,
+                    gpsAccuracy = if (json.has("gps_accuracy")) json.optDouble("gps_accuracy").toFloat() else null,
+                    gpsSpeed = if (json.has("gps_speed")) json.optDouble("gps_speed").toFloat() else null,
+                    gpsAltitude = if (json.has("gps_altitude")) json.optDouble("gps_altitude") else null,
+                    gpsProvider = json.optString("gps_provider", "GPS_HARDWARE"),
+                    lastGpsFixTime = json.optLong("last_gps_fix_time", System.currentTimeMillis()),
+                    subjectCount = json.optInt("subject_count", 0),
+                    subjectIdentified = json.optString("subject_identified", null),
+                    subjectConfidence = json.optDouble("subject_confidence", 0.0).toFloat()
                 )
                 Result.success(status)
             }
@@ -409,6 +431,50 @@ class LaptopApiClient {
                     Result.success(filename)
                 } else {
                     Result.failure(Exception("Stop recording failed: HTTP ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getLiveLocation(ip: String, port: Int, pin: String): Result<JSONObject> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl(ip, port)}/api/location/gps"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: "{}"
+                    Result.success(JSONObject(body))
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSubjectProfiles(ip: String, port: Int, pin: String): Result<JSONArray> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl(ip, port)}/api/security/profiles"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("X-Auth-Token", pin)
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: "[]"
+                    Result.success(JSONArray(body))
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}"))
                 }
             }
         } catch (e: Exception) {

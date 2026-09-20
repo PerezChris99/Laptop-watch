@@ -65,6 +65,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonBorder
+import com.example.ui.theme.CrimsonLight
 import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlue50
@@ -467,9 +469,9 @@ fun VoiceIntercomScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("deterrent_alarm_card"),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+            colors = CardDefaults.cardColors(containerColor = CrimsonLight),
             shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECDD3))
+            border = androidx.compose.foundation.BorderStroke(1.dp, CrimsonBorder)
         ) {
             Row(
                 modifier = Modifier
@@ -487,7 +489,7 @@ fun VoiceIntercomScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFEE2E2)),
+                            .background(CrimsonAlert.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

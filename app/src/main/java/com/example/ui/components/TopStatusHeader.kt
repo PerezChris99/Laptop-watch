@@ -24,12 +24,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +54,8 @@ import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlue50
+import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.NightSecurityThemeState
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.util.rememberAppHaptics
@@ -163,39 +168,64 @@ fun TopStatusHeader(
                     }
                 }
 
-                // Right Group: Lock Button ONLY
-                val isLocked = uiState.isLocked
-                val lockBtnBg by animateColorAsState(
-                    targetValue = if (isLocked) CrimsonAlert else SkyBluePrimary,
-                    label = "lockBg"
-                )
-
-                Button(
-                    onClick = {
-                        haptics.lockToggle(isLocked)
-                        onLockClick()
-                    },
-                    modifier = Modifier
-                        .height(30.dp)
-                        .testTag("quick_lock_button"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = lockBtnBg,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(6.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                // Right Group: Theme Mode Toggle + Lock Button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = if (isLocked) "Locked" else "Lock Laptop",
-                        modifier = Modifier.size(13.dp)
+                    // Dark / Light Mode quick toggle
+                    IconButton(
+                        onClick = {
+                            NightSecurityThemeState.isDarkMode = !NightSecurityThemeState.isDarkMode
+                        },
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(LightBlue50)
+                            .border(0.6.dp, LightBlue100, RoundedCornerShape(6.dp))
+                            .testTag("theme_mode_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (NightSecurityThemeState.isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = if (NightSecurityThemeState.isDarkMode) "Night Security Mode Active" else "Day Mode Active",
+                            tint = if (NightSecurityThemeState.isDarkMode) SkyBluePrimary else MutedSlate500,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    val isLocked = uiState.isLocked
+                    val lockBtnBg by animateColorAsState(
+                        targetValue = if (isLocked) CrimsonAlert else SkyBluePrimary,
+                        label = "lockBg"
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isLocked) "LOCKED" else "LOCK",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
+
+                    Button(
+                        onClick = {
+                            haptics.lockToggle(isLocked)
+                            onLockClick()
+                        },
+                        modifier = Modifier
+                            .height(30.dp)
+                            .testTag("quick_lock_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = lockBtnBg,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (isLocked) "Locked" else "Lock Laptop",
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isLocked) "LOCKED" else "LOCK",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
             HorizontalDivider(

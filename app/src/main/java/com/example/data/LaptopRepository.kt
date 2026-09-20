@@ -8,10 +8,62 @@ import java.io.File
 class LaptopRepository(
     private val laptopDao: LaptopDao,
     private val intruderLogDao: IntruderLogDao,
+    private val locationDao: LocationDao? = null,
+    private val subjectProfileDao: SubjectProfileDao? = null,
     private val apiClient: LaptopApiClient = LaptopApiClient()
 ) {
     val laptopConfig: Flow<LaptopConfigEntity?> = laptopDao.getLaptopConfig()
     val intruderLogs: Flow<List<IntruderLogEntity>> = intruderLogDao.getAllLogs()
+    val laptopLocations: Flow<List<LaptopLocationEntity>> = locationDao?.getAllLocations() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+    val latestLocation: Flow<LaptopLocationEntity?> = locationDao?.getLatestLocation() ?: kotlinx.coroutines.flow.flowOf(null)
+    val subjectProfiles: Flow<List<SubjectProfileEntity>> = subjectProfileDao?.getAllProfiles() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    suspend fun recordLocation(location: LaptopLocationEntity): Long {
+        return locationDao?.insertLocation(location) ?: 0L
+    }
+
+    suspend fun getLatestLocationDirect(): LaptopLocationEntity? {
+        return locationDao?.getLatestLocationDirect()
+    }
+
+    suspend fun recordSubjectProfile(profile: SubjectProfileEntity): Long {
+        return subjectProfileDao?.insertProfile(profile) ?: 0L
+    }
+
+    suspend fun updateSubjectClassification(id: Long, category: String, notes: String) {
+        subjectProfileDao?.updateClassification(id, category, notes)
+    }
+
+    suspend fun clearLocations() {
+        locationDao?.clearAllLocations()
+    }
+
+    suspend fun clearProfiles() {
+        subjectProfileDao?.clearAllProfiles()
+    }
+
+    suspend fun fetchLiveLocationFromLaptop(ipOrUrl: String, port: Int, pin: String): Result<LaptopLocationEntity> {
+        val res = apiClient.getLiveLocation(ipOrUrl, port, pin)
+        return if (res.isSuccess) {
+            val json = res.getOrNull()!!
+            val lat = json.optDouble("latitude", 0.0)
+            val lng = json.optDouble("longitude", 0.0)
+            val loc = LaptopLocationEntity(
+                latitude = lat,
+                longitude = lng,
+                accuracyMeters = json.optDouble("accuracy", 4.5).toFloat(),
+                altitudeMeters = json.optDouble("altitude", 12.0),
+                speedKmh = json.optDouble("speed", 0.0).toFloat(),
+                provider = json.optString("provider", "GPS_HARDWARE"),
+                addressEstimate = json.optString("address", "Latitude: $lat, Longitude: $lng"),
+                isLiveFix = true
+            )
+            locationDao?.insertLocation(loc)
+            Result.success(loc)
+        } else {
+            Result.failure(res.exceptionOrNull() ?: Exception("GPS fetch failed"))
+        }
+    }
 
     suspend fun getConfigDirect(): LaptopConfigEntity? = laptopDao.getLaptopConfigDirect()
 
@@ -32,24 +84,154 @@ class LaptopRepository(
             val now = System.currentTimeMillis()
             intruderLogDao.insertLog(
                 IntruderLogEntity(
+                    timestamp = now - 1000 * 60 * 55,
+                    eventType = "GPS Hardware Lock",
+                    description = "Pinpoint RTK satellite fix acquired at desk workstation (Accuracy: ±1.0m)",
+                    warningIssued = null,
+                    wasLocked = false,
+                    severity = "INFO",
+                    category = "GPS",
+                    latitude = 40.7128902,
+                    longitude = -74.0060804,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
+                )
+            )
+            intruderLogDao.insertLog(
+                IntruderLogEntity(
                     timestamp = now - 1000 * 60 * 42,
                     eventType = "Motion Detected",
-                    description = "Webcam detected movement within 1.5m of keyboard area",
+                    description = "Webcam detected movement within 1.0m zone of keyboard",
                     warningIssued = "Automated Chime Played",
                     wasLocked = false,
-                    severity = "WARNING"
+                    severity = "WARNING",
+                    category = "SECURITY",
+                    latitude = 40.7128902,
+                    longitude = -74.0060804,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
+                )
+            )
+            intruderLogDao.insertLog(
+                IntruderLogEntity(
+                    timestamp = now - 1000 * 60 * 28,
+                    eventType = "Face Sighted (Authorized)",
+                    description = "Biometric scan verified: Primary Operator (Owner). Confidence 98%.",
+                    warningIssued = null,
+                    wasLocked = false,
+                    severity = "INFO",
+                    category = "SECURITY",
+                    latitude = 40.7128902,
+                    longitude = -74.0060804,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
                 )
             )
             intruderLogDao.insertLog(
                 IntruderLogEntity(
                     timestamp = now - 1000 * 60 * 18,
                     eventType = "Lock Triggered",
-                    description = "Screen locked remotely via Tecno Camon 12 Air",
+                    description = "Screen locked remotely via Android sentinel applet",
                     warningIssued = "Step away from this computer!",
                     wasLocked = true,
-                    severity = "ALERT"
+                    severity = "ALERT",
+                    category = "SECURITY",
+                    latitude = 40.7128902,
+                    longitude = -74.0060804,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
                 )
             )
+            intruderLogDao.insertLog(
+                IntruderLogEntity(
+                    timestamp = now - 1000 * 60 * 6,
+                    eventType = "Perimeter Geofence Armed",
+                    description = "Virtual boundary active (±60m). GPS 1-meter tracking armed.",
+                    warningIssued = null,
+                    wasLocked = true,
+                    severity = "INFO",
+                    category = "GPS",
+                    latitude = 40.7128902,
+                    longitude = -74.0060804,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
+                )
+            )
+
+            // Seed initial realistic GPS coordinates and historical trail
+            locationDao?.let { locDao ->
+                locDao.insertLocation(
+                    LaptopLocationEntity(
+                        timestamp = now - 1000 * 60 * 25,
+                        latitude = 40.7128812,
+                        longitude = -74.0060714,
+                        accuracyMeters = 1.0f,
+                        altitudeMeters = 15.0,
+                        speedKmh = 0.0f,
+                        provider = "GPS_HARDWARE",
+                        addressEstimate = "Office Workstation • Desk 4B (±1.0m Pinpoint)",
+                        transport = "LAN",
+                        isLiveFix = false
+                    )
+                )
+                locDao.insertLocation(
+                    LaptopLocationEntity(
+                        timestamp = now - 1000 * 60 * 5,
+                        latitude = 40.7128902,
+                        longitude = -74.0060804,
+                        accuracyMeters = 1.0f,
+                        altitudeMeters = 15.4,
+                        speedKmh = 0.0f,
+                        provider = "GPS_HARDWARE",
+                        addressEstimate = "Office Floor 3 • Near Window Dock (±1.0m Pinpoint)",
+                        transport = "WEB",
+                        isLiveFix = true
+                    )
+                )
+            }
+
+            // Seed initial Biometric Subject Dossiers & Faces
+            subjectProfileDao?.let { profileDao ->
+                profileDao.insertProfile(
+                    SubjectProfileEntity(
+                        subjectTag = "PROFILE-01",
+                        displayName = "Authorized Owner (Primary)",
+                        firstSeenTimestamp = now - 1000L * 3600 * 48,
+                        lastSeenTimestamp = now - 1000L * 60 * 15,
+                        encounterCount = 142,
+                        securityCategory = "AUTHORIZED",
+                        behaviorNotes = "Verified owner. High recognition consistency (98.4%). Regular daytime access pattern.",
+                        dwellDurationMinutes = 340,
+                        confidenceScore = 0.98f
+                    )
+                )
+                profileDao.insertProfile(
+                    SubjectProfileEntity(
+                        subjectTag = "PROFILE-02",
+                        displayName = "Unrecognized Visitor #4",
+                        firstSeenTimestamp = now - 1000L * 60 * 95,
+                        lastSeenTimestamp = now - 1000L * 60 * 35,
+                        encounterCount = 3,
+                        securityCategory = "INVESTIGATE",
+                        behaviorNotes = "Approached laptop while screen locked. Lingered for 2 mins within 1m radius.",
+                        dwellDurationMinutes = 4,
+                        confidenceScore = 0.82f
+                    )
+                )
+                profileDao.insertProfile(
+                    SubjectProfileEntity(
+                        subjectTag = "PROFILE-03",
+                        displayName = "Flagged Subject (After-Hours)",
+                        firstSeenTimestamp = now - 1000L * 3600 * 12,
+                        lastSeenTimestamp = now - 1000L * 3600 * 11,
+                        encounterCount = 1,
+                        securityCategory = "FLAGGED_THREAT",
+                        behaviorNotes = "Nighttime encounter (02:14 AM). Motion triggered auto-alarm and voice deterrent warning.",
+                        dwellDurationMinutes = 1,
+                        confidenceScore = 0.89f
+                    )
+                )
+            }
         }
     }
 
@@ -104,7 +286,11 @@ class LaptopRepository(
         warningIssued: String? = null,
         wasLocked: Boolean = false,
         severity: String = "WARNING",
-        category: String = "SECURITY"
+        category: String = "SECURITY",
+        latitude: Double? = 40.7128902,
+        longitude: Double? = -74.0060804,
+        accuracyMeters: Float? = 1.0f,
+        locationName: String? = "Workstation Floor 3 • Desk 4B"
     ): Long {
         val entity = IntruderLogEntity(
             timestamp = System.currentTimeMillis(),
@@ -114,7 +300,11 @@ class LaptopRepository(
             warningIssued = warningIssued,
             wasLocked = wasLocked,
             severity = severity,
-            category = category
+            category = category,
+            latitude = latitude,
+            longitude = longitude,
+            accuracyMeters = accuracyMeters,
+            locationName = locationName
         )
         return intruderLogDao.insertLog(entity)
     }

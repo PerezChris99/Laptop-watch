@@ -83,9 +83,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.DiagnosticEvent
 import com.example.data.IntruderLogEntity
 import com.example.data.LaptopConfigEntity
+import com.example.ui.theme.AmberLight
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonBorder
+import com.example.ui.theme.CrimsonLight
 import com.example.ui.theme.DeepSlate800
+import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlue50
@@ -95,6 +99,7 @@ import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
+import com.example.ui.theme.WhiteSmokeAlt
 import com.example.util.rememberAppHaptics
 import com.example.viewmodel.MonitorTab
 import com.example.viewmodel.MonitorUiState
@@ -365,6 +370,48 @@ fun AlertDashboardScreen(
                             }
                             Text(
                                 text = "Customize →",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SkyBluePrimary
+                            )
+                        }
+
+                        // GPS Hardware Telemetry & Geofence Status Strip
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(WhitePure)
+                                .border(0.8.dp, LightBlue100, RoundedCornerShape(8.dp))
+                                .clickable { onNavigateToTab(MonitorTab.TRACKER) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = if (uiState.isOutsideGeofence) CrimsonAlert else EmeraldSafe,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = "GPS: %.4f, %.4f (±%.0fm) • Geofence: %s".format(
+                                        uiState.currentLatitude,
+                                        uiState.currentLongitude,
+                                        uiState.gpsAccuracyMeters,
+                                        if (uiState.isGeofenceArmed) "ARMED" else "OFF"
+                                    ),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (uiState.isOutsideGeofence) CrimsonAlert else DeepSlate800
+                                )
+                            }
+                            Text(
+                                text = "OpenMap →",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = SkyBluePrimary
@@ -694,8 +741,8 @@ private fun ThreatLevelBannerCard(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFFF1F2))
-                        .border(1.dp, Color(0xFFFECDD3), RoundedCornerShape(8.dp))
+                        .background(CrimsonLight)
+                        .border(1.dp, CrimsonBorder, RoundedCornerShape(8.dp))
                         .testTag("dashboard_alarm_button")
                 ) {
                     Icon(
@@ -1042,7 +1089,7 @@ private fun RuleSwitchRow(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (checked) LightBlueSoft else Color(0xFFF1F5F9)),
+                    .background(if (checked) LightBlueSoft else WhiteSmokeAlt),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -1136,7 +1183,7 @@ private fun SystemHealthWatchdogCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFECFDF5))
+                        .background(EmeraldLight)
                         .padding(horizontal = 8.dp, vertical = 2.dp)
                 ) {
                     Box(
@@ -1329,8 +1376,8 @@ private fun IncidentAlertItem(
                         .clip(CircleShape)
                         .background(
                             when (log.severity) {
-                                "ALERT" -> Color(0xFFFFF1F2)
-                                "WARNING" -> Color(0xFFFEF3C7)
+                                "ALERT" -> CrimsonLight
+                                "WARNING" -> AmberLight
                                 else -> LightBlueSoft
                             }
                         ),

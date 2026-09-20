@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -75,6 +76,7 @@ import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlue50
 import com.example.ui.theme.LightBlueSoft
 import com.example.ui.theme.MutedSlate500
+import com.example.ui.theme.NightSecurityThemeState
 import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
@@ -502,6 +504,71 @@ fun LaptopSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // System-Wide Night Surveillance Dark Mode Card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("night_mode_card"),
+                        colors = CardDefaults.cardColors(containerColor = WhitePure),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(LightBlueSoft),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DarkMode,
+                                        contentDescription = "Night Surveillance",
+                                        tint = SkyBluePrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Night Surveillance Theme",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepSlate800
+                                    )
+                                    Text(
+                                        text = if (NightSecurityThemeState.isDarkMode)
+                                            "ACTIVE • Obsidian dark theme saves battery & eliminates nighttime eye glare"
+                                        else "INACTIVE • Standard day station theme",
+                                        fontSize = 11.sp,
+                                        color = if (NightSecurityThemeState.isDarkMode) EmeraldSafe else MutedSlate500,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                            Switch(
+                                checked = NightSecurityThemeState.isDarkMode,
+                                onCheckedChange = { NightSecurityThemeState.isDarkMode = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = WhitePure,
+                                    checkedTrackColor = SkyBluePrimary
+                                ),
+                                modifier = Modifier.testTag("dark_mode_theme_switch")
+                            )
+                        }
+                    }
+
                     // Away Vigilance Mode Card
                     Card(
                         modifier = Modifier.fillMaxWidth(),

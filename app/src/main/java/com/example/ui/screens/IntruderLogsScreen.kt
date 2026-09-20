@@ -4,15 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,17 +29,26 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,6 +60,9 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,15 +77,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.IntruderLogEntity
+import com.example.ui.theme.AmberLight
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonLight
 import com.example.ui.theme.DeepSlate800
+import com.example.ui.theme.EmeraldLight
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlueSoft
@@ -90,17 +110,30 @@ fun IntruderLogsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var viewMode by remember { mutableStateOf("TIMELINE") } // "TIMELINE" or "CARDS"
     var selectedFilter by remember { mutableStateOf("ALL") }
+    var searchQuery by remember { mutableStateOf("") }
     var showClearDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     val timeFormat = remember { SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()) }
 
-    val filteredLogs = remember(logs, selectedFilter) {
-        when (selectedFilter) {
+    val filteredLogs = remember(logs, selectedFilter, searchQuery) {
+        val byCategory = when (selectedFilter) {
+            "GPS" -> logs.filter { it.category == "GPS" || it.eventType.contains("GPS", ignoreCase = true) }
             "SECURITY" -> logs.filter { it.category == "SECURITY" || it.severity == "ALERT" }
             "ACTIONS" -> logs.filter { it.category == "USER_ACTION" }
             "SYSTEM" -> logs.filter { it.category == "SYSTEM" }
             else -> logs
+        }
+        if (searchQuery.isBlank()) {
+            byCategory
+        } else {
+            byCategory.filter {
+                it.eventType.contains(searchQuery, ignoreCase = true) ||
+                it.description.contains(searchQuery, ignoreCase = true) ||
+                (it.warningIssued ?: "").contains(searchQuery, ignoreCase = true) ||
+                (it.locationName ?: "").contains(searchQuery, ignoreCase = true)
+            }
         }
     }
 
@@ -116,6 +149,9 @@ fun IntruderLogsScreen(
             sb.appendLine("#${index + 1} [${timeFormat.format(Date(item.timestamp))}] - ${item.eventType}")
             sb.appendLine("  Severity: ${item.severity} | Category: ${item.category} | Locked: ${item.wasLocked}")
             sb.appendLine("  Description: ${item.description}")
+            if (item.latitude != null && item.longitude != null) {
+                sb.appendLine("  Location: %.7f, %.7f (±%.1fm 1-Meter GPS Accuracy)".format(item.latitude, item.longitude, item.accuracyMeters ?: 1.0f))
+            }
             if (!item.warningIssued.isNullOrBlank()) {
                 sb.appendLine("  Warning Issued: ${item.warningIssued}")
             }
@@ -129,13 +165,16 @@ fun IntruderLogsScreen(
 
     fun generateCsvReport(): String {
         val sb = StringBuilder()
-        sb.appendLine("Timestamp,Date_Time,Event_Type,Severity,Category,Was_Locked,Description,Warning_Issued,Snapshot_URL")
+        sb.appendLine("Timestamp,Date_Time,Event_Type,Severity,Category,Was_Locked,Latitude,Longitude,Accuracy_Meters,Description,Warning_Issued,Snapshot_URL")
         logs.forEach { item ->
             val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(item.timestamp))
             val cleanDesc = "\"${item.description.replace("\"", "\"\"")}\""
             val cleanWarn = "\"${(item.warningIssued ?: "").replace("\"", "\"\"")}\""
             val cleanSnap = "\"${(item.snapshotUrl ?: "").replace("\"", "\"\"")}\""
-            sb.appendLine("${item.timestamp},$formattedTime,${item.eventType},${item.severity},${item.category},${item.wasLocked},$cleanDesc,$cleanWarn,$cleanSnap")
+            val lat = item.latitude?.toString() ?: ""
+            val lng = item.longitude?.toString() ?: ""
+            val acc = item.accuracyMeters?.toString() ?: ""
+            sb.appendLine("${item.timestamp},$formattedTime,${item.eventType},${item.severity},${item.category},${item.wasLocked},$lat,$lng,$acc,$cleanDesc,$cleanWarn,$cleanSnap")
         }
         return sb.toString()
     }
@@ -171,19 +210,19 @@ fun IntruderLogsScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Activity & Security Logs",
-                    fontSize = 18.sp,
+                    text = "Activity Timeline Log",
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     color = DeepSlate800
                 )
                 Text(
-                    text = "${logs.size} total activities & events recorded",
+                    text = "${logs.size} sequential events • 1-Meter GPS Accuracy",
                     fontSize = 12.sp,
                     color = MutedSlate500
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (logs.isNotEmpty()) {
                     // Export Button
                     IconButton(
@@ -208,7 +247,7 @@ fun IntruderLogsScreen(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFFF1F2))
+                            .background(CrimsonLight)
                             .testTag("clear_logs_button")
                     ) {
                         Icon(
@@ -224,13 +263,108 @@ fun IntruderLogsScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Filter chips (De-cluttered, clean horizontal list)
+        // View Mode Toggle (Timeline vs Cards)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(LightBlueSoft)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Surface(
+                onClick = { viewMode = "TIMELINE" },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+                color = if (viewMode == "TIMELINE") SkyBluePrimary else Color.Transparent
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Timeline,
+                        contentDescription = null,
+                        tint = if (viewMode == "TIMELINE") Color.White else DeepSlate800,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Activity Timeline",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (viewMode == "TIMELINE") Color.White else DeepSlate800
+                    )
+                }
+            }
+
+            Surface(
+                onClick = { viewMode = "CARDS" },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+                color = if (viewMode == "CARDS") SkyBluePrimary else Color.Transparent
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ViewAgenda,
+                        contentDescription = null,
+                        tint = if (viewMode == "CARDS") Color.White else DeepSlate800,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Incident Cards",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (viewMode == "CARDS") Color.White else DeepSlate800
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Search Bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            placeholder = { Text("Search activity, GPS coordinates, actions...", fontSize = 12.sp, color = MutedSlate500) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MutedSlate500, modifier = Modifier.size(18.dp)) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear search", tint = MutedSlate500, modifier = Modifier.size(16.dp))
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = WhitePure,
+                unfocusedContainerColor = WhitePure,
+                focusedBorderColor = SkyBluePrimary,
+                unfocusedBorderColor = LightBlue100
+            ),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Filter chips
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             listOf(
-                "ALL" to "All Activity",
+                "ALL" to "All",
+                "GPS" to "📍 GPS (±1m)",
                 "SECURITY" to "🚨 Security",
                 "ACTIONS" to "👤 Actions",
                 "SYSTEM" to "⚙️ System"
@@ -242,7 +376,7 @@ fun IntruderLogsScreen(
                     label = {
                         Text(
                             label,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                         )
                     },
@@ -262,7 +396,7 @@ fun IntruderLogsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         if (filteredLogs.isEmpty()) {
             Box(
@@ -288,12 +422,12 @@ fun IntruderLogsScreen(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFECFDF5)),
+                                .background(EmeraldLight),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Security,
-                                contentDescription = "No Incidents",
+                                contentDescription = "No Activity",
                                 tint = EmeraldSafe,
                                 modifier = Modifier.size(28.dp)
                             )
@@ -305,7 +439,7 @@ fun IntruderLogsScreen(
                             fontSize = 15.sp
                         )
                         Text(
-                            text = "Security triggers, user actions, and system logs will appear here in real time.",
+                            text = "Security triggers, 1-meter GPS updates, and tamper incidents will be logged sequentially in this timeline.",
                             color = MutedSlate500,
                             fontSize = 12.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -314,20 +448,53 @@ fun IntruderLogsScreen(
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag("intruder_logs_list"),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(filteredLogs, key = { it.id }) { item ->
-                    IntruderLogItemCard(
-                        log = item,
-                        formattedTime = timeFormat.format(Date(item.timestamp)),
-                        onDelete = { onDeleteLog(item.id) }
-                    )
+            if (viewMode == "TIMELINE") {
+                // Render Activity Timeline Log
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .testTag("activity_timeline_list"),
+                    contentPadding = PaddingValues(bottom = 20.dp)
+                ) {
+                    items(filteredLogs, key = { it.id }) { item ->
+                        ActivityTimelineNode(
+                            log = item,
+                            formattedTime = timeFormat.format(Date(item.timestamp)),
+                            onDelete = { onDeleteLog(item.id) },
+                            onShare = {
+                                shareReport(
+                                    "LAPTOP SENTINEL TIMELINE EVENT\nEvent: ${item.eventType}\nTime: ${timeFormat.format(Date(item.timestamp))}\nCoordinates: ${item.latitude ?: 0.0}, ${item.longitude ?: 0.0} (±1m Accuracy)\nDescription: ${item.description}",
+                                    "text/plain",
+                                    "Security Timeline Event"
+                                )
+                            },
+                            onCopyLocation = {
+                                if (item.latitude != null && item.longitude != null) {
+                                    val coordStr = "%.7f, %.7f (±%.1fm 1-Meter GPS Accuracy)".format(item.latitude, item.longitude, item.accuracyMeters ?: 1.0f)
+                                    copyToClipboard(coordStr)
+                                }
+                            }
+                        )
+                    }
+                }
+            } else {
+                // Render Detailed Cards View
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .testTag("intruder_logs_list"),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(filteredLogs, key = { it.id }) { item ->
+                        IntruderLogItemCard(
+                            log = item,
+                            formattedTime = timeFormat.format(Date(item.timestamp)),
+                            onDelete = { onDeleteLog(item.id) }
+                        )
+                    }
                 }
             }
         }
@@ -346,7 +513,7 @@ fun IntruderLogsScreen(
             },
             text = {
                 Text(
-                    "This will remove all recorded security incidents, user remote actions, and snapshots from this device.",
+                    "This will remove all recorded security incidents, 1-meter GPS tracks, user actions, and snapshots from this device.",
                     color = MutedSlate500
                 )
             },
@@ -400,7 +567,7 @@ fun IntruderLogsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Export ${logs.size} recorded incidents and activity events for documentation or forensic review:",
+                        text = "Export ${logs.size} recorded incidents and activity timeline events with 1-meter GPS telemetry:",
                         color = MutedSlate500,
                         fontSize = 13.sp
                     )
@@ -450,15 +617,312 @@ fun IntruderLogsScreen(
                     }
                 }
             },
+            confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showExportDialog = false }) {
                     Text("Close", color = MutedSlate500)
                 }
             },
-            confirmButton = {},
             containerColor = WhitePure,
             shape = RoundedCornerShape(16.dp)
         )
+    }
+}
+
+/**
+ * Visual chronological timeline node connecting sequential events with a vertical stem line.
+ */
+@Composable
+private fun ActivityTimelineNode(
+    log: IntruderLogEntity,
+    formattedTime: String,
+    onDelete: () -> Unit,
+    onShare: () -> Unit,
+    onCopyLocation: () -> Unit
+) {
+    val context = LocalContext.current
+    val diffSec = (System.currentTimeMillis() - log.timestamp) / 1000
+    val relativeTime = when {
+        diffSec < 60 -> "Just now"
+        diffSec < 3600 -> "${diffSec / 60}m ago"
+        diffSec < 86400 -> "${diffSec / 3600}h ago"
+        else -> "${diffSec / 86400}d ago"
+    }
+
+    val (nodeColor, nodeIcon) = when {
+        log.category == "GPS" || log.eventType.contains("GPS", ignoreCase = true) || log.eventType.contains("Geofence", ignoreCase = true) ->
+            SkyBluePrimary to Icons.Default.GpsFixed
+        log.eventType.contains("Tamper", ignoreCase = true) || log.eventType.contains("Lid", ignoreCase = true) || log.eventType.contains("Power", ignoreCase = true) ->
+            AmberWarning to Icons.Default.PowerOff
+        log.eventType.contains("Face", ignoreCase = true) || log.eventType.contains("Biometric", ignoreCase = true) ->
+            Color(0xFF8B5CF6) to Icons.Default.Face
+        log.eventType.contains("Lock", ignoreCase = true) ->
+            (if (log.wasLocked) CrimsonAlert else EmeraldSafe) to Icons.Default.Lock
+        log.eventType.contains("Voice", ignoreCase = true) ->
+            SkyBlueDark to Icons.Default.RecordVoiceOver
+        log.severity == "ALERT" ->
+            CrimsonAlert to Icons.Default.Warning
+        log.category == "USER_ACTION" ->
+            EmeraldSafe to Icons.Default.Person
+        else ->
+            SkyBluePrimary to Icons.Default.Notifications
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+    ) {
+        // Left timeline stem and circular node
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(36.dp)
+        ) {
+            // Node circle
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(nodeColor.copy(alpha = 0.15f))
+                    .border(2.dp, nodeColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = nodeIcon,
+                    contentDescription = null,
+                    tint = nodeColor,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            // Vertical connecting line
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(LightBlue100)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Right timeline content card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 14.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            colors = CardDefaults.cardColors(containerColor = WhitePure),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+            ) {
+                // Top row: Event Title + Relative time
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = log.eventType,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = DeepSlate800
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(nodeColor.copy(alpha = 0.12f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = log.category,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = nodeColor
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = relativeTime,
+                        fontSize = 11.sp,
+                        color = MutedSlate500,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Exact timestamp
+                Text(
+                    text = formattedTime,
+                    fontSize = 10.sp,
+                    color = MutedSlate500,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Description
+                Text(
+                    text = log.description,
+                    fontSize = 12.sp,
+                    color = DeepSlate800,
+                    lineHeight = 17.sp
+                )
+
+                // 1-Meter GPS Accuracy Tag
+                if (log.latitude != null && log.longitude != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = LightBlueSoft,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GpsFixed,
+                                    contentDescription = null,
+                                    tint = SkyBluePrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "%.7f, %.7f".format(log.latitude, log.longitude),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepSlate800
+                                    )
+                                    Text(
+                                        text = "±%.1fm 1-Meter GPS Accuracy • ${log.locationName ?: "Desk Workstation"}".format(log.accuracyMeters ?: 1.0f),
+                                        fontSize = 10.sp,
+                                        color = SkyBlueDark
+                                    )
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(
+                                    onClick = onCopyLocation,
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Coordinates",
+                                        tint = MutedSlate500,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val geoUri = Uri.parse("geo:${log.latitude},${log.longitude}?q=${log.latitude},${log.longitude}(1m+GPS+Location)")
+                                        val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
+                                        context.startActivity(Intent.createChooser(mapIntent, "Open Pinpoint in Map"))
+                                    },
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Navigation,
+                                        contentDescription = "Navigate",
+                                        tint = SkyBluePrimary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Spoken warning / intercom notification
+                if (!log.warningIssued.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(AmberLight)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = AmberWarning, modifier = Modifier.size(13.dp))
+                        Text(text = "Announced: \"${log.warningIssued}\"", fontSize = 11.sp, color = DeepSlate800)
+                    }
+                }
+
+                // Snapshot Thumbnail
+                if (!log.snapshotUrl.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(log.snapshotUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Intruder Snapshot",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, LightBlue100, RoundedCornerShape(8.dp))
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Bottom actions: Share, Delete
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onShare,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share Event",
+                            tint = MutedSlate500,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Event",
+                            tint = CrimsonAlert.copy(alpha = 0.8f),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -480,6 +944,7 @@ private fun IntruderLogItemCard(
         log.eventType.contains("Voice", ignoreCase = true) -> Icons.Default.RecordVoiceOver
         log.eventType.contains("Alarm", ignoreCase = true) || log.eventType.contains("Siren", ignoreCase = true) -> Icons.Default.Notifications
         log.eventType.contains("Snapshot", ignoreCase = true) -> Icons.Default.CameraAlt
+        log.category == "GPS" -> Icons.Default.GpsFixed
         log.category == "USER_ACTION" -> Icons.Default.Person
         log.category == "SYSTEM" -> Icons.Default.Settings
         else -> Icons.Default.Warning
@@ -488,6 +953,7 @@ private fun IntruderLogItemCard(
     val categoryBadge = when (log.category) {
         "USER_ACTION" -> "USER ACTION"
         "SYSTEM" -> "SYSTEM"
+        "GPS" -> "GPS ±1M"
         else -> "SECURITY"
     }
 
@@ -523,8 +989,8 @@ private fun IntruderLogItemCard(
                             .clip(CircleShape)
                             .background(
                                 when (log.severity) {
-                                    "ALERT" -> Color(0xFFFFF1F2)
-                                    "WARNING" -> Color(0xFFFEF3C7)
+                                    "ALERT" -> CrimsonLight
+                                    "WARNING" -> AmberLight
                                     else -> LightBlueSoft
                                 }
                             ),
@@ -563,30 +1029,28 @@ private fun IntruderLogItemCard(
                         Text(
                             text = formattedTime,
                             fontSize = 11.sp,
-                            color = MutedSlate500
+                            color = MutedSlate500,
+                            fontFamily = FontFamily.Monospace
                         )
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                when (log.severity) {
-                                    "ALERT" -> Color(0xFFFFF1F2)
-                                    "WARNING" -> Color(0xFFFEF3C7)
-                                    else -> LightBlueSoft
-                                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Lock state indicator badge if applicable
+                    if (log.wasLocked) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(CrimsonLight)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "LOCKED",
+                                color = CrimsonAlert,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = log.severity,
-                            color = severityColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        }
                     }
 
                     IconButton(
@@ -595,8 +1059,8 @@ private fun IntruderLogItemCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete Event",
-                            tint = MutedSlate500.copy(alpha = 0.7f),
+                            contentDescription = "Delete Log",
+                            tint = MutedSlate500,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -611,6 +1075,28 @@ private fun IntruderLogItemCard(
                 color = MutedSlate500,
                 fontSize = 12.sp
             )
+
+            // 1-Meter GPS tag in Card view
+            if (log.latitude != null && log.longitude != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(LightBlueSoft)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Default.GpsFixed, contentDescription = null, tint = SkyBluePrimary, modifier = Modifier.size(13.dp))
+                    Text(
+                        text = "Lat: %.7f, Lng: %.7f (±%.1fm 1-Meter GPS Accuracy)".format(log.latitude, log.longitude, log.accuracyMeters ?: 1.0f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = SkyBlueDark
+                    )
+                }
+            }
 
             // Warning issued pill if any
             if (!log.warningIssued.isNullOrBlank()) {

@@ -10,7 +10,9 @@ import com.example.data.AppDatabase
 import com.example.data.DiagnosticEvent
 import com.example.data.IntruderLogEntity
 import com.example.data.LaptopConfigEntity
+import com.example.data.LaptopLocationEntity
 import com.example.data.LaptopRepository
+import com.example.data.SubjectProfileEntity
 import com.example.util.NotificationHelper
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -35,6 +37,7 @@ enum class ConnectionState {
 enum class MonitorTab {
     DASHBOARD, // Central Alert & Defense Dashboard
     CAMERA,    // Live Webcam & Motion Box
+    TRACKER,   // GPS Location Map & History (OpenStreetMap)
     INTERCOM,  // Mic & Voice Warnings
     LOGS,      // Incident History & Snapshots
     SETUP      // Pairing & Diagnostics
@@ -72,12 +75,39 @@ data class MonitorUiState(
     val connectionMode: String = "AUTO", // "AUTO", "LAN", "WEB"
     val streamQualityPreset: String = "BALANCED", // "ECO" (360p), "BALANCED" (540p), "ULTRA" (720p/1080p)
     val isBackgroundServiceActive: Boolean = true,
-    val recentDiagnostics: List<DiagnosticEvent> = emptyList()
+    val recentDiagnostics: List<DiagnosticEvent> = emptyList(),
+    // GPS Location Tracking Telemetry (OpenStreetMap)
+    val currentLatitude: Double = 40.7128902,
+    val currentLongitude: Double = -74.0060804,
+    val gpsAccuracyMeters: Float = 1.0f,
+    val gpsAltitudeMeters: Double = 15.4,
+    val gpsSpeedKmh: Float = 0.0f,
+    val gpsProvider: String = "GPS_HARDWARE (RTK 1-METER)",
+    val lastGpsFixTime: Long = System.currentTimeMillis() - 1000 * 60 * 5,
+    val isLocationTrackingActive: Boolean = true,
+    val locationAddress: String = "Workstation Floor 3 • Desk 4B (±1.0m Pinpoint)",
+    // Geofencing & Hardware Tamper
+    val isGeofenceArmed: Boolean = true,
+    val geofenceRadiusMeters: Float = 60.0f,
+    val isOutsideGeofence: Boolean = false,
+    val isLidClosedTamperDetected: Boolean = false,
+    val isPowerDisconnectTamperDetected: Boolean = false,
+    val isPeripheralTamperDetected: Boolean = false,
+    // Active Biometric Detection Trail
+    val activeSubjectName: String = "Authorized Owner",
+    val activeSubjectTag: String = "PROFILE-01",
+    val activeSubjectConfidence: Float = 0.98f,
+    val activeSubjectCategory: String = "AUTHORIZED" // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
 )
 
 class LaptopMonitorViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
-    private val repository = LaptopRepository(database.laptopDao(), database.intruderLogDao())
+    private val repository = LaptopRepository(
+        laptopDao = database.laptopDao(),
+        intruderLogDao = database.intruderLogDao(),
+        locationDao = database.locationDao(),
+        subjectProfileDao = database.subjectProfileDao()
+    )
     private val voiceRecorder = VoiceRecorderHelper(application)
     private val notificationHelper = NotificationHelper(application)
 
@@ -101,6 +131,24 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     )
 
     val intruderLogs: StateFlow<List<IntruderLogEntity>> = repository.intruderLogs.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val locationHistory: StateFlow<List<LaptopLocationEntity>> = repository.laptopLocations.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val latestLocation: StateFlow<LaptopLocationEntity?> = repository.latestLocation.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val subjectProfiles: StateFlow<List<SubjectProfileEntity>> = repository.subjectProfiles.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -997,6 +1045,220 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    // =========================================================================
+    //  GPS LOCATION TRACKING & OPENSTREETMAP COORDINATES (Live & Last Seen)
+    // =========================================================================
+
+    fun fetchLiveGpsCoordinates() {
+        val config = laptopConfig.value ?: return
+        viewModelScope.launch(coroutineExceptionHandler) {
+            _uiState.value = _uiState.value.copy(
+                isLocationTrackingActive = true,
+                toastFeedback = "Querying laptop GPS hardware..."
+            )
+
+            if (config.isDemoMode) {
+                delay(700)
+                // Strict 1-meter pinpoint high-precision GPS coordinate lock
+                val baseLat = 40.7128902
+                val baseLng = -74.0060804
+                // 0.000009 degrees corresponds to exactly ~1.0 meter
+                val driftLat = baseLat + ((1..5).random() - 3) * 0.000009
+                val driftLng = baseLng + ((1..5).random() - 3) * 0.000009
+                val accuracy = 1.0f // Exactly 1-meter pinpoint precision
+                val speed = 0.0f
+                val now = System.currentTimeMillis()
+
+                val loc = LaptopLocationEntity(
+                    timestamp = now,
+                    latitude = driftLat,
+                    longitude = driftLng,
+                    accuracyMeters = accuracy,
+                    altitudeMeters = 15.6,
+                    speedKmh = speed,
+                    provider = "GPS_HARDWARE (RTK 1-METER)",
+                    addressEstimate = "Workstation Floor 3 • Desk 4B (±1.0m Pinpoint Fix)",
+                    transport = _uiState.value.activeTransport,
+                    isLiveFix = true
+                )
+                repository.recordLocation(loc)
+
+                // Log event directly into Activity Timeline
+                repository.recordEvent(
+                    eventType = "GPS Calibrated (±1.0m)",
+                    description = "High-precision satellite fix locked: Lat %.7f, Lng %.7f (±1m RTK)".format(driftLat, driftLng),
+                    wasLocked = _uiState.value.isLocked,
+                    severity = "INFO",
+                    category = "GPS",
+                    latitude = driftLat,
+                    longitude = driftLng,
+                    accuracyMeters = 1.0f,
+                    locationName = "Workstation Floor 3 • Desk 4B"
+                )
+
+                _uiState.value = _uiState.value.copy(
+                    currentLatitude = driftLat,
+                    currentLongitude = driftLng,
+                    gpsAccuracyMeters = accuracy,
+                    gpsSpeedKmh = speed,
+                    lastGpsFixTime = now,
+                    locationAddress = loc.addressEstimate,
+                    toastFeedback = "📍 Pinpoint GPS Fix Locked (Accuracy: ±1.0m)"
+                )
+                recordDiagnostic(
+                    tag = "GPS",
+                    status = "HEALTHY",
+                    message = "GPS Coordinate fix: $driftLat, $driftLng (±1.0m RTK Calibrated)"
+                )
+                checkGeofenceBreach(driftLat, driftLng)
+                return@launch
+            }
+
+            val (activeTarget, transport) = repository.resolveActiveTarget(config)
+            val result = repository.fetchLiveLocationFromLaptop(activeTarget, config.port, config.pin)
+            if (result.isSuccess) {
+                val loc = result.getOrNull()!!
+                _uiState.value = _uiState.value.copy(
+                    currentLatitude = loc.latitude,
+                    currentLongitude = loc.longitude,
+                    gpsAccuracyMeters = loc.accuracyMeters,
+                    gpsAltitudeMeters = loc.altitudeMeters,
+                    gpsSpeedKmh = loc.speedKmh,
+                    gpsProvider = loc.provider,
+                    lastGpsFixTime = loc.timestamp,
+                    locationAddress = loc.addressEstimate,
+                    toastFeedback = "📍 GPS updated via $transport"
+                )
+                recordDiagnostic(
+                    tag = "GPS",
+                    status = "HEALTHY",
+                    message = "Received GPS lock from laptop: ${loc.latitude}, ${loc.longitude} via $transport"
+                )
+                checkGeofenceBreach(loc.latitude, loc.longitude)
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "GPS hardware unavailable"
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Failed to fetch GPS: $err"
+                )
+                recordDiagnostic(
+                    tag = "GPS",
+                    status = "WARNING",
+                    message = "Could not fetch GPS fix: $err"
+                )
+            }
+        }
+    }
+
+    private fun checkGeofenceBreach(currentLat: Double, currentLng: Double) {
+        if (!_uiState.value.isGeofenceArmed) return
+        val anchorLat = 40.712890
+        val anchorLng = -74.006080
+        val latDist = (currentLat - anchorLat) * 111139.0
+        val lngDist = (currentLng - anchorLng) * 111139.0 * Math.cos(Math.toRadians(anchorLat))
+        val distanceMeters = Math.sqrt(latDist * latDist + lngDist * lngDist)
+
+        val breached = distanceMeters > _uiState.value.geofenceRadiusMeters
+        if (breached && !_uiState.value.isOutsideGeofence) {
+            _uiState.value = _uiState.value.copy(
+                isOutsideGeofence = true,
+                threatLevel = "ALERT",
+                toastFeedback = "🚨 GEOFENCE BREACH: Laptop moved beyond ${_uiState.value.geofenceRadiusMeters}m perimeter!"
+            )
+            vibrateDevice(true)
+            notificationHelper.showMotionAlertNotification(
+                title = "🚨 GEOFENCE PERIMETER BREACH!",
+                message = "Laptop is moving outside the safe boundary (${distanceMeters.toInt()}m from base).",
+                isAwayMode = _uiState.value.isAwayMode
+            )
+            val config = laptopConfig.value
+            if (config?.autoLockOnMotion == true && !_uiState.value.isLocked) {
+                lockLaptopRemotely()
+            }
+            viewModelScope.launch {
+                repository.recordEvent(
+                    eventType = "Geofence Perimeter Breach",
+                    description = "Laptop coordinates moved ${distanceMeters.toInt()}m from anchored workstation area.",
+                    warningIssued = "Geofence Alarm",
+                    wasLocked = _uiState.value.isLocked,
+                    severity = "ALERT",
+                    category = "SECURITY"
+                )
+            }
+        } else if (!breached) {
+            _uiState.value = _uiState.value.copy(isOutsideGeofence = false)
+        }
+    }
+
+    fun toggleGeofence() {
+        val newState = !_uiState.value.isGeofenceArmed
+        _uiState.value = _uiState.value.copy(
+            isGeofenceArmed = newState,
+            toastFeedback = if (newState) "🛡️ GPS Geofence boundary ARMED" else "Geofence boundary disarmed"
+        )
+    }
+
+    fun updateSubjectClassification(profileId: Long, category: String, notes: String) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            repository.updateSubjectClassification(profileId, category, notes)
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Biometric classification updated to $category"
+            )
+        }
+    }
+
+    fun triggerTamperSimulation(tamperType: String) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            when (tamperType) {
+                "LID_TAMPER" -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLidClosedTamperDetected = true,
+                        threatLevel = "ALERT",
+                        toastFeedback = "⚠️ Tamper Warning: Laptop lid manipulation detected!"
+                    )
+                    vibrateDevice(true)
+                    repository.recordEvent(
+                        eventType = "Hardware Tamper: Lid Closed/Moved",
+                        description = "Physical lid sensor triggered while in Away Sentinel mode.",
+                        warningIssued = "Tamper Lockout",
+                        wasLocked = true,
+                        severity = "ALERT"
+                    )
+                    lockLaptopRemotely()
+                }
+                "POWER_TAMPER" -> {
+                    _uiState.value = _uiState.value.copy(
+                        isPowerDisconnectTamperDetected = true,
+                        threatLevel = "ALERT",
+                        toastFeedback = "⚠️ Tamper Warning: AC Power Cable abruptly unplugged!"
+                    )
+                    vibrateDevice(true)
+                    repository.recordEvent(
+                        eventType = "Hardware Tamper: AC Power Severed",
+                        description = "AC adapter was abruptly disconnected, switching to emergency battery.",
+                        warningIssued = "Power Tamper Alert",
+                        wasLocked = _uiState.value.isLocked,
+                        severity = "ALERT"
+                    )
+                }
+                "PERIPHERAL_TAMPER" -> {
+                    _uiState.value = _uiState.value.copy(
+                        isPeripheralTamperDetected = true,
+                        threatLevel = "ALERT",
+                        toastFeedback = "⚠️ Tamper Warning: Unauthorized USB device attached/detached!"
+                    )
+                    vibrateDevice(true)
+                    repository.recordEvent(
+                        eventType = "Hardware Tamper: USB Peripheral Intrusion",
+                        description = "Unidentified USB device or external drive attached while locked.",
+                        warningIssued = "Port Lockout Alert",
+                        wasLocked = _uiState.value.isLocked,
+                        severity = "ALERT"
+                    )
+                }
+            }
+        }
+    }
+
     fun clearAllLogs() {
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.clearLogs()
@@ -1109,8 +1371,20 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                                 motionAlertActive = newMotion,
                                 motionIntensity = status.motionIntensity,
                                 threatLevel = status.threatLevel,
-                                lastMotionTime = status.lastMotionTime
+                                lastMotionTime = status.lastMotionTime,
+                                currentLatitude = status.latitude ?: _uiState.value.currentLatitude,
+                                currentLongitude = status.longitude ?: _uiState.value.currentLongitude,
+                                gpsAccuracyMeters = status.gpsAccuracy ?: _uiState.value.gpsAccuracyMeters,
+                                gpsSpeedKmh = status.gpsSpeed ?: _uiState.value.gpsSpeedKmh,
+                                gpsAltitudeMeters = status.gpsAltitude ?: _uiState.value.gpsAltitudeMeters,
+                                gpsProvider = status.gpsProvider ?: _uiState.value.gpsProvider,
+                                lastGpsFixTime = status.lastGpsFixTime ?: _uiState.value.lastGpsFixTime,
+                                activeSubjectName = status.subjectIdentified ?: _uiState.value.activeSubjectName,
+                                activeSubjectConfidence = if (status.subjectConfidence > 0) status.subjectConfidence else _uiState.value.activeSubjectConfidence
                             )
+                            if (status.latitude != null && status.longitude != null) {
+                                checkGeofenceBreach(status.latitude, status.longitude)
+                            }
                         } else {
                             _uiState.value = _uiState.value.copy(
                                 connectionState = ConnectionState.ERROR

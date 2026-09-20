@@ -79,8 +79,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.ui.theme.AmberLight
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.CardBorderLight
 import com.example.ui.theme.CrimsonAlert
+import com.example.ui.theme.CrimsonLight
 import com.example.ui.theme.DeepSlate800
 import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.LightBlue100
@@ -90,6 +93,7 @@ import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
+import com.example.ui.theme.WhiteSmokeAlt
 import com.example.util.rememberAppHaptics
 import com.example.viewmodel.ConnectionState
 import com.example.viewmodel.MonitorUiState
@@ -466,7 +470,7 @@ fun LiveCameraScreen(
                     modifier = Modifier
                         .size(34.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (uiState.isAutoStreamingEnabled) LightBlueSoft else Color(0xFFF1F5F9))
+                        .background(if (uiState.isAutoStreamingEnabled) LightBlueSoft else WhiteSmokeAlt)
                         .border(1.dp, if (uiState.isAutoStreamingEnabled) SkyBluePrimary else LightBlue100, RoundedCornerShape(8.dp))
                         .testTag("toggle_stream_button")
                 ) {
@@ -552,7 +556,7 @@ fun LiveCameraScreen(
                                     .weight(1f)
                                     .height(32.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFFFF1F2),
+                                    containerColor = CrimsonLight,
                                     contentColor = CrimsonAlert
                                 ),
                                 shape = RoundedCornerShape(6.dp),
@@ -570,8 +574,8 @@ fun LiveCameraScreen(
                                     .weight(1f)
                                     .height(32.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFFEF3C7),
-                                    contentColor = Color(0xFF92400E)
+                                    containerColor = AmberLight,
+                                    contentColor = AmberWarning
                                 ),
                                 shape = RoundedCornerShape(6.dp),
                                 contentPadding = PaddingValues(0.dp)
@@ -702,7 +706,7 @@ fun LiveCameraScreen(
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .background(if (isSelected) SkyBluePrimary else Color(0xFFF1F5F9))
+                                                .background(if (isSelected) SkyBluePrimary else WhiteSmokeAlt)
                                                 .clickable { onSetStreamQuality(preset) }
                                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                                             contentAlignment = Alignment.Center
@@ -808,6 +812,7 @@ private fun SurveillanceSimulationCanvas(
     motionActive: Boolean,
     subjectDetected: Boolean
 ) {
+    val gridColor = CardBorderLight
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width
         val height = size.height
@@ -817,7 +822,7 @@ private fun SurveillanceSimulationCanvas(
         var x = 0f
         while (x < width) {
             drawLine(
-                color = Color(0xFF1E293B),
+                color = gridColor,
                 start = Offset(x, 0f),
                 end = Offset(x, height),
                 strokeWidth = 1f
@@ -828,7 +833,7 @@ private fun SurveillanceSimulationCanvas(
         var y = 0f
         while (y < height) {
             drawLine(
-                color = Color(0xFF1E293B),
+                color = gridColor,
                 start = Offset(0f, y),
                 end = Offset(width, y),
                 strokeWidth = 1f

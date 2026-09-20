@@ -2,6 +2,7 @@ package com.example
 
 import com.example.data.DiagnosticEvent
 import com.example.data.LaptopConfigEntity
+import com.example.ui.theme.NightSecurityThemeState
 import com.example.viewmodel.MonitorTab
 import com.example.viewmodel.MonitorUiState
 import org.junit.Assert.*
@@ -36,5 +37,15 @@ class ExampleUnitTest {
         assertEquals("SECURE", state.threatLevel)
         assertEquals(0, state.caughtErrorsCount)
         assertFalse(state.motionAlertActive)
+        assertEquals(1.0f, state.gpsAccuracyMeters, 0.001f)
+    }
+
+    @Test
+    fun testNightSecurityThemeState_toggle() {
+        val initialMode = NightSecurityThemeState.isDarkMode
+        NightSecurityThemeState.isDarkMode = !initialMode
+        assertEquals(!initialMode, NightSecurityThemeState.isDarkMode)
+        // Reset to original mode
+        NightSecurityThemeState.isDarkMode = initialMode
     }
 }
