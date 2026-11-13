@@ -242,6 +242,15 @@ class LaptopMonitorService : Service() {
         } catch (_: Exception) {}
     }
 
+    // Android 15+ imposes a time limit on background dataSync foreground services.
+    // This avoids a forced process crash; a push-driven background architecture
+    // is still required before continuous-monitoring release claims.
+    @androidx.annotation.RequiresApi(35)
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground dataSync timeout reached; stopping monitoring service")
+        stopSelf(startId)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         pollingJob?.cancel()
