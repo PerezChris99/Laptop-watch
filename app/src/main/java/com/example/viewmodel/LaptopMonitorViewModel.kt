@@ -69,35 +69,37 @@ data class MonitorUiState(
     val systemHealthStatus: String = "100% OPERATIONAL",
     val caughtErrorsCount: Int = 0,
     val activeTransport: String = "LAN", // "LAN" or "WEB"
-    val networkLatencyMs: Long? = 28L,
+    val networkLatencyMs: Long? = null,
     val isAwayMode: Boolean = false,
     val awaySensitivity: String = "HIGH", // "HIGH" (5%) or "ULTRA" (2%)
     val connectionMode: String = "AUTO", // "AUTO", "LAN", "WEB"
     val streamQualityPreset: String = "BALANCED", // "ECO" (360p), "BALANCED" (540p), "ULTRA" (720p/1080p)
-    val isBackgroundServiceActive: Boolean = true,
+    val isBackgroundServiceActive: Boolean = false,
     val recentDiagnostics: List<DiagnosticEvent> = emptyList(),
     // GPS Location Tracking Telemetry (OpenStreetMap)
-    val currentLatitude: Double = 40.7128902,
-    val currentLongitude: Double = -74.0060804,
-    val gpsAccuracyMeters: Float = 1.0f,
-    val gpsAltitudeMeters: Double = 15.4,
+    val currentLatitude: Double = 0.0,
+    val currentLongitude: Double = 0.0,
+    val gpsAccuracyMeters: Float = 0.0f,
+    val gpsAltitudeMeters: Double = 0.0,
     val gpsSpeedKmh: Float = 0.0f,
-    val gpsProvider: String = "GPS_HARDWARE (RTK 1-METER)",
-    val lastGpsFixTime: Long = System.currentTimeMillis() - 1000 * 60 * 5,
-    val isLocationTrackingActive: Boolean = true,
-    val locationAddress: String = "Workstation Floor 3 • Desk 4B (±1.0m Pinpoint)",
+    val gpsProvider: String = "UNAVAILABLE",
+    val lastGpsFixTime: Long = 0L,
+    val isLocationTrackingActive: Boolean = false,
+    val locationAddress: String = "No verified laptop location available",
+    val hasLocationCoordinates: Boolean = false,
+    val isLocationDemo: Boolean = false,
     // Geofencing & Hardware Tamper
-    val isGeofenceArmed: Boolean = true,
+    val isGeofenceArmed: Boolean = false,
     val geofenceRadiusMeters: Float = 60.0f,
     val isOutsideGeofence: Boolean = false,
     val isLidClosedTamperDetected: Boolean = false,
     val isPowerDisconnectTamperDetected: Boolean = false,
     val isPeripheralTamperDetected: Boolean = false,
     // Active Biometric Detection Trail
-    val activeSubjectName: String = "Authorized Owner",
-    val activeSubjectTag: String = "PROFILE-01",
-    val activeSubjectConfidence: Float = 0.98f,
-    val activeSubjectCategory: String = "AUTHORIZED" // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
+    val activeSubjectName: String = "No verified subject",
+    val activeSubjectTag: String = "",
+    val activeSubjectConfidence: Float = 0.0f,
+    val activeSubjectCategory: String = "UNKNOWN" // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
 )
 
 class LaptopMonitorViewModel(application: Application) : AndroidViewModel(application) {
@@ -226,6 +228,13 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     message = "Switched into safe demo simulation mode"
                 )
             } else {
+                _uiState.value = _uiState.value.copy(
+                    hasLocationCoordinates = false,
+                    isLocationDemo = false,
+                    isLocationTrackingActive = false,
+                    locationAddress = "No verified laptop location available",
+                    gpsAccuracyMeters = 0.0f
+                )
                 testConnection()
             }
         }
@@ -1058,59 +1067,19 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
             )
 
             if (config.isDemoMode) {
-                delay(700)
-                // Strict 1-meter pinpoint high-precision GPS coordinate lock
-                val baseLat = 40.7128902
-                val baseLng = -74.0060804
-                // 0.000009 degrees corresponds to exactly ~1.0 meter
-                val driftLat = baseLat + ((1..5).random() - 3) * 0.000009
-                val driftLng = baseLng + ((1..5).random() - 3) * 0.000009
-                val accuracy = 1.0f // Exactly 1-meter pinpoint precision
-                val speed = 0.0f
-                val now = System.currentTimeMillis()
-
-                val loc = LaptopLocationEntity(
-                    timestamp = now,
-                    latitude = driftLat,
-                    longitude = driftLng,
-                    accuracyMeters = accuracy,
-                    altitudeMeters = 15.6,
-                    speedKmh = speed,
-                    provider = "GPS_HARDWARE (RTK 1-METER)",
-                    addressEstimate = "Workstation Floor 3 • Desk 4B (±1.0m Pinpoint Fix)",
-                    transport = _uiState.value.activeTransport,
-                    isLiveFix = true
-                )
-                repository.recordLocation(loc)
-
-                // Log event directly into Activity Timeline
-                repository.recordEvent(
-                    eventType = "GPS Calibrated (±1.0m)",
-                    description = "High-precision satellite fix locked: Lat %.7f, Lng %.7f (±1m RTK)".format(driftLat, driftLng),
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "INFO",
-                    category = "GPS",
-                    latitude = driftLat,
-                    longitude = driftLng,
-                    accuracyMeters = 1.0f,
-                    locationName = "Workstation Floor 3 • Desk 4B"
-                )
-
+                delay(300)
                 _uiState.value = _uiState.value.copy(
-                    currentLatitude = driftLat,
-                    currentLongitude = driftLng,
-                    gpsAccuracyMeters = accuracy,
-                    gpsSpeedKmh = speed,
-                    lastGpsFixTime = now,
-                    locationAddress = loc.addressEstimate,
-                    toastFeedback = "📍 Pinpoint GPS Fix Locked (Accuracy: ±1.0m)"
+                    currentLatitude = 40.7128902,
+                    currentLongitude = -74.0060804,
+                    hasLocationCoordinates = true,
+                    isLocationDemo = true,
+                    isLocationTrackingActive = false,
+                    gpsAccuracyMeters = 0.0f,
+                    gpsProvider = "SIMULATION",
+                    lastGpsFixTime = 0L,
+                    locationAddress = "Simulated demo position — not a GPS fix",
+                    toastFeedback = "Demo position only; no real laptop GPS"
                 )
-                recordDiagnostic(
-                    tag = "GPS",
-                    status = "HEALTHY",
-                    message = "GPS Coordinate fix: $driftLat, $driftLng (±1.0m RTK Calibrated)"
-                )
-                checkGeofenceBreach(driftLat, driftLng)
                 return@launch
             }
 
@@ -1121,6 +1090,9 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 _uiState.value = _uiState.value.copy(
                     currentLatitude = loc.latitude,
                     currentLongitude = loc.longitude,
+                    hasLocationCoordinates = true,
+                    isLocationDemo = false,
+                    isLocationTrackingActive = true,
                     gpsAccuracyMeters = loc.accuracyMeters,
                     gpsAltitudeMeters = loc.altitudeMeters,
                     gpsSpeedKmh = loc.speedKmh,
@@ -1138,7 +1110,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
             } else {
                 val err = result.exceptionOrNull()?.message ?: "GPS hardware unavailable"
                 _uiState.value = _uiState.value.copy(
-                    toastFeedback = "Failed to fetch GPS: $err"
+                    toastFeedback = "No verified laptop location: $err",
+                    hasLocationCoordinates = false,
+                    isLocationDemo = false,
+                    isLocationTrackingActive = false,
+                    locationAddress = "No verified laptop location available",
+                    gpsAccuracyMeters = 0.0f
                 )
                 recordDiagnostic(
                     tag = "GPS",

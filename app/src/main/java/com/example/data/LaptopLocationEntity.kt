@@ -14,11 +14,11 @@ data class LaptopLocationEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val latitude: Double,
     val longitude: Double,
-    val accuracyMeters: Float = 1.0f,
+    val accuracyMeters: Float = 0.0f,
     val altitudeMeters: Double = 0.0,
     val speedKmh: Float = 0.0f,
-    val provider: String = "GPS_HARDWARE", // "GPS_HARDWARE", "GEO_IP_BACKUP"
-    val addressEstimate: String = "GPS Satellite Fix Acquired",
+    val provider: String = "UNAVAILABLE", // "GPS_HARDWARE", "GEO_IP_BACKUP"
+    val addressEstimate: String = "Location unavailable",
     val transport: String = "LAN", // "LAN" or "WEB"
-    val isLiveFix: Boolean = true
+    val isLiveFix: Boolean = false
 )
