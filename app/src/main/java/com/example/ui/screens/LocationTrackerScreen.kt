@@ -191,14 +191,16 @@ fun LocationTrackerScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "EXACT GPS COORDINATES",
+                                    text = if (uiState.isLocationDemo) "SIMULATED DEMO LOCATION" else "LAPTOP LOCATION",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Slate500
                                 )
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text(
-                                    text = "%.7f, %.7f".format(uiState.currentLatitude, uiState.currentLongitude),
+                                    text = if (uiState.hasLocationCoordinates) {
+                                        "%.7f, %.7f".format(uiState.currentLatitude, uiState.currentLongitude)
+                                    } else "Unavailable",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
@@ -213,8 +215,9 @@ fun LocationTrackerScreen(
                             }
 
                             IconButton(
+                                enabled = uiState.hasLocationCoordinates && !uiState.isLocationDemo,
                                 onClick = {
-                                    val geoUri = Uri.parse("geo:${uiState.currentLatitude},${uiState.currentLongitude}?q=${uiState.currentLatitude},${uiState.currentLongitude}(Laptop+Location+1m+Accurate)")
+                                    val geoUri = Uri.parse("geo:${uiState.currentLatitude},${uiState.currentLongitude}?q=${uiState.currentLatitude},${uiState.currentLongitude}(Laptop+Location)")
                                     val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
                                     context.startActivity(Intent.createChooser(mapIntent, "Open Coordinates In"))
                                 }
@@ -238,7 +241,9 @@ fun LocationTrackerScreen(
                         LocationStatBadge(
                             icon = Icons.Default.GpsFixed,
                             label = "Accuracy",
-                            value = "±%.1fm (1m RTK)".format(uiState.gpsAccuracyMeters),
+                            value = if (uiState.isLocationDemo) "SIMULATED"
+                                    else if (!uiState.hasLocationCoordinates) "Unavailable"
+                                    else "±%.1fm reported".format(uiState.gpsAccuracyMeters),
                             modifier = Modifier.weight(1f)
                         )
                         LocationStatBadge(
@@ -297,15 +302,28 @@ fun LocationTrackerScreen(
                 // Interactive OpenStreetMap Canvas
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OpenStreetMapContainer(
-                            latitude = uiState.currentLatitude,
-                            longitude = uiState.currentLongitude,
-                            accuracyMeters = uiState.gpsAccuracyMeters,
-                            isLiveFix = true,
-                            isGeofenceArmed = uiState.isGeofenceArmed,
-                            geofenceRadiusMeters = uiState.geofenceRadiusMeters,
-                            locationHistory = locationHistory
-                        )
+                        if (uiState.hasLocationCoordinates) {
+                            OpenStreetMapContainer(
+                                latitude = uiState.currentLatitude,
+                                longitude = uiState.currentLongitude,
+                                accuracyMeters = uiState.gpsAccuracyMeters,
+                                isLiveFix = !uiState.isLocationDemo,
+                                isGeofenceArmed = uiState.isGeofenceArmed && !uiState.isLocationDemo,
+                                geofenceRadiusMeters = uiState.geofenceRadiusMeters,
+                                locationHistory = locationHistory
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(220.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No verified GPS fix. A real location provider is required.",
+                                    color = Slate600,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
 
                         // Geofence Perimeter Controls Card
                         Card(

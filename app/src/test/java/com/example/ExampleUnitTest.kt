@@ -12,9 +12,9 @@ class ExampleUnitTest {
     @Test
     fun testDefaultConfig_motionDetectionArmed() {
         val config = LaptopConfigEntity()
-        assertTrue("Motion detection should be armed by default", config.isMotionArmed)
+        assertFalse("Explicit arming required", config.isMotionArmed)
         assertEquals("MEDIUM", config.motionSensitivity)
-        assertTrue("Auto-lock on motion should be true by default", config.autoLockOnMotion)
+        assertFalse("Auto-lock requires user opt-in", config.autoLockOnMotion)
         assertTrue("Auto-snap on motion should be true by default", config.autoSnapOnMotion)
     }
 
@@ -37,7 +37,10 @@ class ExampleUnitTest {
         assertEquals("SECURE", state.threatLevel)
         assertEquals(0, state.caughtErrorsCount)
         assertFalse(state.motionAlertActive)
-        assertEquals(1.0f, state.gpsAccuracyMeters, 0.001f)
+        assertEquals(0.0f, state.gpsAccuracyMeters, 0.001f)
+        assertFalse(state.hasLocationCoordinates)
+        assertFalse(state.isLocationDemo)
+        assertEquals("UNAVAILABLE", state.gpsProvider)
     }
 
     @Test

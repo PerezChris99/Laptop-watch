@@ -108,7 +108,7 @@ fun LaptopSetupScreen(
     var laptopName by remember { mutableStateOf(config?.laptopName ?: "My Laptop") }
     var ipAddress by remember { mutableStateOf(config?.ipAddress ?: "192.168.1.100") }
     var portText by remember { mutableStateOf((config?.port ?: 5000).toString()) }
-    var pin by remember { mutableStateOf(config?.pin ?: "7890") }
+    var pin by remember { mutableStateOf(config?.pin ?: "") }
     var remoteWebUrl by remember { mutableStateOf(config?.remoteWebUrl ?: "") }
     var connectionMode by remember { mutableStateOf(config?.connectionMode ?: "AUTO") }
     var savedSuccess by remember { mutableStateOf(false) }
