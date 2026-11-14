@@ -14,11 +14,25 @@ def test_secret_is_required_and_never_returned():
     with TestClient(create_owner_health_app(TOKEN), client=('127.0.0.1', 52977)) as client:
         assert client.get("/health").status_code == 401
         assert client.get("/health", headers={"Authorization": "Bearer " + "a" * 64}).status_code == 401
-        result = client.get("/health", headers={"Authorization": "Bearer " + TOKEN})
+        challenge = "ab" * 16
+        result = client.get("/health", headers={
+            "Authorization": "Bearer " + TOKEN,
+            "X-LaptopWatch-Challenge": challenge,
+        })
         assert result.status_code == 200
         assert result.json() == {"healthy": True}
         assert TOKEN not in result.text
         assert result.headers["cache-control"] == "no-store"
+        import hashlib
+        import hmac
+        proof = hmac.new(TOKEN.encode("ascii"), challenge.encode("ascii"),
+                         hashlib.sha256).hexdigest()
+        assert result.headers["x-laptopwatch-health-proof"] == proof
+        assert client.get("/health", headers={"Authorization": "Bearer " + TOKEN}).status_code == 400
+        assert client.get("/health", headers={
+            "Authorization": "Bearer " + TOKEN,
+            "X-LaptopWatch-Challenge": "z" * 32,
+        }).status_code == 400
 
 
 def test_owner_health_channel_has_zero_controls():

@@ -6,6 +6,7 @@ and uses a random per-start bearer inherited through the child's environment.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
 
@@ -37,10 +38,19 @@ def create_owner_health_app(token: str) -> FastAPI:
         return await call_next(request)
 
     @app.get("/health")
-    async def health():
-        # No secrets, peer identities, PII, media state or framework docs.
+    async def health(request: Request):
+        # A nonce-bound response proves that the listener received the
+        # inherited one-launch secret; a rogue localhost server cannot fake
+        # health by answering plain HTTP 200.
+        challenge = request.headers.get("x-laptopwatch-challenge", "")
+        if re.fullmatch(r"[a-f0-9]{32}", challenge) is None:
+            return JSONResponse({"error": "Bad request"}, status_code=400,
+                                headers={"Cache-Control": "no-store"})
+        proof = hmac.new(token.encode("ascii"), challenge.encode("ascii"),
+                         hashlib.sha256).hexdigest()
         return JSONResponse({"healthy": True}, headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "X-LaptopWatch-Health-Proof": proof,
         })
 
     return app
