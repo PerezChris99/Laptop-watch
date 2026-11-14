@@ -1,89 +1,35 @@
-# LaptopWatch — gated release checklist
+# LaptopWatch — verified-release checklist
 
-**Status 2026-11-14: NOT RELEASE READY.** This checklist is an executable policy, not a marketing declaration.
+**November 14, 2026: source integration only, NOT a signed or sale-ready release.**
 
-## Current development checkpoint (NOT A RELEASE)
+## Source implementation
 
-- [x] Secure Python gateway supports signed armed-only JPG photo / bounded MP4 start-stop / authenticated evidence download (source code; hardware tests pending).
-- [x] Local, opt-in `gpsd` GNSS fixes validate accuracy and timestamp; queue preserves unsent last-seen.
-- [x] 13 newly added media/location tests executed with mocks; they passed locally on Python 3.13.
-- [x] Original repository artwork restored in root README; café/restroom and theft recovery workflows documented.
-- [ ] Android uses the new gateway with QR pairing, pinned TLS and WebRTC.
-- [ ] Photographs and MP4s tested for real devices, codecs, camera permissions and recovery after process crash.
-- [ ] A trusted encrypted remote location service deployed and observable by paired phone after laptop theft.
-- [ ] Android, Windows, macOS and Linux build and physical acceptance gates all pass.
-- [ ] Production security audit, signed installer, legal and commercial releases approved.
+- [x] QR Ed25519 pairing, mobile Keystore, certificate fingerprint verification
+- [x] Scoped signed HTTPS control and nonce replay/identity revocation
+- [x] Consent-gated JPEG/MP4, WebRTC media and permission-gated microphone
+- [x] Tauri/Rust/React native owner dashboard, device list and evidence folder
+- [x] Optional person classifier with SHA256-verified externally installed ONNX
+- [x] Local owner-armed person incident events with bounded photo/MP4/siren
+- [x] Signed incident delivery, AES-GCM encrypted relay, FCM token and retry
+- [x] Android FCM opt-in, network-retry registration and foreground signed sync
+- [x] Validated GNSS/gpsd, durable offline last-seen, signed HTTPS receipt queue
+- [x] Deprecated unsafe legacy PIN/HTTP transport and one-click installer
+- [x] README original imagery, technical stack, café/restroom and recovery docs
+- [x] Python incident/relay/push regression test source
 
-## v0.1.0 audit & architecture
-- [x] Source inventory and current architecture documented.
-- [x] Severity-classified source defects recorded.
-- [x] Target ADRs and threat model written.
-- [ ] Mermaid diagrams extracted and rendered by Mermaid CLI.
-- [ ] Docs reviewed and milestone merge/tag verified.
+## Stop-ship gates, not automatically passed
 
-## v0.2.0 secure media and discovery
-- [ ] All auth/tunnel traffic protected by validated pinned TLS and per-peer signed commands.
-- [ ] Key enrollment, QR, unpair, expiration, revocation and replay/rate-limit tests green.
-- [ ] Video + bidirectional audio WebRTC, fallback snapshots, mDNS/ICE, optional TURN.
-- [ ] Android+Python+signaling builds and physical LAN/WAN latency recorded.
+- [ ] Integrated Python, Android, Rust, React and relay build/tests verified
+- [ ] Official Gradle wrapper jar/scripts and reviewed Node/Cargo locks
+- [ ] Real Windows/Mac/Linux bundles, release signatures and installers
+- [ ] Actual Android and laptop pairing/photo/video/audio/lock/siren trials
+- [ ] Licensed verified person model, real scenes, false positives, resource soak
+- [ ] Real Firebase project and FCM alert/refresh/offline/reboot delivery
+- [ ] Real GNSS receiver, cloud TLS, encrypted backup and recovery simulation
+- [ ] OS keystore hardening, identity rotation, media deletion, forensic review
+- [ ] Secure media WAN/ICE/TURN and user-accessible key revocation verified
+- [ ] Privacy/EULA/license owner approval, commerce, store policies and support
+- [ ] Long reliability, security and recovery testing; no open critical defects
 
-## v0.3.0 desktop client
-- [ ] React/Tauri desktop app, integrated sidecar and safe lifecycle.
-- [ ] Tray, opt-in auto-start, settings, QR, camera privacy affordances.
-- [ ] Windows/macOS/Linux build checks and WebKitGTK risk test.
-
-## v0.4.0 person detection
-- [ ] Person detector after frame difference, no false alarm for non-people.
-- [ ] Seven-scene metrics written with real test apparatus.
-
-## v0.5.0 packaging and licensing
-- [ ] Signed Windows executable/MSIX, Apple notarized dmg, Linux deb.
-- [ ] Signed update and offline-verifiable license; entitlement checks.
-- [ ] Clean-device installations, uninstall and updater verified.
-
-## v0.6.0 polish and consent
-- [ ] Three-step pairing onboarding + first-run lawful-use consent.
-- [ ] Error/empty states, 48dp targets, TalkBack, dark/light, localization.
-- [ ] Battery impact disclosure and explicit demo labeling.
-
-## v0.7.0 performance
-- [ ] Full performance table actual figures, sample counts and evidence.
-- [ ] 24h soak, network handoffs, battery report, resource budgets met.
-
-## v1.0.0 commercial release
-- [ ] Owner-approved EULA, privacy policy, data safety and retention rules.
-- [ ] Store accounts, identity verification, signing and legal rights verified.
-- [ ] Public website, live privacy URL, customer support and licensed checkout.
-- [ ] Real app screenshots, signed AAB, release notes and download checksums.
-- [ ] Store submissions accepted and links/confirmation recorded.
-- [ ] Microsoft Store MSIX accepted, winget manifest merged.
-- [ ] Real legal/trademark check (not assumed from a search).
-- [ ] No red gates; eight known-good no-ff merge milestones and annotated tags.
-
-## Do not auto-green external gates
-
-App store submission and acceptance, signing with owner keys, macOS notarization, billing agreements, trademark clearance, legal counsel review and physical device tests require authorized access, identity and real devices. If unavailable, record **BLOCKED**, not **PASS**. Never ship an unverified camera or security app as "100% secure".
-
-
-## November 14 integration checkpoint (still NOT release ready)
-
-- [x] Android and desktop source implement QR-pinned HTTPS Ed25519 device pairing.
-- [x] Legacy Android HTTP/PIN client removed from runnable network paths.
-- [x] Tauri React + Rust desktop UI and PyInstaller sidecar packaging layout exists.
-- [x] WebRTC offer/stop, optional phone microphone path and mDNS discovery source exists.
-- [x] Signed photo/MP4/TTS, camera disarm cleanup and last-seen endpoints implemented.
-- [x] Optional single-owner location relay source, signed report receipts and AES-GCM stored coordinates.
-- [x] Optional hash-pinned person-only classifier source (no model weights bundled).
-- [x] Gradle Android debug signing changed to use standard generated debug keystore.
-- [ ] Full Python authentication/gateway + relay suites executed and green on integrated HEAD.
-- [ ] Android Gradle wrapper binaries/scripts present and reproducible Android SDK build green.
-- [ ] Tauri Rust/Linux/Windows/Mac builds and signed installers generated and installed.
-- [ ] Authenticated QR → approval → video/photo/audio → recovery field acceptance with actual phone.
-- [ ] Person detection with legally sourced model, false-positive recordings and reliable mobile push.
-- [ ] WAN signaling, STUN/TURN host, stable Internet reconnect and mobile network handoff verified.
-- [ ] Remote encrypted relay deployed to owner-controlled HTTPS domain; key backup, enroll/revoke and real delivery tested.
-- [ ] OS GPS with consent (or proven external GNSS) and idle/sleep/power-state matrix verified.
-- [ ] Legal policy, license, accounts, merchant, certifications and Android/iOS/store acceptance reviewed.
-- [ ] Production threat modeling, pentest, disk quota, key rotation, backups and long soak verified.
-
-A source-level milestone is NOT a production milestone. No 100% security claim.
+Merge to main as an engineering checkpoint only. No production semver release
+or statement of 100% security unless all gates are independently evidenced.

@@ -10,6 +10,11 @@ services:
       - "8080"
     volumes:
       - relay_data:/srv/laptopwatch
+    environment:
+      # Blank means FCM is off; the relay will still store signed event metadata.
+      LAPTOPWATCH_FIREBASE_PROJECT_ID: ${LAPTOPWATCH_FIREBASE_PROJECT_ID:-}
+      # Use managed ADC credentials on supported hosting. For credentials files,
+      # supply an owner-managed compose.override.yaml outside version control.
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
