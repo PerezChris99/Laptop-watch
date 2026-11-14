@@ -1,17 +1,8 @@
 package com.example.network
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
+ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 data class LaptopStatusResponse(
     val online: Boolean,
@@ -46,418 +37,63 @@ data class RemoteLogItem(
     val snapshotPath: String?
 )
 
+/**
+ * Disabled migration adapter. The former Flask endpoint used a shared PIN in
+ * HTTP headers/URL query parameters; it is not a secure remote-control scheme.
+ * All real commands now use SecureLaptopGateway (Ed25519 + QR-pinned TLS).
+ *
+ * Keep method signatures temporarily for the remaining legacy UI code, but
+ * NEVER permit any network request or legacy PIN URL to be constructed.
+ */
 class LaptopApiClient {
-    private val client: OkHttpClient = createClient()
-
-    // Use OkHttp's platform trust store and normal hostname validation.
-    // Self-signed desktop certificates require explicit pairing-based pinning
-    // in the new gateway; NEVER reinstall the old trust-all fallback.
-    private fun createClient(): OkHttpClient =
-        OkHttpClient.Builder()
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
-
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private fun <T> disabled(): Result<T> = Result.failure(
+        SecurityException("Legacy PIN/HTTP access is disabled. Scan the secure laptop QR.")
+    )
 
     fun resolveBaseUrl(ipOrUrl: String, port: Int = 5000): String {
-        val trimmed = ipOrUrl.trim().removeSuffix("/")
-        if (trimmed.isEmpty()) return "http://127.0.0.1:$port"
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return trimmed
-        }
-        val cleanHost = trimmed.removePrefix("http://").removePrefix("https://")
-        return "http://$cleanHost:$port"
+        throw SecurityException("Legacy base URLs are disabled; only QR-pinned HTTPS is supported")
     }
 
-    private fun getBaseUrl(ip: String, port: Int): String {
-        return resolveBaseUrl(ip, port)
-    }
+    fun getCameraSnapshotUrl(
+        ipOrUrl: String, port: Int, pin: String, quality: Int = 75, scale: Float = 1.0f
+    ): String = ""
 
-    fun getCameraSnapshotUrl(ipOrUrl: String, port: Int, pin: String, quality: Int = 75, scale: Float = 1.0f): String {
-        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/frame?pin=$pin&quality=$quality&scale=$scale&t=${System.currentTimeMillis()}"
-    }
+    fun getCameraStreamUrl(ipOrUrl: String, port: Int, pin: String): String = ""
 
-    fun getCameraStreamUrl(ipOrUrl: String, port: Int, pin: String): String {
-        return "${resolveBaseUrl(ipOrUrl, port)}/api/camera/stream?pin=$pin"
-    }
+    suspend fun pingEndpoint(targetUrl: String, pin: String, timeoutSecs: Long = 2): Boolean = false
 
-    suspend fun pingEndpoint(targetUrl: String, pin: String, timeoutSecs: Long = 2): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val quickClient = client.newBuilder()
-                .connectTimeout(timeoutSecs, TimeUnit.SECONDS)
-                .readTimeout(timeoutSecs, TimeUnit.SECONDS)
-                .build()
-
-            val url = "${resolveBaseUrl(targetUrl)}/api/status"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            quickClient.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    suspend fun getStatus(ip: String, port: Int, pin: String): Result<LaptopStatusResponse> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/status"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
-                }
-                val body = response.body?.string() ?: "{}"
-                val json = JSONObject(body)
-                val status = LaptopStatusResponse(
-                    online = json.optBoolean("online", true),
-                    hostname = json.optString("hostname", "Laptop"),
-                    battery = json.optString("battery", "Unknown"),
-                    isLocked = json.optBoolean("is_locked", false),
-                    cameraActive = json.optBoolean("camera_active", true),
-                    motionDetected = json.optBoolean("motion_detected", false),
-                    motionIntensity = json.optInt("motion_intensity", 0),
-                    lastMotionTime = json.optLong("last_motion_time", 0L),
-                    threatLevel = json.optString("threat_level", "SECURE"),
-                    message = json.optString("message", "OK"),
-                    latitude = if (json.has("latitude") && !json.isNull("latitude")) json.optDouble("latitude") else null,
-                    longitude = if (json.has("longitude") && !json.isNull("longitude")) json.optDouble("longitude") else null,
-                    gpsAccuracy = if (json.has("gps_accuracy")) json.optDouble("gps_accuracy").toFloat() else null,
-                    gpsSpeed = if (json.has("gps_speed")) json.optDouble("gps_speed").toFloat() else null,
-                    gpsAltitude = if (json.has("gps_altitude")) json.optDouble("gps_altitude") else null,
-                    gpsProvider = json.optString("gps_provider", "GPS_HARDWARE"),
-                    lastGpsFixTime = json.optLong("last_gps_fix_time", System.currentTimeMillis()),
-                    subjectCount = json.optInt("subject_count", 0),
-                    subjectIdentified = json.optString("subject_identified", null),
-                    subjectConfidence = json.optDouble("subject_confidence", 0.0).toFloat()
-                )
-                Result.success(status)
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun getStatus(ip: String, port: Int, pin: String): Result<LaptopStatusResponse> = disabled()
 
     suspend fun setMotionConfig(
-        ip: String,
-        port: Int,
-        pin: String,
-        armed: Boolean,
-        sensitivity: String,
-        autoLock: Boolean
-    ): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/motion/config"
-            val jsonPayload = JSONObject().apply {
-                put("armed", armed)
-                put("sensitivity", sensitivity)
-                put("auto_lock", autoLock)
-            }
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post(jsonPayload.toString().toRequestBody(jsonMediaType))
-                .build()
+        ip: String, port: Int, pin: String,
+        armed: Boolean, sensitivity: String, autoLock: Boolean
+    ): Result<Boolean> = disabled()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Motion config failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun lockScreen(ip: String, port: Int, pin: String): Result<Boolean> = disabled()
 
-    suspend fun lockScreen(ip: String, port: Int, pin: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/lock"
-            val jsonPayload = JSONObject().apply {
-                put("action", "lock")
-                put("timestamp", System.currentTimeMillis())
-            }
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post(jsonPayload.toString().toRequestBody(jsonMediaType))
-                .build()
+    suspend fun sendTTSWarning(
+        ip: String, port: Int, pin: String, message: String
+    ): Result<Boolean> = disabled()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Lock failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun sendAudioWarning(
+        ip: String, port: Int, pin: String, audioFile: File
+    ): Result<Boolean> = disabled()
 
-    suspend fun sendTTSWarning(ip: String, port: Int, pin: String, message: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/warning/tts"
-            val jsonPayload = JSONObject().apply {
-                put("message", message)
-                put("volume", 100)
-            }
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post(jsonPayload.toString().toRequestBody(jsonMediaType))
-                .build()
+    suspend fun triggerAlarm(ip: String, port: Int, pin: String): Result<Boolean> = disabled()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Warning failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun fetchIntruders(
+        ip: String, port: Int, pin: String
+    ): Result<List<RemoteLogItem>> = disabled()
 
-    suspend fun sendAudioWarning(ip: String, port: Int, pin: String, audioFile: File): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/warning/audio"
-            val audioMediaType = "audio/mp4".toMediaType()
-            val requestBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "audio",
-                    audioFile.name,
-                    audioFile.asRequestBody(audioMediaType)
-                )
-                .build()
+    suspend fun pingLatencyMs(targetUrl: String, pin: String): Long? = null
 
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post(requestBody)
-                .build()
+    suspend fun captureSnapshot(ip: String, port: Int, pin: String): Result<String> = disabled()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Audio transmission failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun startRecording(ip: String, port: Int, pin: String): Result<Boolean> = disabled()
 
-    suspend fun triggerAlarm(ip: String, port: Int, pin: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/alarm"
-            val jsonPayload = JSONObject().apply {
-                put("duration_seconds", 5)
-            }
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post(jsonPayload.toString().toRequestBody(jsonMediaType))
-                .build()
+    suspend fun stopRecording(ip: String, port: Int, pin: String): Result<String> = disabled()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Alarm failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun getLiveLocation(ip: String, port: Int, pin: String): Result<JSONObject> = disabled()
 
-    suspend fun fetchIntruders(ip: String, port: Int, pin: String): Result<List<RemoteLogItem>> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/logs"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(Exception("Logs fetch failed: HTTP ${response.code}"))
-                }
-                val body = response.body?.string() ?: "[]"
-                val jsonArray = JSONArray(body)
-                val list = mutableListOf<RemoteLogItem>()
-                for (i in 0 until jsonArray.length()) {
-                    val item = jsonArray.getJSONObject(i)
-                    list.add(
-                        RemoteLogItem(
-                            id = item.optString("id", i.toString()),
-                            timestamp = item.optLong("timestamp", System.currentTimeMillis()),
-                            eventType = item.optString("event_type", "Motion Detected"),
-                            description = item.optString("description", "Camera motion recorded"),
-                            snapshotPath = item.optString("snapshot_url", null)
-                        )
-                    )
-                }
-                Result.success(list)
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun pingLatencyMs(targetUrl: String, pin: String): Long? = withContext(Dispatchers.IO) {
-        try {
-            val quickClient = client.newBuilder()
-                .connectTimeout(3, TimeUnit.SECONDS)
-                .readTimeout(3, TimeUnit.SECONDS)
-                .build()
-
-            val url = "${resolveBaseUrl(targetUrl)}/api/status"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            val start = System.currentTimeMillis()
-            quickClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    System.currentTimeMillis() - start
-                } else null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    suspend fun captureSnapshot(ip: String, port: Int, pin: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/camera/snapshot"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post("{}".toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    val json = JSONObject(body)
-                    val snapshotUrl = json.optString("url", getCameraSnapshotUrl(ip, port, pin))
-                    Result.success(snapshotUrl)
-                } else {
-                    Result.failure(Exception("Snapshot capture failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun startRecording(ip: String, port: Int, pin: String): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/camera/record/start"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post("{}".toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(true)
-                } else {
-                    Result.failure(Exception("Start recording failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun stopRecording(ip: String, port: Int, pin: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/camera/record/stop"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .post("{}".toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    val json = JSONObject(body)
-                    val filename = json.optString("filename", "recording.mp4")
-                    Result.success(filename)
-                } else {
-                    Result.failure(Exception("Stop recording failed: HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getLiveLocation(ip: String, port: Int, pin: String): Result<JSONObject> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/location/gps"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    Result.success(JSONObject(body))
-                } else {
-                    Result.failure(Exception("HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getSubjectProfiles(ip: String, port: Int, pin: String): Result<JSONArray> = withContext(Dispatchers.IO) {
-        try {
-            val url = "${getBaseUrl(ip, port)}/api/security/profiles"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("X-Auth-Token", pin)
-                .get()
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "[]"
-                    Result.success(JSONArray(body))
-                } else {
-                    Result.failure(Exception("HTTP ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    suspend fun getSubjectProfiles(ip: String, port: Int, pin: String): Result<JSONArray> = disabled()
 }

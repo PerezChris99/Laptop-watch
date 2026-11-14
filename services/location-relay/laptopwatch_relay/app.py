@@ -51,71 +51,112 @@ class VerifiedFix(BaseModel):
 
 
 class RelayStore:
+    """Store private GPS coordinates encrypted under a per-deployment key.
+
+    Encryption limits accidental SQLite/WAL/backups disclosure, but does NOT
+    protect against a compromised running server or stolen keyfile. Full-disk
+    encryption, role isolation and owner-controlled key backup remain required.
+    """
     def __init__(self, db: str | Path):
-        self.path = str(db)
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.lock = threading.RLock()
-        self.db = sqlite3.connect(self.path, isolation_level=None, timeout=5, check_same_thread=False)
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        self.path=str(db)
+        db_path=Path(self.path)
+        db_path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if os.name=="posix":
+            db_path.parent.chmod(0o700)
+        keyfile=db_path.with_suffix(".location-key")
+        try:
+            handle=os.open(keyfile,os.O_CREAT | os.O_EXCL | os.O_WRONLY,0o600)
+        except FileExistsError:
+            value=keyfile.read_bytes()
+        else:
+            with os.fdopen(handle,"wb") as f:
+                value=os.urandom(32)
+                f.write(value)
+                f.flush()
+                os.fsync(f.fileno())
+        if len(value)!=32:
+            raise RuntimeError("Location key unavailable/corrupt; do not discard old encrypted records")
+        if os.name=="posix" and (keyfile.stat().st_mode & 0o077):
+            raise RuntimeError("Location encryption key must be user-private (0600)")
+        self.cipher=AESGCM(value)
+        self.lock=threading.RLock()
+        self.db=sqlite3.connect(self.path,isolation_level=None,timeout=5,check_same_thread=False)
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("CREATE TABLE IF NOT EXISTS device_roles("
                         "id TEXT PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('owner_phone','desktop')))")
+        old_columns={row[1] for row in self.db.execute("PRAGMA table_info(location_reports)")}
+        if "latitude" in old_columns:
+            self.db.close()
+            raise RuntimeError("Old plaintext location table found: perform an explicit encrypted migration first")
         self.db.execute("CREATE TABLE IF NOT EXISTS location_reports("
                         "desktop_id TEXT NOT NULL, event_id INTEGER NOT NULL,"
-                        "latitude REAL NOT NULL, longitude REAL NOT NULL,"
-                        "accuracy_meters REAL NOT NULL, observed_at_ms INTEGER NOT NULL,"
-                        "provider TEXT NOT NULL, received_at_ms INTEGER NOT NULL,"
-                        "payload_digest TEXT NOT NULL,"
-                        "PRIMARY KEY(desktop_id, event_id))")
+                        "encrypted BLOB NOT NULL, observed_at_ms INTEGER NOT NULL,"
+                        "received_at_ms INTEGER NOT NULL,payload_digest TEXT NOT NULL,"
+                        "PRIMARY KEY(desktop_id,event_id))")
         self.db.execute("CREATE INDEX IF NOT EXISTS idx_report_newest "
                         "ON location_reports(observed_at_ms DESC,received_at_ms DESC)")
-        if os.name == "posix":
-            os.chmod(self.path, 0o600)
+        if os.name=="posix":
+            os.chmod(self.path,0o600)
 
     def enroll(self, registry: PairingRegistry, device_id: str, public_key: bytes, role: str):
         if role not in ("owner_phone", "desktop"):
             raise ValueError("invalid role")
         uuid.UUID(device_id)
         with self.lock:
-            registry.pair(device_id, public_key, locally_approved=True)
-            self.db.execute("INSERT INTO device_roles VALUES (?,?)", (device_id, role))
+            registry.pair(device_id,public_key,locally_approved=True)
+            self.db.execute("INSERT INTO device_roles VALUES (?,?)",(device_id,role))
 
     def role(self, device_id: str) -> str | None:
         with self.lock:
-            row=self.db.execute("SELECT role FROM device_roles WHERE id=?", (device_id,)).fetchone()
+            row=self.db.execute("SELECT role FROM device_roles WHERE id=?",(device_id,)).fetchone()
             return row[0] if row else None
 
     def accept(self, desktop_id: str, fix: VerifiedFix, digest: str) -> bool:
-        now = int(time.time() * 1000)
+        now=int(time.time()*1000)
         with self.lock:
-            previous = self.db.execute(
+            previous=self.db.execute(
                 "SELECT payload_digest FROM location_reports WHERE desktop_id=? AND event_id=?",
-                (desktop_id, fix.event_id)
-            ).fetchone()
+                (desktop_id,fix.event_id)).fetchone()
             if previous:
-                if previous[0] != digest:
+                if previous[0]!=digest:
                     raise ValueError("event ID cannot be rewritten")
                 return False
+            data=json.dumps({
+                "latitude":fix.latitude,"longitude":fix.longitude,
+                "accuracy_meters":fix.accuracy_meters,"provider":fix.provider,
+                "observed_at_ms":fix.observed_at_ms,
+            },sort_keys=True,separators=(",",":"),allow_nan=False).encode("utf8")
+            nonce=os.urandom(12)
+            aad=f"{desktop_id}:{fix.event_id}".encode("ascii")
+            sealed=nonce+self.cipher.encrypt(nonce,data,aad)
             self.db.execute(
-                "INSERT INTO location_reports VALUES (?,?,?,?,?,?,?,?,?)",
-                (desktop_id, fix.event_id, fix.latitude, fix.longitude,
-                 fix.accuracy_meters, fix.observed_at_ms, fix.provider, now, digest),
-            )
+                "INSERT INTO location_reports VALUES (?,?,?,?,?,?)",
+                (desktop_id,fix.event_id,sealed,fix.observed_at_ms,now,digest))
             return True
 
     def latest(self) -> dict | None:
         with self.lock:
             row=self.db.execute(
-                "SELECT desktop_id,event_id,latitude,longitude,accuracy_meters,"
-                "observed_at_ms,provider,received_at_ms FROM location_reports "
-                "ORDER BY observed_at_ms DESC,received_at_ms DESC LIMIT 1"
+                "SELECT desktop_id,event_id,encrypted,observed_at_ms,received_at_ms "
+                "FROM location_reports ORDER BY observed_at_ms DESC,received_at_ms DESC LIMIT 1"
             ).fetchone()
-            if not row:
-                return None
-            return dict(zip(
-                ("desktop_id","event_id","latitude","longitude","accuracy_meters",
-                 "observed_at_ms","provider","received_at_ms"),row
-            ))
+        if not row:
+            return None
+        desktop,event_id,sealed,observed,received=row
+        if len(sealed)<29:
+            raise RuntimeError("Encrypted location record corrupted")
+        try:
+            decoded=self.cipher.decrypt(
+                sealed[:12],sealed[12:],f"{desktop}:{event_id}".encode("ascii"))
+            details=json.loads(decoded)
+        except Exception as exc:
+            raise RuntimeError("Encrypted location record failed authentication") from exc
+        if details["observed_at_ms"]!=observed:
+            raise RuntimeError("Location timestamp integrity check failed")
+        return {"desktop_id":desktop,"event_id":event_id,
+                **details,"received_at_ms":received}
 
     def clear(self) -> None:
         with self.lock:

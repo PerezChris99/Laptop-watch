@@ -162,7 +162,7 @@ fun LocationTrackerScreen(
                         }
 
                         Button(
-                            onClick = { viewModel.fetchLiveGpsCoordinates() },
+                            onClick = { viewModel.refreshSecureLastSeen() },
                             colors = ButtonDefaults.buttonColors(containerColor = LightBlueSoft, contentColor = LightBluePrimary),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -307,7 +307,9 @@ fun LocationTrackerScreen(
                                 latitude = uiState.currentLatitude,
                                 longitude = uiState.currentLongitude,
                                 accuracyMeters = uiState.gpsAccuracyMeters,
-                                isLiveFix = !uiState.isLocationDemo,
+                                isLiveFix = !uiState.isLocationDemo && uiState.isLocationTrackingActive &&
+                        uiState.lastGpsFixTime > 0L &&
+                        System.currentTimeMillis() - uiState.lastGpsFixTime < 30_000L,
                                 isGeofenceArmed = uiState.isGeofenceArmed && !uiState.isLocationDemo,
                                 geofenceRadiusMeters = uiState.geofenceRadiusMeters,
                                 locationHistory = locationHistory

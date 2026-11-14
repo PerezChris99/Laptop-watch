@@ -169,8 +169,6 @@ class RtcController:
             if self._peer is not None and self._owner != device_id:
                 raise MediaUnavailable("Another paired phone is using this camera")
             if self._peer is not None and self._owner == device_id:
-                if include_audio != (self._mic is not None):
-                    raise MediaUnavailable("Intercom configuration cannot change during ICE restart")
                 # Keep the DTLS identity and media tracks for an ICE restart.
                 # Rebuilding the peer here would break the remote's existing
                 # RTCPeerConnection on Wi-Fi/cellular changes.

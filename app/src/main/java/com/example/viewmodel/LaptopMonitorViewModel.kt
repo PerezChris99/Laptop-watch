@@ -257,7 +257,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun startLiveVideo() {
+    fun startLiveVideo(includeAudio: Boolean = false) {
         if (!secureGateway.isApproved() || !_uiState.value.secureArmed) {
             _uiState.value = _uiState.value.copy(
                 toastFeedback = "Pair your laptop and arm the camera before starting live video"
@@ -265,7 +265,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         viewModelScope.launch(coroutineExceptionHandler) {
-            val started = liveVideo.connect()
+            val started = liveVideo.connect(includeAudio = includeAudio)
             if (started.isFailure) {
                 _uiState.value = _uiState.value.copy(
                     toastFeedback = "Encrypted video negotiation failed. Try an authenticated photo: " +
@@ -274,7 +274,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
             } else {
                 _uiState.value = _uiState.value.copy(
                     activeTransport = "WEBRTC",
-                    toastFeedback = "WebRTC negotiated; waiting for first live frame"
+                    toastFeedback = if (includeAudio) "Encrypted live video and phone microphone negotiated"
+                    else "WebRTC negotiated; waiting for first live frame"
                 )
             }
         }
@@ -869,63 +870,31 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
 
     fun sendTTSWarning(message: String) {
         if (message.isBlank()) return
-        val config = laptopConfig.value ?: return
-
+        val config=laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
-            _uiState.value = _uiState.value.copy(isSendingAction = true)
-            vibrateDevice(false)
-
             if (config.isDemoMode) {
-                delay(800)
-                _uiState.value = _uiState.value.copy(
-                    isSendingAction = false,
-                    toastFeedback = "📢 Spoken through laptop: \"$message\""
-                )
-                repository.recordEvent(
-                    eventType = "Voice Warning",
-                    description = "TTS announcement broadcasted to laptop speakers",
-                    warningIssued = message,
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "WARNING"
-                )
-                recordDiagnostic(
-                    tag = "AUDIO",
-                    status = "HEALTHY",
-                    message = "TTS simulated: \"$message\""
-                )
+                _uiState.value=_uiState.value.copy(toastFeedback="Demo: text warning was NOT transmitted")
                 return@launch
             }
-
-            val (target, transport) = repository.resolveActiveTarget(config)
-            val result = repository.sendTTSWarning(target, config.port, config.pin, message)
-            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
-            if (result.isSuccess) {
-                _uiState.value = _uiState.value.copy(
-                    toastFeedback = "📢 Spoken through laptop: \"$message\""
-                )
-                repository.recordEvent(
-                    eventType = "Voice Warning",
-                    description = "Voice warning broadcasted (via $transport)",
-                    warningIssued = message,
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "WARNING"
-                )
-                recordDiagnostic(
-                    tag = "AUDIO",
-                    status = "HEALTHY",
-                    message = "Spoken warning sent to laptop speakers via $transport: $message"
-                )
-            } else {
-                val err = result.exceptionOrNull()?.localizedMessage ?: "Unknown"
-                _uiState.value = _uiState.value.copy(
-                    toastFeedback = "Failed to transmit voice warning"
-                )
-                recordDiagnostic(
-                    tag = "AUDIO",
-                    status = "RECOVERED",
-                    message = "TTS dispatch failed ($err). Error handled."
-                )
+            if (!secureGateway.isApproved()) {
+                _uiState.value=_uiState.value.copy(toastFeedback="Pair laptop before speaking a warning")
+                return@launch
             }
+            _uiState.value=_uiState.value.copy(isSendingAction=true)
+            val result=secureGateway.speak(message.take(400))
+            _uiState.value=_uiState.value.copy(
+                isSendingAction=false,
+                toastFeedback=if (result.isSuccess) "Spoken warning confirmed on laptop"
+                  else "Speech failed: " + (result.exceptionOrNull()?.message ?: "Laptop offline")
+            )
+            if (result.isSuccess) repository.recordEvent(
+                eventType="Owner Spoken Warning",
+                description="Owner issued an authorized speaker warning",
+                warningIssued="Text-to-speech",
+                wasLocked=_uiState.value.isLocked,
+                severity="WARNING",
+                category="USER_ACTION"
+            )
         }
     }
 
@@ -991,82 +960,18 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun startVoiceRecording() {
-        val file = voiceRecorder.startRecording()
-        if (file != null) {
-            _uiState.value = _uiState.value.copy(
-                isRecordingVoice = true,
-                recordingDurationSec = 0
-            )
-            startRecordingTimer()
-        } else {
-            _uiState.value = _uiState.value.copy(
-                toastFeedback = "Could not access microphone"
-            )
-            recordDiagnostic(
-                tag = "AUDIO",
-                status = "RECOVERED",
-                message = "Microphone initialization failed. Safely handled without crash."
-            )
-        }
+        _uiState.value=_uiState.value.copy(
+            isRecordingVoice=false,
+            toastFeedback="Use the Camera > encrypted live audio button instead; legacy audio upload is disabled"
+        )
     }
 
     fun stopAndSendVoiceRecording() {
-        stopRecordingTimer()
-        val recordedFile = voiceRecorder.stopRecording()
-        _uiState.value = _uiState.value.copy(isRecordingVoice = false)
-
-        if (recordedFile == null || !recordedFile.exists()) {
-            _uiState.value = _uiState.value.copy(toastFeedback = "No audio captured")
-            return
-        }
-
-        val config = laptopConfig.value ?: return
-        viewModelScope.launch(coroutineExceptionHandler) {
-            _uiState.value = _uiState.value.copy(isSendingAction = true)
-            if (config.isDemoMode) {
-                delay(800)
-                _uiState.value = _uiState.value.copy(
-                    isSendingAction = false,
-                    toastFeedback = "🎙️ Voice transmitted & played on laptop!"
-                )
-                repository.recordEvent(
-                    eventType = "Live Voice Mic",
-                    description = "Live microphone audio played out loud on laptop",
-                    warningIssued = "Voice transmission",
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "WARNING"
-                )
-                try { recordedFile.delete() } catch (_: Exception) {}
-                return@launch
-            }
-
-            val (target, transport) = repository.resolveActiveTarget(config)
-            val result = repository.sendAudioWarning(target, config.port, config.pin, recordedFile)
-            _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
-            try { recordedFile.delete() } catch (_: Exception) {}
-
-            if (result.isSuccess) {
-                _uiState.value = _uiState.value.copy(
-                    toastFeedback = "🎙️ Voice transmitted & played on laptop!"
-                )
-                repository.recordEvent(
-                    eventType = "Live Voice Mic",
-                    description = "Microphone voice message played on laptop (via $transport)",
-                    warningIssued = "Voice transmission",
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "WARNING"
-                )
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    toastFeedback = "Failed to send audio to laptop"
-                )
-                recordDiagnostic(
-                    tag = "AUDIO",
-                    status = "RECOVERED",
-                    message = "Audio transmission failed. File cleaned up safely."
-                )
-            }
-        }
+        voiceRecorder.cancelRecording()
+        _uiState.value=_uiState.value.copy(
+            isRecordingVoice=false,
+            toastFeedback="Unsigned voice-note uploads are disabled. Use the live encrypted intercom."
+        )
     }
 
     fun cancelVoiceRecording() {

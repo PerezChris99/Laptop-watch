@@ -1,6 +1,9 @@
 package com.example.security
 
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -42,6 +45,8 @@ class LiveVideoSession(
     private var eglBase: EglBase? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
+    private var audioSource: org.webrtc.AudioSource? = null
+    private var audioTrack: org.webrtc.AudioTrack? = null
     private var gathering = CompletableDeferred<Unit>()
 
     fun eglContext(): EglBase.Context? = eglBase?.eglBaseContext
@@ -118,7 +123,7 @@ class LiveVideoSession(
         withTimeout(7000) { result.await() }
     }
 
-    suspend fun connect(): Result<Unit> = withContext(Dispatchers.Main) {
+    suspend fun connect(includeAudio: Boolean = false): Result<Unit> = withContext(Dispatchers.Main) {
         runCatching {
             require(secureGateway.isApproved()) { "A laptop pairing must be approved first" }
             require(secureGateway.status().getOrThrow().optBoolean("motion_armed", false)) {
@@ -138,6 +143,19 @@ class LiveVideoSession(
                     RtpTransceiver.RtpTransceiverDirection.RECV_ONLY
                 )
             )
+            if (includeAudio) {
+                check(ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                    "Allow microphone permission before starting encrypted intercom"
+                }
+                val source = factory!!.createAudioSource(MediaConstraints())
+                    ?: throw IOException("Phone microphone unavailable")
+                audioSource = source
+                val track = factory!!.createAudioTrack("laptopwatch_owner_mic", source)
+                    ?: throw IOException("Phone microphone track unavailable")
+                audioTrack = track
+                current.addTrack(track, listOf("laptopwatch_intercom"))
+            }
             _state.value = "CONNECTING"
             val offer = createOffer(current)
             setDescription(current, offer, true)
@@ -149,7 +167,7 @@ class LiveVideoSession(
             val reply = secureGateway.json(
                 "POST", "/api/webrtc/offer",
                 JSONObject().put("sdp", localSdp).put("type", "offer")
-                    .put("include_audio", false)
+                    .put("include_audio", includeAudio)
             ).getOrThrow()
             require(reply.getString("type") == "answer") { "Invalid RTC answer" }
             setDescription(
@@ -193,6 +211,10 @@ class LiveVideoSession(
 
     private fun closeLocal() {
         _track.value = null
+        audioTrack?.dispose()
+        audioTrack = null
+        audioSource?.dispose()
+        audioSource = null
         peer?.close()
         peer?.dispose()
         peer = null

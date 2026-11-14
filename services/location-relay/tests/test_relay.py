@@ -117,3 +117,43 @@ def test_fabricated_or_future_data_rejected(relay):
         fix(lat=92)).status_code==422
     assert signed(client,desktop,"POST","/api/location/report",
         fix(7,when=int(time.time()*1000)+3600_000)).status_code==422
+
+
+def test_last_seen_is_encrypted_at_rest_across_restarts(tmp_path):
+    from laptopwatch_relay.app import RelayStore, VerifiedFix
+    db=tmp_path/"encrypted-locations.sqlite"
+    store=RelayStore(db)
+    desktop=str(uuid.uuid4())
+    fix=VerifiedFix(
+        event_id=21, latitude=0.347617, longitude=32.582520,
+        accuracy_meters=7.5, observed_at_ms=int(time.time()*1000),
+        provider="gpsd-gnss"
+    )
+    assert store.accept(desktop,fix,"a"*64)
+    assert store.latest()["latitude"]==0.347617
+    store.close()
+    import sqlite3
+    conn=sqlite3.connect(db)
+    row=conn.execute("SELECT encrypted FROM location_reports WHERE event_id=21").fetchone()[0]
+    assert b"0.347617" not in row
+    assert b"32.58252" not in row
+    conn.close()
+    opened=RelayStore(db)
+    assert opened.latest()["accuracy_meters"]==7.5
+    opened.close()
+    keyfile=db.with_suffix(".location-key")
+    keyfile.write_bytes(b"0"*32)
+    broken=RelayStore(db)
+    with pytest.raises(RuntimeError,match="authentication"):
+        broken.latest()
+    broken.close()
+
+
+def test_rejects_preexisting_plaintext_schema(tmp_path):
+    import sqlite3
+    db=tmp_path/"old.sqlite"
+    conn=sqlite3.connect(db)
+    conn.execute("CREATE TABLE location_reports(latitude REAL NOT NULL)")
+    conn.close()
+    with pytest.raises(RuntimeError,match="plaintext"):
+        RelayStore(db)

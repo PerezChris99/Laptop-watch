@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -111,6 +115,7 @@ fun LiveCameraScreen(
     liveVideoTrack: VideoTrack? = null,
     eglContext: EglBase.Context? = null,
     onStartLive: () -> Unit = {},
+    onStartLiveAudio: () -> Unit = {},
     onStopLive: () -> Unit = {},
     onCaptureSnapshot: () -> Unit,
     onLockToggle: () -> Unit,
@@ -127,6 +132,14 @@ fun LiveCameraScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val voicePermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) onStartLiveAudio()
+        else android.widget.Toast.makeText(context,
+            "Microphone permission denied; encrypted audio remains off",
+            android.widget.Toast.LENGTH_SHORT).show()
+    }
     val isDemo = uiState.connectionState == ConnectionState.DEMO_MODE
 
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
@@ -390,6 +403,14 @@ fun LiveCameraScreen(
             ) {
                 Text("Stop live view", fontSize = 11.sp)
             }
+        }
+
+        if (uiState.securePairingStatus == "PAIRED") {
+            OutlinedButton(
+                onClick = { voicePermission.launch(Manifest.permission.RECORD_AUDIO) },
+                modifier = Modifier.fillMaxWidth().testTag("start_encrypted_intercom"),
+                enabled = uiState.secureArmed && uiState.webRtcStatus != "CONNECTED"
+            ) { Text("Start live video + two-way audio (requires mic permission)", fontSize = 11.sp) }
         }
 
         // ==========================================

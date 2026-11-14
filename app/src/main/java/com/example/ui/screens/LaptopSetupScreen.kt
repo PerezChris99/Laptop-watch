@@ -83,7 +83,6 @@ import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
 import com.example.ui.theme.WhiteSmoke
-import com.example.util.LaptopCompanionScript
 import com.example.util.rememberAppHaptics
 import com.example.viewmodel.ConnectionState
 import com.example.viewmodel.MonitorUiState
@@ -242,7 +241,7 @@ fun LaptopSetupScreen(
             val tabs = listOf(
                 "Link & Config" to Icons.Default.Lan,
                 "Away & Guard" to Icons.Default.Sensors,
-                "Legacy Scripts" to Icons.Default.Terminal,
+                "Install info" to Icons.Default.Terminal,
                 "Pair QR" to Icons.Default.QrCodeScanner
             )
             tabs.forEachIndexed { index, (label, icon) ->
@@ -850,121 +849,37 @@ fun LaptopSetupScreen(
                 }
             }
 
-            // TAB 2: PC SCRIPTS & LID POLICY
+            // TAB 2: Desktop installation and recovery — no unsafe scripts.
             if (selectedSetupTab == 2) {
-                Column(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    colors = CardDefaults.cardColors(containerColor = WhitePure),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    // Windows Companion Script Card
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = WhitePure),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "1. Laptop Companion Setup",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DeepSlate800
-                            )
-                            Text(
-                                text = "Paste in PowerShell on your laptop to run defender-safe daemon:",
-                                fontSize = 11.sp,
-                                color = MutedSlate500
-                            )
-
-                            val psCommand = "irm https://raw.githubusercontent.com/laptopguard/daemon/main/setup.ps1 | iex"
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF0F172A))
-                                    .padding(8.dp)
-                            ) {
-                                Text(
-                                    text = psCommand,
-                                    color = Color(0xFF7DD3FC),
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp
-                                )
-                            }
-
-                            Button(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(psCommand))
-                                    Toast.makeText(context, "PowerShell command copied!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(34.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = SkyBluePrimary),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Copy PowerShell Setup Command", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    // Lid-Close & Sleep Policy Guide Card
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = WhitePure),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = AmberWarning, modifier = Modifier.size(16.dp))
-                                Text(
-                                    text = "2. Keep Guarding When Lid Closes",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = DeepSlate800
-                                )
-                            }
-                            Text(
-                                text = "Set lid action to 'Do Nothing' so laptop webcam monitors even closed:",
-                                fontSize = 11.sp,
-                                color = MutedSlate500
-                            )
-
-                            val lidCmd = "powercfg /setdcvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 0"
-                            Button(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(lidCmd))
-                                    Toast.makeText(context, "Lid-close command copied!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(34.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepSlate800),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Copy 1-Click Lid-Close CMD", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                        Text("Install the trusted desktop companion",
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                            color = DeepSlate800)
+                        Text(
+                            "Install the signed LaptopWatch desktop application on a device you own. " +
+                                "Start it, generate a two-minute QR invitation and approve your phone locally. " +
+                                "Legacy PowerShell one-line installers and PIN/HTTP daemons are removed from " +
+                                "the supported setup flow because they cannot provide verified trust.",
+                            fontSize = 12.sp, color = DeepSlate800
+                        )
+                        Text(
+                            "Do not disable laptop lid safety or force the camera to run while closed: " +
+                                "the webcam is usually obstructed and running hardware in a bag can overheat.",
+                            fontSize = 12.sp, color = MutedSlate500
+                        )
+                        Text(
+                            "For theft recovery, enable Windows Find My Device or Apple Find My " +
+                                "in your OS account before loss. LaptopWatch cannot track a powered-off machine.",
+                            fontSize = 12.sp, color = MutedSlate500
+                        )
                     }
                 }
             }
