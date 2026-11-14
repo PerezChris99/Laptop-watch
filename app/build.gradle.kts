@@ -117,6 +117,14 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
+  // Ed25519 lightweight sign/verify API works on Android versions without
+  // platform JCA Ed25519. Private seeds are AES-GCM wrapped by AndroidKeyStore.
+  implementation("org.bouncycastle:bcprov-jdk15to18:1.86")
+  // On-demand Google Code Scanner needs no direct camera permission.
+  implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+  // Native WebRTC core for planned encrypted video/audio; linkage gated by
+  // real-device testing and the Python aiortc signaling integration.
+  implementation("io.getstream:stream-webrtc-android:1.3.10")
   implementation(libs.play.services.location)
   implementation(libs.osmdroid.android)
   implementation(libs.retrofit)

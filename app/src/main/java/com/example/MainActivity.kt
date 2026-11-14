@@ -35,6 +35,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -46,6 +48,7 @@ import com.example.ui.components.TopStatusHeader
 import com.example.ui.screens.AlertDashboardScreen
 import com.example.ui.screens.IntruderLogsScreen
 import com.example.ui.screens.LaptopSetupScreen
+import com.example.ui.screens.FirstRunConsent
 import com.example.ui.screens.LiveCameraScreen
 import com.example.ui.screens.LocationTrackerScreen
 import com.example.ui.screens.VoiceIntercomScreen
@@ -70,8 +73,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val consent = remember {
+                getSharedPreferences("laptopwatch_consent", MODE_PRIVATE)
+                    .getBoolean("owner_consent_v1", false)
+            }
+            var accepted by remember { mutableStateOf(consent) }
             MyApplicationTheme {
-                LaptopMonitorApp(viewModel = viewModel)
+                if (accepted) {
+                    LaptopMonitorApp(viewModel = viewModel)
+                } else {
+                    FirstRunConsent(onAccept = {
+                        val saved = getSharedPreferences("laptopwatch_consent", MODE_PRIVATE)
+                            .edit().putBoolean("owner_consent_v1", true).commit()
+                        if (saved) accepted = true
+                        else Toast.makeText(this@MainActivity, "Could not save consent", Toast.LENGTH_LONG).show()
+                    })
+                }
             }
         }
     }
@@ -396,7 +413,12 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onToggleDemoMode = { viewModel.toggleDemoMode() },
                         onToggleAwayMode = { viewModel.toggleAwayMode() },
                         onSetAwaySensitivity = { viewModel.setAwaySensitivity(it) },
-                        onToggleBackgroundService = { viewModel.toggleBackgroundService() }
+                        onToggleBackgroundService = { viewModel.toggleBackgroundService() },
+                        onScanPairingQr = { raw -> viewModel.scanLaptopQr(raw) },
+                        onVerifySecurePairing = { viewModel.verifySecurePairing() },
+                        onForgetSecurePairing = { viewModel.forgetSecurePairing() },
+                        onSetSecureCameraArmed = { armed -> viewModel.setSecureCameraArmed(armed) },
+                        onGetSecureLastSeen = { viewModel.refreshSecureLastSeen() }
                     )
                 }
             }

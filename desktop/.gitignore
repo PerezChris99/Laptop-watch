@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.sidecar-build/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/laptopwatch-sidecar-*
+src-tauri/icons/
+*.log
+local-dev/

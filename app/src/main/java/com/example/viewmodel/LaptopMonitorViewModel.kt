@@ -14,6 +14,7 @@ import com.example.data.LaptopLocationEntity
 import com.example.data.LaptopRepository
 import com.example.data.SubjectProfileEntity
 import com.example.util.NotificationHelper
+import com.example.security.SecureLaptopGateway
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -99,7 +100,11 @@ data class MonitorUiState(
     val activeSubjectName: String = "No verified subject",
     val activeSubjectTag: String = "",
     val activeSubjectConfidence: Float = 0.0f,
-    val activeSubjectCategory: String = "UNKNOWN" // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
+    val activeSubjectCategory: String = "UNKNOWN", // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
+    val securePairingStatus: String = "NOT_PAIRED",
+    val secureArmed: Boolean = false,
+    val secureEvidenceId: String? = null
+
 )
 
 class LaptopMonitorViewModel(application: Application) : AndroidViewModel(application) {
@@ -114,6 +119,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         locationDao = database.locationDao(),
         subjectProfileDao = database.subjectProfileDao()
     )
+    private val secureGateway = SecureLaptopGateway(application)
     private val voiceRecorder = VoiceRecorderHelper(application)
     private val notificationHelper = NotificationHelper(application)
 
@@ -167,6 +173,14 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     private var subjectRecordingJob: Job? = null
 
     init {
+        val pairingState = runCatching {
+            when {
+                secureGateway.isApproved() -> "PAIRED"
+                secureGateway.hasPairing() -> "PENDING_APPROVAL"
+                else -> "NOT_PAIRED"
+            }
+        }.getOrDefault("ERROR")
+        _uiState.value = _uiState.value.copy(securePairingStatus = pairingState)
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.initializeDefaultsIfNeeded()
             val initialConfig = repository.getConfigDirect()
@@ -189,6 +203,100 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 Log.w("LaptopMonitorVM", "Foreground service init notice: ${e.message}")
             }
             startHeartbeat()
+        }
+    }
+
+    fun scanLaptopQr(rawQr: String) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            _uiState.value = _uiState.value.copy(isSendingAction = true)
+            val result = secureGateway.requestPairing(rawQr)
+            _uiState.value = _uiState.value.copy(
+                isSendingAction = false,
+                securePairingStatus = if (result.isSuccess) "PENDING_APPROVAL" else "NOT_PAIRED",
+                toastFeedback = if (result.isSuccess) {
+                    "Phone request sent. Approve it on the laptop, then tap Verify."
+                } else "Pairing failed: " + (result.exceptionOrNull()?.message ?: "Invalid QR")
+            )
+        }
+    }
+
+    fun verifySecurePairing() {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val result = secureGateway.verifyApproval()
+            _uiState.value = _uiState.value.copy(
+                securePairingStatus = if (result.isSuccess) "PAIRED" else "PENDING_APPROVAL",
+                toastFeedback = if (result.isSuccess) "Secure laptop pairing verified!"
+                    else (result.exceptionOrNull()?.message ?: "Approval pending")
+            )
+            if (result.isSuccess) {
+                val status = secureGateway.status().getOrNull()
+                _uiState.value = _uiState.value.copy(
+                    secureArmed = status?.optBoolean("motion_armed", false) == true,
+                    connectionState = ConnectionState.CONNECTED,
+                    activeTransport = "SIGNED_TLS",
+                    statusMessage = "Paired encrypted connection"
+                )
+            }
+        }
+    }
+
+    fun forgetSecurePairing() {
+        // User chooses to forget this desktop identity. Revoke the phone
+        // from the laptop as well to prevent stale remote authorization.
+        secureGateway.forgetDevice()
+        _uiState.value = _uiState.value.copy(
+            securePairingStatus = "NOT_PAIRED",
+            secureArmed = false,
+            connectionState = ConnectionState.DISCONNECTED,
+            toastFeedback = "Phone pairing forgotten. Revoke it on the laptop too."
+        )
+    }
+
+    fun setSecureCameraArmed(armed: Boolean) {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val result = secureGateway.arm(armed)
+            if (result.isSuccess) repository.setMotionArmed(armed)
+            _uiState.value = _uiState.value.copy(
+                secureArmed = if (result.isSuccess) armed else _uiState.value.secureArmed,
+                toastFeedback = if (result.isSuccess) {
+                    if (armed) "Laptop camera armed; visible capture permitted" else "Laptop camera disarmed"
+                } else "Arm command failed: " + (result.exceptionOrNull()?.message ?: "Disconnected")
+            )
+        }
+    }
+
+    fun refreshSecureLastSeen() {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val response = secureGateway.lastSeen()
+            val json = response.getOrNull()
+            if (json == null) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "No verified location delivered: " +
+                        (response.exceptionOrNull()?.message ?: "Receiver unavailable")
+                )
+                return@launch
+            }
+            val lat = json.optDouble("latitude", Double.NaN)
+            val lon = json.optDouble("longitude", Double.NaN)
+            val accuracy = json.optDouble("accuracy_meters", Double.NaN)
+            val seen = json.optLong("observed_at_ms", 0L)
+            if (!lat.isFinite() || !lon.isFinite() || !accuracy.isFinite() ||
+                lat !in -90.0..90.0 || lon !in -180.0..180.0 ||
+                accuracy <= 0.0 || seen <= 0L || seen > System.currentTimeMillis() + 30_000L) {
+                _uiState.value = _uiState.value.copy(toastFeedback = "Unverified location data rejected")
+                return@launch
+            }
+            val ageMinutes = ((System.currentTimeMillis() - seen).coerceAtLeast(0L) / 60_000L)
+            _uiState.value = _uiState.value.copy(
+                currentLatitude = lat, currentLongitude = lon,
+                hasLocationCoordinates = true, isLocationDemo = false,
+                isLocationTrackingActive = false, gpsAccuracyMeters = accuracy.toFloat(),
+                lastGpsFixTime = seen,
+                gpsProvider = json.optString("provider", "UNKNOWN"),
+                locationAddress = "Last verified GNSS fix " + ageMinutes +
+                    " min ago (±" + accuracy.toInt() + "m); not a live track",
+                toastFeedback = "Last seen loaded; laptop must be reachable for this query"
+            )
         }
     }
 
@@ -356,27 +464,32 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     // Motion Detection Defense Settings
     fun toggleMotionArmed() {
         val config = laptopConfig.value ?: return
-        val newArmed = !config.isMotionArmed
+        val newState = !config.isMotionArmed
         viewModelScope.launch(coroutineExceptionHandler) {
-            repository.setMotionArmed(newArmed)
-            val msg = if (newArmed) "🛡️ Motion Detection ARMED" else "⚠️ Motion Detection DISARMED"
-            _uiState.value = _uiState.value.copy(
-                toastFeedback = msg,
-                threatLevel = if (newArmed) "SECURE" else "DISARMED"
-            )
-            recordDiagnostic(
-                tag = "SECURITY",
-                status = if (newArmed) "HEALTHY" else "WARNING",
-                message = "Motion sensor arm state set to $newArmed"
-            )
             if (!config.isDemoMode) {
-                val (target, _) = repository.resolveActiveTarget(config)
-                val effectiveSens = if (config.isAwayMode) config.awayMotionSensitivity else config.motionSensitivity
-                repository.syncMotionConfigToLaptop(
-                    target, config.port, config.pin,
-                    armed = newArmed, sensitivity = effectiveSens, autoLock = config.autoLockOnMotion
-                )
+                if (!secureGateway.isApproved()) {
+                    _uiState.value = _uiState.value.copy(
+                        toastFeedback = "Pair and approve a secure laptop before arming the camera"
+                    )
+                    return@launch
+                }
+                val remote = secureGateway.arm(newState)
+                if (remote.isFailure) {
+                    _uiState.value = _uiState.value.copy(
+                        toastFeedback = "Laptop did not change arm state: " +
+                            (remote.exceptionOrNull()?.message ?: "Network offline")
+                    )
+                    return@launch
+                }
             }
+            repository.setMotionArmed(newState)
+            _uiState.value = _uiState.value.copy(
+                secureArmed = newState,
+                toastFeedback = if (config.isDemoMode) "Demo arming simulated"
+                    else if (newState) "Laptop camera armed (person alerts not configured)"
+                    else "Laptop camera disarmed",
+                threatLevel = if (newState) "SECURE" else "DISARMED"
+            )
         }
     }
 
@@ -549,56 +662,38 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         if (config.isDemoMode) {
             _uiState.value = _uiState.value.copy(
                 connectionState = ConnectionState.DEMO_MODE,
-                statusMessage = "Demo Laptop Connected (Ready)",
-                networkLatencyMs = (18..32).random().toLong()
+                statusMessage = "Demo only; no real laptop connection",
+                networkLatencyMs = null
             )
             return
         }
-
+        if (!secureGateway.isApproved()) {
+            _uiState.value = _uiState.value.copy(
+                connectionState = ConnectionState.DISCONNECTED,
+                statusMessage = "Scan QR, approve phone on laptop, then verify pairing",
+                networkLatencyMs = null
+            )
+            return
+        }
         viewModelScope.launch(coroutineExceptionHandler) {
             _uiState.value = _uiState.value.copy(
                 connectionState = ConnectionState.CONNECTING,
-                statusMessage = "Auto-detecting link (LAN / Web)..."
+                statusMessage = "Checking signed HTTPS laptop gateway"
             )
-            val (activeTarget, transport) = repository.resolveActiveTarget(config)
-            val latency = repository.pingLatencyMs(activeTarget, config.pin) ?: 28L
-            val result = repository.checkLaptopStatus(activeTarget, config.port, config.pin)
-            if (result.isSuccess) {
-                val res = result.getOrNull()!!
-                val routeLabel = if (transport == "WEB") "Web Cloud" else "LAN Direct"
-                _uiState.value = _uiState.value.copy(
-                    connectionState = ConnectionState.CONNECTED,
-                    statusMessage = "$routeLabel: ${res.hostname}",
-                    activeTransport = transport,
-                    networkLatencyMs = latency,
-                    batteryLevel = res.battery,
-                    isLocked = res.isLocked,
-                    isCameraActive = res.cameraActive,
-                    motionAlertActive = res.motionDetected,
-                    motionIntensity = res.motionIntensity,
-                    threatLevel = res.threatLevel,
-                    lastMotionTime = res.lastMotionTime,
-                    toastFeedback = "Connected via $routeLabel!"
-                )
-                repository.setLockStatus(res.isLocked)
-                recordDiagnostic(
-                    tag = "NETWORK",
-                    status = "HEALTHY",
-                    message = "Active route: $routeLabel ($activeTarget). Ping OK."
-                )
-            } else {
-                val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Connection failed"
-                _uiState.value = _uiState.value.copy(
-                    connectionState = ConnectionState.ERROR,
-                    statusMessage = "Offline ($errorMsg)",
-                    toastFeedback = "Could not reach laptop via LAN or Web URL."
-                )
-                recordDiagnostic(
-                    tag = "NETWORK",
-                    status = "RECOVERED",
-                    message = "Connection timeout caught: $errorMsg (App running normally)"
-                )
-            }
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val result = secureGateway.status()
+            val latency = android.os.SystemClock.elapsedRealtime() - startedAt
+            val json = result.getOrNull()
+            _uiState.value = _uiState.value.copy(
+                connectionState = if (json != null) ConnectionState.CONNECTED else ConnectionState.ERROR,
+                statusMessage = if (json != null) "LaptopWatch paired gateway online"
+                    else "Laptop unreachable: " + (result.exceptionOrNull()?.message ?: "Unknown error"),
+                activeTransport = "SIGNED_TLS",
+                networkLatencyMs = if (json != null) latency else null,
+                secureArmed = json?.optBoolean("motion_armed", false) ?: _uiState.value.secureArmed,
+                toastFeedback = if (json != null) "Signed laptop connection verified"
+                    else "Laptop did not respond; retry while desktop gateway is active"
+            )
         }
     }
 
@@ -631,8 +726,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val (activeTarget, transport) = repository.resolveActiveTarget(config)
-            val result = repository.lockLaptop(activeTarget, config.port, config.pin)
+            val transport = "SIGNED_TLS"
+            val result: Result<Boolean> = if (secureGateway.isApproved()) {
+                secureGateway.lock().map { true }
+            } else Result.failure(IllegalStateException("Secure laptop pairing required"))
             _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
@@ -777,8 +874,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            val (target, transport) = repository.resolveActiveTarget(config)
-            val result = repository.triggerLaptopAlarm(target, config.port, config.pin)
+            val transport = "SIGNED_TLS"
+            val result: Result<Boolean> = if (secureGateway.isApproved()) {
+                secureGateway.alarm().map { true }
+            } else Result.failure(IllegalStateException("Secure laptop pairing required"))
             _uiState.value = _uiState.value.copy(isSendingAction = false, activeTransport = transport)
             if (result.isSuccess) {
                 _uiState.value = _uiState.value.copy(
@@ -926,27 +1025,42 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun captureManualSnapshot() {
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
-            vibrateDevice(false)
-            val now = System.currentTimeMillis()
-            val snapshotUrl: String?
             if (config.isDemoMode) {
-                snapshotUrl = "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80"
-            } else {
-                val (target, _) = repository.resolveActiveTarget(config)
-                val snapResult = repository.captureSnapshot(target, config.port, config.pin)
-                snapshotUrl = snapResult.getOrNull() ?: repository.getCameraSnapshotUrl(target, config.port, config.pin)
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Demo mode: no real image captured. Pair your laptop to save evidence."
+                )
+                return@launch
             }
-            val updatedList = listOfNotNull(snapshotUrl) + _uiState.value.recentSnapshots.take(7)
+            if (!secureGateway.isApproved()) {
+                _uiState.value = _uiState.value.copy(toastFeedback = "Pair and approve this phone before taking photos")
+                return@launch
+            }
+            val capture = secureGateway.photo()
+            val identifier = capture.getOrNull()?.optString("id", "") ?: ""
+            if (capture.isFailure || identifier.isEmpty()) {
+                _uiState.value = _uiState.value.copy(toastFeedback = "Photo failed: " +
+                    (capture.exceptionOrNull()?.message ?: "Camera is disarmed or unavailable"))
+                return@launch
+            }
+            val saved = secureGateway.download("photo", identifier)
+            if (saved.isFailure) {
+                _uiState.value = _uiState.value.copy(toastFeedback =
+                    "Photo saved on laptop but download failed: " + saved.exceptionOrNull()?.message)
+                return@launch
+            }
+            val uri = android.net.Uri.fromFile(saved.getOrThrow()).toString()
             _uiState.value = _uiState.value.copy(
-                toastFeedback = "📸 Snapshot captured & saved to log!",
-                lastCapturedPhotoUrl = snapshotUrl,
-                recentSnapshots = updatedList
+                lastCapturedPhotoUrl = uri,
+                secureEvidenceId = identifier,
+                recentSnapshots = listOf(uri) + _uiState.value.recentSnapshots.take(7),
+                cameraRefreshTrigger = System.currentTimeMillis(),
+                toastFeedback = "Photo saved securely on both laptop and phone"
             )
             repository.recordEvent(
-                eventType = "Manual Snapshot",
-                description = "High-definition photo captured by laptop webcam",
-                snapshotUrl = snapshotUrl,
-                warningIssued = "Manual Shutter",
+                eventType = "LaptopWatch Photo",
+                description = "Owner captured photo on explicitly armed laptop (evidence " + identifier + ")",
+                snapshotUrl = uri,
+                warningIssued = "Owner camera action",
                 wasLocked = _uiState.value.isLocked,
                 severity = "INFO",
                 category = "USER_ACTION"
@@ -955,29 +1069,11 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun captureAutoMotionSnapshot(config: LaptopConfigEntity) {
-        viewModelScope.launch(coroutineExceptionHandler) {
-            val snapshotUrl: String?
-            if (config.isDemoMode) {
-                snapshotUrl = "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=600&q=80"
-            } else {
-                val (target, _) = repository.resolveActiveTarget(config)
-                val snapResult = repository.captureSnapshot(target, config.port, config.pin)
-                snapshotUrl = snapResult.getOrNull() ?: repository.getCameraSnapshotUrl(target, config.port, config.pin)
-            }
-            val updatedList = listOfNotNull(snapshotUrl) + _uiState.value.recentSnapshots.take(7)
+        // A motion-difference threshold is not proof of an intruder.
+        // Person-class verified auto-capture is not yet enabled.
+        if (!config.isDemoMode) {
             _uiState.value = _uiState.value.copy(
-                lastCapturedPhotoUrl = snapshotUrl,
-                recentSnapshots = updatedList,
-                subjectDetected = true
-            )
-            repository.recordEvent(
-                eventType = "Auto Snapshot",
-                description = "Subject auto-photographed upon motion trigger",
-                snapshotUrl = snapshotUrl,
-                warningIssued = "Intruder Auto-Snap",
-                wasLocked = _uiState.value.isLocked,
-                severity = "ALERT",
-                category = "SECURITY"
+                toastFeedback = "Automatic security photo requires verified person detection"
             )
         }
     }
@@ -993,30 +1089,41 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun startSubjectRecording(isAuto: Boolean = false) {
         val config = laptopConfig.value ?: return
         if (_uiState.value.isSubjectRecordingActive) return
-
         viewModelScope.launch(coroutineExceptionHandler) {
+            if (config.isDemoMode) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Demo only; no actual laptop video recording"
+                )
+                return@launch
+            }
+            if (!secureGateway.isApproved()) {
+                _uiState.value = _uiState.value.copy(toastFeedback = "Pair the laptop before recording")
+                return@launch
+            }
+            val started = secureGateway.startRecording()
+            val id = started.getOrNull()?.optString("id", "") ?: ""
+            if (started.isFailure || id.isBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Video could not start: " +
+                        (started.exceptionOrNull()?.message ?: "Camera disarmed or unavailable")
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(
                 isSubjectRecordingActive = true,
                 subjectRecordingDurationSec = 0,
-                subjectDetected = true,
-                toastFeedback = if (isAuto) "🔴 AUTO-RECORDING Subject in progress..." else "🔴 Recording Subject video started..."
+                secureEvidenceId = id,
+                toastFeedback = "Recording MP4 on laptop. Camera indicator is active."
             )
-            vibrateDevice(true)
-            if (!config.isDemoMode) {
-                val (target, _) = repository.resolveActiveTarget(config)
-                repository.startRecording(target, config.port, config.pin)
-            }
-            // Start recording duration timer
             subjectRecordingJob?.cancel()
             subjectRecordingJob = viewModelScope.launch {
-                var seconds = 0
+                var elapsed = 0
                 while (isActive && _uiState.value.isSubjectRecordingActive) {
                     delay(1000)
-                    seconds++
-                    _uiState.value = _uiState.value.copy(subjectRecordingDurationSec = seconds)
-                    if (isAuto && seconds >= 12) {
-                        // Auto-recorded clip ends after 12 seconds
-                        stopSubjectRecording(isAuto = true)
+                    elapsed++
+                    _uiState.value = _uiState.value.copy(subjectRecordingDurationSec = elapsed)
+                    if ((isAuto && elapsed >= 12) || elapsed >= 180) {
+                        stopSubjectRecording(isAuto = isAuto)
                         break
                     }
                 }
@@ -1025,29 +1132,38 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun stopSubjectRecording(isAuto: Boolean = false) {
-        val config = laptopConfig.value ?: return
-        subjectRecordingJob?.cancel()
-        subjectRecordingJob = null
-        val duration = _uiState.value.subjectRecordingDurationSec
-        _uiState.value = _uiState.value.copy(isSubjectRecordingActive = false)
-
+        if (!_uiState.value.isSubjectRecordingActive) return
         viewModelScope.launch(coroutineExceptionHandler) {
-            var filename = "subject_recording_${System.currentTimeMillis()}.mp4"
-            if (!config.isDemoMode) {
-                val (target, _) = repository.resolveActiveTarget(config)
-                val stopRes = repository.stopRecording(target, config.port, config.pin)
-                filename = stopRes.getOrNull() ?: filename
+            val duration = _uiState.value.subjectRecordingDurationSec
+            val result = secureGateway.stopRecording()
+            val record = result.getOrNull()
+            val id = record?.optString("id", "") ?: ""
+            if (result.isFailure || id.isBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Video stop/finalize failed: " +
+                        (result.exceptionOrNull()?.message ?: "Recording unavailable"),
+                    isSubjectRecordingActive = false
+                )
+                subjectRecordingJob?.cancel()
+                return@launch
             }
+            val downloaded = secureGateway.download("video", id)
+            subjectRecordingJob?.cancel()
+            subjectRecordingJob = null
             _uiState.value = _uiState.value.copy(
-                toastFeedback = "💾 Subject recording saved (${duration}s, $filename)"
+                isSubjectRecordingActive = false,
+                secureEvidenceId = id,
+                toastFeedback = if (downloaded.isSuccess)
+                    "MP4 saved on laptop and phone (" + duration + " seconds)"
+                else "MP4 saved on laptop; phone download unavailable"
             )
             repository.recordEvent(
-                eventType = if (isAuto) "Auto Subject Recording" else "Subject Video Recording",
-                description = "Recorded ${duration}s video clip of subject saved to laptop storage ($filename)",
-                warningIssued = if (isAuto) "Auto Surveillance Video" else "Manual Video Record",
+                eventType = "LaptopWatch Video",
+                description = "Owner recorded MP4 on armed laptop, evidence " + id +
+                    " (" + duration + " seconds)",
                 wasLocked = _uiState.value.isLocked,
-                severity = if (isAuto) "ALERT" else "INFO",
-                category = if (isAuto) "SECURITY" else "USER_ACTION"
+                severity = "INFO",
+                category = "USER_ACTION"
             )
         }
     }
