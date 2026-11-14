@@ -34,7 +34,7 @@ Phone proof: `LWPAIR-PROOF1\\nPHONE_UUID\\nPHONE_PUBLIC_KEY_B64URL\\nQR_CHALLENG
 | `/api/camera/record/stop` | POST | yes | none | clip metadata or 409 |
 | `/api/webrtc/offer` | POST | yes | `{"sdp": string, "type":"offer", "include_audio": false}` | Actual aiortc SDP answer; mic off by default |
 | `/api/webrtc/stop` | POST | yes | none | `success: true` |
-| `/api/evidence/{photo|video}/{32-lowercase-hex-id}` | GET | yes | none | JPEG/MP4 attachment, max gateway path 180 chars |
+| `/api/evidence/list` | GET | yes | none | `items` bounded to at most 100 complete local photo/video entries, `limit:100`; signed owner identity required; newly introduced |\n| `/api/evidence/{photo|video}/{32-lowercase-hex-id}` | GET | yes | none | JPEG/MP4 attachment, max gateway path 180 chars |
 | `/api/location/last-seen` | GET | yes | none | real fix or 404/503; no invented LIVE coordinates |
 | `/api/location/refresh` | POST | yes | none | real receiver fix or 503 |
 | `/api/incidents/query` | POST | yes | `{"after_id": 0, "limit": 100}` | `events, next_after_id`; configured guard required |

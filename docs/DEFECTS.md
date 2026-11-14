@@ -100,3 +100,58 @@ unverified/not started at this gate. No benchmark values fabricated.
 All code modifications requiring inspection of `Warning.txt` await the
 missing authoritative file. See `docs/DECISIONS.md` for conservative
 security defaults and the reason production claims remain prohibited.
+
+## Autopilot completion directive — source recovery checkpoint (2026-11-14)
+
+The owner explicitly waived waiting for the **previously missing** original
+`Warning.txt`. A NEW engineering warning ledger was written; it is not
+represented as that original's contents. No release acceptance is implied.
+
+### Actually executed (outside a full checkout)
+
+```text
+git ls-remote https://github.com/PerezChris99/Laptop-watch.git HEAD
+  -> fatal: Could not resolve host: github.com
+python --version -> Python 3.13.5
+node --version   -> v22.16.0
+npm --version    -> 10.9.2
+java -version    -> OpenJDK 21.0.12.1
+command -v cargo -> missing
+command -v rustc -> missing
+command -v gradle -> missing
+command -v adb -> missing
+
+node /mnt/data/lwwork/verify.mjs
+  -> Node crypto: 3 LW1 signatures + QR + proof verified byte-identically;
+     tampering rejected.
+python /mnt/data/lwwork/design/generate.py --check
+  -> Shared tokens are synchronized.
+Python cryptography signature check of the same vectors
+  -> Python cryptography: 3 requests, QR, proof PASS
+```
+
+These are **fixture checks**, not repository pytest, React Native library
+interop, Android signed-network tests or native app build results.
+
+### Phase-by-phase stop-ship decisions
+
+| Phase | Status | Exact unmet gate | Required human action |
+|---|---|---|---|
+| 0 Base toolchains | **BLOCKED** | No clean materialized checkout, Python media extras, Cargo/Rust, pinned Gradle wrapper, SDK, desktop npm lock, Cargo lock or mobile npm lock; `npm ci`, `cargo build --locked`, `./gradlew assembleDebug`, full `pytest` **NOT EXECUTED** | Supply a full locally mountable repo checkout or repair GitHub DNS/HTTPS; install Rust stable, Gradle official pinned wrapper/JAR, JDK matching RN 0.88, Android SDK including API 36/37, npm registry; generate reviewed lockfiles and execute exact commands in `docs/RELEASE_RUNBOOK.md` |
+| 1 Signed client | **BLOCKED** | Node `@noble/ed25519`/RN native test dependencies not installed; committed vector tests against exact repository library **NOT EXECUTED** | Run `cd mobile && npm ci && npm run test:protocol` and `cd desktop/src-python && pytest -q tests/test_protocol_vectors.py` from clean checkout; attach outputs |
+| 2 Rust supervisor | **BLOCKED** | Source supervision/epoch fence/backoff is not compiled; no child crash integration test or signed health probe; no rotating/redacted log service | Install Rust/Tauri prerequisites, then `cd desktop/src-tauri && cargo build --locked && cargo test --locked`; test 5-crash cap, autostart, sleep, Quit and log redaction on Windows/macOS/Linux |
+| 3 White-paper owner UI | **BLOCKED** | CSS token checks only; no desktop npm lock, lint, unit/component tests, WCAG contrast run or installable screenshot | Provide reachable npm registry, regenerate reviewed `desktop/package-lock.json`, execute `cd desktop && npm ci && npm run build && npm run lint`; perform keyboard/screen-reader/contrast review |
+| 4 RN JavaScript Android | **BLOCKED** | No official RN `mobile/android/` or `mobile/ios/` scaffolds, npm lock, native pinned module registered, Android build, on-device Keychain check, QR camera scanner or SQLite migration test | On supported Android/Xcode host generate RN 0.88.1 JavaScript native projects, register pinned OkHttp module, add verified Android permissions, commit official generated files and reviewed `package-lock.json`; run `npm ci && npm run check:js && npm run lint && npm run android` |
+| 5 Camera and vault | **BLOCKED** | Media receiver and signed evidence list untested; no native WebRTC, mic opt-in, preview/export/delete and real camera/MP4/person-model acceptance | Install `react-native-webrtc` with native project, test signed offer/answer, DTLS-SRTP, app-private evidence and consent on Android device and actual laptop; supply licensed, SHA256-verified ONNX |
+| 6 Background, FCM, GNSS | **BLOCKED** | No RN foreground service, genuine FCM, GNSS hardware or 24h battery/Doze soak; current RN foreground-only polling is not an always-on listener | Configure authorized Firebase, approved FGS type/permissions and Android notifications, real GNSS receiver, paired devices/relay, then test notification latency/reboot/Doze/last-seen accuracy |
+| 7 Parity/release | **BLOCKED** | Kotlin feature parity incomplete; no full dependency audits or CycloneDX SBOM, no signed installers, no legal/commerce credentials, no 24h soak | Owner provides build fleet, release identity, third-party accounts, license/privacy/EULA decision, independent security reviewer and final approval; **explicit separate approval required before deleting `app/`** |
+
+### Cross-subsystem quality checklist (not green)
+
+- No tests were claimed as run for newly integrated Rust/Tauri, Kotlin,
+  mobile native module, op-sqlite, camera/WebRTC, FCM or GNSS.
+- The JS anti-theft commands MUST remain no-queue; TLS pinning MUST fail
+  closed without the Android native module; no background camera/microphone.
+- Direct app ownership and signing are NOT substitutes for device approval;
+  the Android RN migration is not a releasable replacement for Kotlin yet.
+- Phase 7 is incomplete; do not publish, market as verified or delete Kotlin.

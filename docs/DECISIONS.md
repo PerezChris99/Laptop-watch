@@ -46,3 +46,40 @@
 - **Status:** ACCEPTED.
 - Continue all unblocked investigation without phase-progress prose, then provide a single evidence-based §14 report. An explicit request for the missing authoritative file is allowed under the owner's autopilot exception.
 - Do not merge an unverified native source overhaul as if it were a signed production release. A documentation-only baseline assessment may be committed to `perez`, reviewed against the original SHA and merged through an ordinary PR with an explicit **NOT VERIFIED** disclaimer.
+
+## Decision 007 — User waiver and source recovery checkpoint (2026-11-14)
+
+- **Status: ACCEPTED FOR ENGINEERING WORK ONLY.** Owner instructed
+  "ignore the required files and execute autopilot mode" and provided an
+  explicit completion directive. This waives the prior stop on missing
+  original `Warning.txt` but does not waive safety, real test output,
+  Android/native hardware, independent review or third-party authority.
+- Recreated `Warning.txt` is a **new engineering warning ledger**, not a
+  reconstruction of unseen original contents.
+- Retain Kotlin `app/` until actual compiled JavaScript/React Native parity
+  and a separate explicit owner authorization to remove it.
+- **No false-green rule:** a GitHub commit/merged PR is traceability, not
+  acceptance. Native builds, component lint, checkJs, e2e and hardware remain
+  BLOCKED with named human action in `docs/DEFECTS.md`.
+- **No source-only promotion as production:** external API credentials, signed
+  installers, OS keystore tests and commercial legal approval are still P0/P1.
+- The isolated runner proves deterministic fixture cryptography and token
+  equality only; it cannot recreate a native Android, Rust, or clean npm
+  build in the absence of checkout/toolchains and dependency indexes.
+
+## Decision 008 — Signed vault inventory and receiver-only client
+
+- Add `GET /api/evidence/list` as a **new signed** endpoint, bounded to
+  100 real local evidence metadata entries. Retain separate per-item signed
+  evidence download route. Do not add any unauthenticated localhost read.
+- React Native WebRTC receiver must negotiate via the existing signed
+  `/api/webrtc/offer` and `/api/webrtc/stop` routes, receive only the
+  laptop camera, and leave microphone disabled until a separately proven
+  consent/permission integration is built.
+- The native pinned Android network module fails closed when missing;
+  `fetch` must never silently replace TLS certificate pinning.
+- App-private op-sqlite is a cache only, not a command queue, and no private
+  Ed25519 seed may be persisted there. Plain SQLite lacks SQLCipher at
+  this checkpoint: confidentiality of cached alerts/GNSS is an explicit gap.
+- Internet absence, OS sleep/hibernate, and native battery restrictions
+  can prevent an immediate action. No claim of uninterrupted protection.

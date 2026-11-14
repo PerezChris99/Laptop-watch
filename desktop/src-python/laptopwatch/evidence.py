@@ -6,6 +6,8 @@ implement hidden capture, background audio, or remote upload.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import heapq
+import re
 import os
 from pathlib import Path
 import threading
@@ -98,6 +100,45 @@ class EvidenceRecorder:
             if not ok:
                 raise CaptureUnavailable("Unable to encode JPEG")
             return jpeg.tobytes()
+
+    def list_evidence(self, *, limit: int = 100) -> list[dict[str, str | int]]:
+        """Bounded owner-only inventory. No symlink, hidden or partial-file leaks.
+
+        Return file metadata only; downloading still requires the independently
+        signed /api/evidence/{kind}/{id} route.
+        """
+        if not 1 <= limit <= 100:
+            raise ValueError("Evidence list limit must be 1..100")
+        # The current MP4 file is writable before its footer is finalized.
+        # Exclude MP4 files while recording rather than exposing a partial clip.
+        include_videos = not self.recording
+
+        def files():
+            try:
+                for path in self.directory.iterdir():
+                    match = re.fullmatch(r"(photo|video)-([0-9a-f]{32})\.(jpg|mp4)", path.name)
+                    if match is None or (match.group(1) == "photo") != (match.group(3) == "jpg"):
+                        continue
+                    if match.group(1) == "video" and not include_videos:
+                        continue
+                    try:
+                        if path.is_symlink() or not path.is_file():
+                            continue
+                        stat = path.stat()
+                    except OSError:
+                        continue
+                    if not 0 < stat.st_size <= self.max_file_bytes:
+                        continue
+                    yield {
+                        "kind": match.group(1),
+                        "id": match.group(2),
+                        "size_bytes": stat.st_size,
+                        "modified_at_ms": stat.st_mtime_ns // 1_000_000,
+                    }
+            except OSError:
+                return
+
+        return heapq.nlargest(limit, files(), key=lambda item: (item["modified_at_ms"], item["id"]))
 
     def take_photo(self) -> dict[str, str | int]:
         return self.store_photo(self.snapshot())

@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check:tokens": "python ../design/generate.py --check",
-    "prebuild": "python ../design/generate.py --check"
+    "prebuild": "python ../design/generate.py --check",
+    "lint": "eslint . --max-warnings=0",
+    "check:js": "tsc --noEmit --project jsconfig.json",
+    "format:check": "prettier --check \"src-ui/src/**/*.{js,jsx,css}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
@@ -21,6 +24,14 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.0",
     "@vitejs/plugin-react": "^5.1.0",
-    "vite": "^7.2.0"
+    "vite": "^7.2.0",
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-security": "4.2.1",
+    "prettier": "3.6.2",
+    "typescript": "5.9.3",
+    "@types/react": "19.2.3",
+    "@types/react-dom": "19.2.3"
   }
 }
