@@ -29,6 +29,7 @@ MAX_CONTROL_BODY = 64 * 1024
 class ControlSurface(Protocol):
     def lock(self) -> bool: ...
     def alarm(self) -> bool: ...
+    def speak(self, text: str) -> bool: ...
     def snapshot(self) -> bytes | None: ...
 
 
@@ -63,6 +64,11 @@ class RtcOffer(BaseModel):
     sdp: str
     type: str
     include_audio: bool = False
+
+
+class SpeakRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    message: str
 
 
 class PairingRequest(BaseModel):
@@ -153,6 +159,24 @@ def create_app(state: GatewayState) -> FastAPI:
                 "media_transport": "WEBRTC" if state.rtc is not None else "SNAPSHOT_ONLY",
                 "media_active": bool(state.rtc is not None and state.rtc.active)}
 
+    @app.post("/api/warning/tts")
+    async def tts_warning(request: Request):
+        try:
+            payload=SpeakRequest.model_validate_json(request.state.raw_body)
+            text=payload.message.strip()
+            if not 1 <= len(text) <= 400 or any(ord(c)<32 for c in text):
+                raise ValueError("Invalid text")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid text warning")
+        try:
+            ok=await asyncio.to_thread(state.controller.speak,text)
+        except (OSError, RuntimeError):
+            ok=False
+        state.audit.append("tts",request.state.paired_device,result="success" if ok else "failure")
+        if not ok:
+            raise HTTPException(status_code=503, detail="Speech output unavailable on laptop")
+        return {"success":True}
+
     @app.post("/api/config/armed")
     async def arm(request: Request):
         async with media_lock:
@@ -161,18 +185,18 @@ def create_app(state: GatewayState) -> FastAPI:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid arm payload")
             if not parsed.armed:
-                # Disarm is fail-closed even when media cleanup reports a
-                # device error. Avoid leaving capture authorized on failure.
+                # Deny every new capture BEFORE media cleanup; a failed camera
+                # device release can no longer leave the app armed.
                 state.set_armed(False)
-                if state.rtc is not None:
-                    await state.rtc.close()
-                if state.evidence is not None:
-                    try:
+                try:
+                    if state.rtc is not None:
+                        await state.rtc.close()
+                    if state.evidence is not None:
                         await asyncio.to_thread(state.evidence.stop_if_recording)
-                    except CaptureUnavailable:
-                        state.audit.append("config", request.state.paired_device, result="failure",
-                                           metadata={"armed":"False","cleanup":"failed"})
-                        raise HTTPException(status_code=503, detail="Camera release needs attention")
+                except Exception:
+                    state.audit.append("config", request.state.paired_device, result="failure",
+                                       metadata={"armed":"False","release":"failed"})
+                    raise HTTPException(status_code=503, detail="Disarmed but camera release failed")
             else:
                 state.set_armed(True)
             state.audit.append("config", request.state.paired_device, result="success", metadata={"armed": str(parsed.armed)})

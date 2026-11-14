@@ -231,6 +231,10 @@ class SecureLaptopGateway(context: Context) {
     suspend fun arm(armed: Boolean) = json("POST", "/api/config/armed", JSONObject().put("armed", armed))
     suspend fun lock() = json("POST", "/api/lock")
     suspend fun alarm() = json("POST", "/api/alarm")
+    suspend fun speak(message: String): Result<JSONObject> {
+        require(message.length in 1..400) { "Text warning must be 1–400 characters" }
+        return json("POST", "/api/warning/tts", JSONObject().put("message", message))
+    }
     suspend fun photo() = json("POST", "/api/camera/photo")
     suspend fun startRecording() = json("POST", "/api/camera/record/start")
     suspend fun stopRecording() = json("POST", "/api/camera/record/stop")

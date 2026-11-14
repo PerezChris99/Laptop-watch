@@ -77,6 +77,40 @@ class NativeController:
         threading.Thread(target=play_pcm, daemon=True).start()
         return True
 
+    def speak(self, message: str) -> bool:
+        """Deliver an explicit owner-requested warning through laptop speakers.
+
+        Subprocess argument vectors and Windows stdin avoid command injection.
+        This action is consent-based; no microphone, audio recording or stealth.
+        """
+        if not isinstance(message, str) or not 1 <= len(message.strip()) <= 400:
+            return False
+        if any(ord(c) < 32 and c not in "\\t" for c in message):
+            return False
+        system = platform.system()
+        try:
+            if system == "Windows":
+                command = [
+                    "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+                    "-Command",
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$v=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    "$v.Speak([Console]::In.ReadToEnd())",
+                ]
+                return subprocess.run(
+                    command, input=message, text=True, timeout=15,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                ).returncode == 0
+            command = (["/usr/bin/say", message] if system == "Darwin"
+                       else ["spd-say", message])
+            if not shutil.which(command[0]):
+                return False
+            return subprocess.run(
+                command, timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
     def snapshot(self) -> bytes | None:
         """Snapshot fallback only; webcam is opened on demand and always released."""
         with self._camera_lock:

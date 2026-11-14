@@ -63,3 +63,27 @@
 ## Do not auto-green external gates
 
 App store submission and acceptance, signing with owner keys, macOS notarization, billing agreements, trademark clearance, legal counsel review and physical device tests require authorized access, identity and real devices. If unavailable, record **BLOCKED**, not **PASS**. Never ship an unverified camera or security app as "100% secure".
+
+
+## November 14 integration checkpoint (still NOT release ready)
+
+- [x] Android and desktop source implement QR-pinned HTTPS Ed25519 device pairing.
+- [x] Legacy Android HTTP/PIN client removed from runnable network paths.
+- [x] Tauri React + Rust desktop UI and PyInstaller sidecar packaging layout exists.
+- [x] WebRTC offer/stop, optional phone microphone path and mDNS discovery source exists.
+- [x] Signed photo/MP4/TTS, camera disarm cleanup and last-seen endpoints implemented.
+- [x] Optional single-owner location relay source, signed report receipts and AES-GCM stored coordinates.
+- [x] Optional hash-pinned person-only classifier source (no model weights bundled).
+- [x] Gradle Android debug signing changed to use standard generated debug keystore.
+- [ ] Full Python authentication/gateway + relay suites executed and green on integrated HEAD.
+- [ ] Android Gradle wrapper binaries/scripts present and reproducible Android SDK build green.
+- [ ] Tauri Rust/Linux/Windows/Mac builds and signed installers generated and installed.
+- [ ] Authenticated QR → approval → video/photo/audio → recovery field acceptance with actual phone.
+- [ ] Person detection with legally sourced model, false-positive recordings and reliable mobile push.
+- [ ] WAN signaling, STUN/TURN host, stable Internet reconnect and mobile network handoff verified.
+- [ ] Remote encrypted relay deployed to owner-controlled HTTPS domain; key backup, enroll/revoke and real delivery tested.
+- [ ] OS GPS with consent (or proven external GNSS) and idle/sleep/power-state matrix verified.
+- [ ] Legal policy, license, accounts, merchant, certifications and Android/iOS/store acceptance reviewed.
+- [ ] Production threat modeling, pentest, disk quota, key rotation, backups and long soak verified.
+
+A source-level milestone is NOT a production milestone. No 100% security claim.

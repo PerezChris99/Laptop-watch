@@ -357,6 +357,7 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         liveVideoTrack = liveTrack,
                         eglContext = viewModel.videoEglContext(),
                         onStartLive = { viewModel.startLiveVideo() },
+                        onStartLiveAudio = { viewModel.startLiveVideo(includeAudio = true) },
                         onStopLive = { viewModel.stopLiveVideo() },
                         onCaptureSnapshot = { viewModel.captureManualSnapshot() },
                         onLockToggle = {

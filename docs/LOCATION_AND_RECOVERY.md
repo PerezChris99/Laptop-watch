@@ -1,6 +1,6 @@
 # LaptopWatch — accurate location, offline last-seen and theft recovery
 
-**Status:** partial Python implementation, **not a complete remote theft-recovery service**.
+**Status:** Python GNSS plus source-level signed remote relay/uploader and Android retrieval; **not a verified theft-recovery service until deployed and field-tested**.
 
 <img src="images/arch_overview.jpg" alt="Original LaptopWatch laptop-to-phone architecture illustration" width="100%" />
 

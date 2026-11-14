@@ -6,14 +6,14 @@
 
 **Remote workstation vigilance · Private evidence capture · Anti-theft response**
 
-Android controller + desktop companion — **under active development, not a production release**
+Android controller + Tauri desktop companion — **0.3.0-dev, not a production release**
 
 <img src="docs/images/hero_banner.jpg" alt="LaptopWatch anti-theft system concept: laptop protection paired with an Android phone" width="100%" />
 
 </div>
 
 > [!WARNING]
-> **Not production-ready.** The existing Android app cannot yet pair with the new signed HTTPS gateway. Never expose the insecure, PIN-based legacy companion on a public network. This is an engineering repository, not a signed installable consumer product.
+> **Not production-ready.** The signed Android/desktop pairing implementation is present in source but is not yet verified on real devices or distributable as a signed release. Never expose the insecure, PIN-based legacy companion on a public network. This is an engineering repository, not a signed installable consumer product.
 
 ## What LaptopWatch is
 
@@ -43,19 +43,19 @@ flowchart LR
 
 | Capability | Implementation today | Production gap |
 |---|---|---|
-| Android interface | Kotlin, Compose, Room, six screens, demo and legacy setup | Native paired-key control, QR onboarding, end-to-end tests |
+| Android interface | Kotlin, Compose, Room, signed QR/Ed25519 pairing, private photo/MP4 controls and WebRTC receiver source | Physical builds, camera and audio permission tests, real end-to-end tests |
 | Laptop control | Signed Python gateway: status, arm/disarm, lock and alarm | OS-specific device verification, desktop UI and installs |
 | **Take a photo** | Signed `POST /api/camera/photo` writes private JPEG | Android controls, actual camera tests, retention and export UX |
 | **Record video** | Signed `POST /api/camera/record/start` and `stop`; bounded local MP4 | Android integration, hardware codecs, durability/soak and quality tuning |
 | View/download evidence | Signed `GET /api/evidence/{kind}/{id}` | In-app evidence vault and secure retention/deletion |
-| Live camera | On-demand still snapshot fallback | Real WebRTC video, ICE reconnect, end-to-end latency |
+| Live camera | aiortc Python offer/stop signaling and Android DTLS-SRTP video receiver source | Physical latency validation, TURN, mobile network handoff, 24-hour soak |
 | Motion alerts | Legacy OpenCV frame difference | Person-only on-device model, notification/push reliability |
 | Authentication | Per-phone Ed25519 signatures, nonce/replay denial, paired registry in Python | Phone-side key management/QR, cert pinning and mobile integration |
 | **Real location** | Opt-in `gpsd` GNSS provider, rejects missing/invalid fixes | Native Windows/macOS providers, receiver hardware and privacy consent UI |
-| **Last-seen location** | Durable local SQLite timestamp, accuracy, stale/fresh flag | Trusted remote persistence accessible if the laptop is stolen |
-| Offline reconnect queue | Holds unsent GNSS fixes until acknowledged by a trusted sender | Implement the signed remote sender, recipient and wake/reconnect hooks |
+| **Last-seen location** | Durable local SQLite fix and optional AES-GCM encrypted, authenticated self-hosted relay | Production hosting, verified delivery and retention/recovery tests |
+| Offline reconnect queue | Local queue, signed HTTPS desktop sender and opt-in self-hosted encrypted relay source | Real DNS/TLS deployment, owner enrollment, phone remote tests, OS resume hooks |
 | Work while asleep/offline | Last known record survives on storage | Ordinary app code cannot run in deep sleep/power-off; see OS recovery |
-| Desktop app | Python gateway and CLI modules | Tauri 2 + React/JSX, tray, autostart, signing and installers |
+| Desktop app | Tauri 2 + React owner UI, tray, pairing QR, Python sidecar packaging source | Native build/sign/notarize/install and service recovery tests |
 | Commercial release | Draft privacy, pricing, EULA and Play listing | Owner review, real accounts, payment, signed binaries, device matrix |
 
 ## Evidence capture workflow
@@ -107,6 +107,26 @@ flowchart TD
 - **Sleep, shutdown or dead battery:** user-mode Python cannot guarantee tracking, networking, or webcam operation. Supported macOS Find My hardware/network functionality may locate an offline sleeping Mac; Windows Find My Device should be enabled separately on Windows. A discrete cellular GPS tracker with its own battery is needed for tracking independent of laptop power/network.
 
 Detailed feasibility, architecture and limitations: [Location, Lost Device & Reconnection Design](docs/LOCATION_AND_RECOVERY.md).
+
+## New integrated development modules (November 14, 2026)
+
+The existing Android QR screen now requests a short-lived signed invite; the desktop
+owner explicitly approves the phone. Signed HTTPS actions support arming, taking
+JPEG photos, recording MP4, locking, alarm and text-to-speech. The live-view
+source includes an aiortc signaling endpoint and Android WebRTC video receiver,
+with an opt-in microphone path and local network discovery. Optional real GNSS
+last-seen reports may be delivered to a separately deployed encrypted,
+single-owner location relay. Source presence is **not** a passed hardware test.
+
+The older PIN-based HTTP client now **fails closed**, and unsafe PowerShell
+installer/lid policy instructions have been removed from Android setup.
+The person detector code requires owner-supplied, SHA-256 verified model weights;
+it is **not yet wired into a reliable phone push-alert pipeline**.
+The unproven background legacy Android polling service is disabled at app startup.
+
+See [Desktop app](desktop/README.md), [private relay](services/location-relay/README.md),
+[runbook and verification](docs/BUILD_AND_RELEASE.md) and
+[actual readiness](docs/STATUS.md).
 
 ## Development quickstart
 
