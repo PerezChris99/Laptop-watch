@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">Laptop Monitor</string>
+    <string name="app_name">LaptopWatch</string>
+    <string name="pair_screen_title">Pair laptop securely</string>
+    <string name="pair_scan_action">Scan laptop QR</string>
+    <string name="pair_waiting">Waiting for owner approval on the laptop</string>
+    <string name="pair_verify">Verify laptop pairing</string>
+    <string name="camera_arm">Arm laptop camera</string>
+    <string name="camera_disarm">Disarm laptop camera</string>
+    <string name="evidence_photo">Take a photo</string>
+    <string name="evidence_video">Record a video</string>
+    <string name="last_seen">Last verified location</string>
 </resources>

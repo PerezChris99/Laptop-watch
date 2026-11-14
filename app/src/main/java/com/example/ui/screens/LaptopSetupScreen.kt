@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Save
@@ -100,6 +102,11 @@ fun LaptopSetupScreen(
     onToggleAwayMode: () -> Unit = {},
     onSetAwaySensitivity: (String) -> Unit = {},
     onToggleBackgroundService: () -> Unit = {},
+    onScanPairingQr: (String) -> Unit = {},
+    onVerifySecurePairing: () -> Unit = {},
+    onForgetSecurePairing: () -> Unit = {},
+    onSetSecureCameraArmed: (Boolean) -> Unit = {},
+    onGetSecureLastSeen: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -124,7 +131,7 @@ fun LaptopSetupScreen(
         }
     }
 
-    var selectedSetupTab by remember { mutableStateOf(0) }
+    var selectedSetupTab by remember { mutableStateOf(3) }
     val haptics = rememberAppHaptics()
 
     Column(
@@ -231,7 +238,8 @@ fun LaptopSetupScreen(
             val tabs = listOf(
                 "Link & Config" to Icons.Default.Lan,
                 "Away & Guard" to Icons.Default.Sensors,
-                "PC Scripts" to Icons.Default.Terminal
+                "Legacy Scripts" to Icons.Default.Terminal,
+                "Pair QR" to Icons.Default.QrCodeScanner
             )
             tabs.forEachIndexed { index, (label, icon) ->
                 val isSelected = selectedSetupTab == index
@@ -274,7 +282,95 @@ fun LaptopSetupScreen(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            // TAB 0: LINK & CONFIGURATION
+            // TAB 3: PINNED QR PAIRING — primary and secure setup path.
+            if (selectedSetupTab == 3) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = WhitePure),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Secure laptop pairing", fontSize = 18.sp,
+                            color = DeepSlate800, fontWeight = FontWeight.Bold)
+                        Text(
+                            "1. On the desktop companion choose Pair Android and show its QR. " +
+                                "2. Scan here; approve this phone on the laptop. " +
+                                "3. Tap Verify. Each phone has an independent, encrypted signing key.",
+                            fontSize = 12.sp, color = MutedSlate500
+                        )
+                        Text(
+                            "Phone status: " + uiState.securePairingStatus,
+                            color = if (uiState.securePairingStatus == "PAIRED") EmeraldSafe else AmberWarning,
+                            fontSize = 12.sp, fontWeight = FontWeight.Bold
+                        )
+                        Button(
+                            onClick = {
+                                GmsBarcodeScanning.getClient(context).startScan()
+                                    .addOnSuccessListener { barcode ->
+                                        val raw = barcode.rawValue
+                                        if (raw != null && raw.startsWith("laptopwatch://pair?")) {
+                                            onScanPairingQr(raw)
+                                        } else {
+                                            Toast.makeText(context, "Not a LaptopWatch QR", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    .addOnFailureListener { error ->
+                                        Toast.makeText(context,
+                                            error.message ?: "QR scanner unavailable",
+                                            Toast.LENGTH_LONG).show()
+                                    }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                                .testTag("scan_laptop_qr_button"),
+                            enabled = !uiState.isSendingAction
+                        ) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Scan Laptop QR", fontSize = 13.sp)
+                        }
+                        OutlinedButton(
+                            onClick = onVerifySecurePairing,
+                            modifier = Modifier.fillMaxWidth()
+                                .testTag("verify_secure_pairing_button"),
+                            enabled = uiState.securePairingStatus != "NOT_PAIRED"
+                        ) { Text("Verify laptop approval", fontSize = 13.sp) }
+                        if (uiState.securePairingStatus == "PAIRED") {
+                            OutlinedButton(
+                                onClick = { onSetSecureCameraArmed(!uiState.secureArmed) },
+                                modifier = Modifier.fillMaxWidth()
+                                    .testTag("toggle_secure_camera_button")
+                            ) {
+                                Text(if (uiState.secureArmed) "Disarm laptop camera"
+                                    else "Arm laptop camera (visible capture)", fontSize = 13.sp)
+                            }
+                            OutlinedButton(
+                                onClick = onGetSecureLastSeen,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Retrieve last verified laptop location", fontSize = 12.sp)
+                            }
+                            OutlinedButton(
+                                onClick = onForgetSecurePairing,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Forget this phone pairing", fontSize = 12.sp)
+                            }
+                        }
+                        Text(
+                            "No stealth capture. Camera activity is visible. " +
+                                "The laptop must be awake; never assume GPS without a real receiver. " +
+                                "The old HTTP/PIN installer is not safe for production.",
+                            color = MutedSlate500, fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // TAB 0: LEGACY LINK & CONFIGURATION (DEV ONLY)
             if (selectedSetupTab == 0) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
