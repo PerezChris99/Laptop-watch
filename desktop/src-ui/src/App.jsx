@@ -23,6 +23,8 @@ export default function App () {
   const [devices, setDevices] = useState([])
   const [evidence, setEvidence] = useState([])
   const [autostart, setAutostart] = useState(false)
+  const [enableGpsd, setEnableGpsd] = useState(false)
+  const [relayUrl, setRelayUrl] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -58,9 +60,13 @@ export default function App () {
   const createInvite = () => execute('pair', async () => {
     const response = await invoke('create_pair_invitation', { host: lanIP })
     const parsed = JSON.parse(response)
+    await invoke('start_companion', {
+      allowLan: true,
+      enableGpsd,
+      relayUrl: enableGpsd && relayUrl.trim() ? relayUrl.trim() : null,
+    })
     setInvite(parsed)
-    setMessage('Scan on Android; verify the laptop, then approve the phone below.')
-    await invoke('start_companion', { allowLan: true })
+    setMessage('Secure listener started. Scan this QR and approve the phone below.')
     setProtecting(true)
   })
 
@@ -139,6 +145,21 @@ export default function App () {
         {page === 'settings' && <>
           <h1>Safety &amp; startup</h1>
           <div className="panel"><div className="switchrow"><div><h3>Launch LaptopWatch at login</h3><p>Optional. Starting the app does not automatically arm your camera.</p></div><input type="checkbox" checked={autostart} onChange={e => updateAutostart(e.target.checked)} aria-label="Launch at login" /></div></div>
+          <div className="panel">
+            <h3>Optional GPS and remote last-seen</h3>
+            <p>Location upload is OFF by default. Enable only on a laptop you own, with an actual gpsd receiver and lawful consent. The public relay must be deployed and have the laptop/phone public keys enrolled separately.</p>
+            <label className="switchrow"><span>Use a configured real GNSS receiver (gpsd) while laptop is awake</span>
+              <input type="checkbox" checked={enableGpsd}
+                onChange={e => { setEnableGpsd(e.target.checked); if (!e.target.checked) setRelayUrl('') }}
+                aria-label="Opt in to GPS hardware polling" /></label>
+            <label htmlFor="ownerRelay">Owner's HTTPS relay domain (optional)</label>
+            <input id="ownerRelay" value={relayUrl}
+              disabled={!enableGpsd || protecting}
+              placeholder="https://relay.yourdomain.com"
+              onChange={e => setRelayUrl(e.target.value)}
+              style={{ width:'100%',padding:10,border:'1px solid #ccd7e1',borderRadius:6,marginTop:8 }} />
+            <p>Tracking settings apply only when you next start the desktop gateway. Disable the service to stop sampling and uploading. No data is sent until a real receiver, explicit opt-in and trusted, reachable relay exist.</p>
+          </div>
           <div className="panel"><h3>Privacy</h3><p>Only record where you are legally permitted. Camera hardware indicators stay on during capture; stop and disarm explicitly. Sleeping or powered-off laptops cannot stream live video or run ordinary GNSS polling.</p></div>
           <div className="panel"><h3>Release status</h3><p>This desktop frontend is under development and requires packaging, signing, installer tests, OS key-storage hardening and real-device verification.</p></div>
         </>}

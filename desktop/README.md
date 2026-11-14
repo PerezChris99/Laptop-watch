@@ -57,8 +57,10 @@ LAN listener is only started after the owner requests pairing.
 
 ## Limitations and hard gates
 
-- No mature audio/video WebRTC, mDNS/ICE/TURN, native person detector or remote
-  alert service yet. Signed HTTPS still JPEG and bounded MP4, not live streaming.
+- WebRTC signaling, video/optional microphone tracks and mDNS discovery are
+  implemented as source-level integrations; real camera codecs, cross-platform
+  audio and WAN ICE/TURN need field tests. Person-detector source exists but
+  verified model weights and push alerts are not deployed.
 - Real Windows/macOS/Linux camera/lock APIs, tray/autostart and installer package
   need physical validation. No signed/notarized binaries have been produced.
 - Sidecar private keys are in permission-restricted development files, **not**

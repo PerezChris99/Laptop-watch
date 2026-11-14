@@ -15,7 +15,7 @@
 5. I can lock the laptop screen remotely or optionally sound an alarm. I do not remotely unlock it; OS authentication stays on the laptop.
 6. I return, stop recording, disarm surveillance and review or delete my evidence. The webcam is released, hardware privacy indicator turns off and session audit records remain available.
 
-**Implementation today:** Android still uses the legacy protocol, so steps 1–6 are **not functioning as a complete mobile-to-desktop workflow**. The new signed Python gateway separately supports lock, alarm, JPEG photo, bounded MP4 start/stop and authenticated evidence download. Its native camera behavior still needs physical-device testing.
+**Implementation today:** The new Android ↔ desktop QR signing, manual photos, MP4 and WebRTC controls are connected at source level, **but have not passed hardware builds or end-to-end field tests**. The new signed Python gateway separately supports lock, alarm, JPEG photo, bounded MP4 start/stop and authenticated evidence download. Its native camera behavior still needs physical-device testing.
 
 **Critical caveat:** If the laptop lid is closed so the webcam points at a blocked scene, it cannot watch the room. If the OS sleeps, ordinary Python camera detection and network requests stop. Never recommend disabling all sleep protections on a laptop in a bag; that is a thermal and safety hazard.
 
@@ -64,7 +64,7 @@ sequenceDiagram
     PC->>Q: Acknowledge only delivered event
 ```
 
-**Implemented:** a local GNSS provider adapter, persistent SQLite fixes, and a queue whose `on_secure_transport_available(sender)` hook retries without losing records on failure. **Not implemented:** an actual remote recipient, Internet reachability monitoring, push notifications and OS resume/reconnect event wiring. Therefore an Internet connection that lasts only milliseconds is **not** guaranteed to deliver a location. A stale fix may be the only useful information.
+**Implemented:** a local GNSS provider adapter, persistent SQLite fixes, and a queue whose `on_secure_transport_available(sender)` hook retries without losing records on failure. **Implemented at source level:** an opt-in signed desktop uploader and one-owner HTTPS relay with AES-GCM encrypted location records and an owner-phone retrieval API. **Not completed:** deployment, actual connectivity telemetry, push notifications, phone credential provisioning tests and OS resume/reconnect event wiring. Therefore an Internet connection that lasts only milliseconds is **not** guaranteed to deliver a location. A stale fix may be the only useful information.
 
 **Acceptance tests:** restart with no network preserves queue; failed or unauthenticated receipt never acknowledges; a valid receipt removes exactly the delivered record; queue remains ordered; privacy consent can disable collection and purge history; no location is invented when a receiver is absent.
 

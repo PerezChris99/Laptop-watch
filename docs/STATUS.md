@@ -1,5 +1,15 @@
 # LaptopWatch — current implementation vs production target
 
+> **November 14, 2026 repository checkpoint:** Signed QR approval, Android signed
+> controls, Tauri shell, development WebRTC interfaces, opt-in mDNS, signed TTS,
+> offline GPS queue and self-hosted location receiver are now written to `perez`.
+> The legacy insecure Android PIN client has been disabled. The recipient
+> encrypts GPS coordinates at rest with AES-256-GCM. This is a **code-level
+> integration milestone only**: Android/desktop builds, real connected phones,
+> TURN connectivity, push notifications, person weights, DNS, signed packages,
+> legal/purchase accounts and actual sleep-state tests remain unverified.
+
+
 **Status date:** 2026-11-14. **Working branch:** `perez`. **No v1.0.0 release candidate.** The existence of code does not constitute a physical test, commercial permission or app-store acceptance.
 
 | Workstream | Where we are | Where we must be | Release gap |

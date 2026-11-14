@@ -122,11 +122,31 @@ fn evidence_files(app: AppHandle) -> Result<Vec<EvidenceFile>, String> {
 }
 
 #[tauri::command]
-fn start_companion(app: AppHandle, allow_lan: bool, state: State<'_, CompanionState>) -> Result<(), String> {
+fn start_companion(
+    app: AppHandle,
+    allow_lan: bool,
+    enable_gpsd: bool,
+    relay_url: Option<String>,
+    state: State<'_, CompanionState>,
+) -> Result<(), String> {
     let mut child = state.0.lock().map_err(|_| "Internal process lock failed")?;
-    if child.is_some() { return Ok(()); }
+    if child.is_some() {
+        return Err("Gateway already running; stop it before applying new tracking options".into());
+    }
     let mut args = command_args(&app, "serve", &["--port".into(), "8765".into()])?;
     if allow_lan { args.push("--listen-lan".into()); }
+    if enable_gpsd { args.push("--enable-gpsd".into()); }
+    if let Some(raw) = relay_url {
+        let url = url::Url::parse(raw.trim()).map_err(|_| "Invalid relay URL")?;
+        if !enable_gpsd || url.scheme() != "https" || url.domain().is_none() ||
+           url.port_or_known_default() != Some(443) ||
+           !url.username().is_empty() || url.password().is_some() ||
+           url.path() != "/" || url.query().is_some() ||
+           url.fragment().is_some() || raw.len() > 256 {
+            return Err("Only a consenting GNSS user may configure a normal HTTPS relay hostname".into());
+        }
+        args.extend(["--relay-url".into(), raw.into()]);
+    }
     let (mut rx, process) = app.shell().sidecar("laptopwatch-sidecar")
         .map_err(|e| e.to_string())?
         .args(args).spawn().map_err(|e| e.to_string())?;

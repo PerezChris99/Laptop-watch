@@ -60,6 +60,6 @@ automatic desktop signed reconnect uploader and deployment have not yet
 been integrated/tested on live networks**. Local SQLite offline GPS history
 alone cannot deliver a location from a disconnected/stolen laptop.
 
-The relay does not support video/audio, cloud evidence or GPS sampling.
+GPS coordinates are AES-256-GCM encrypted in SQLite; the companion `.location-key` file must be preserved securely and backed up separately, otherwise history cannot be decrypted. The relay does not support video/audio, cloud evidence or GPS sampling.
 The computer must run with a real sensor to produce any fix, and Python
 cannot run during system sleep or power loss.
