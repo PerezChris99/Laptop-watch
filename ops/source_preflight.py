@@ -185,8 +185,18 @@ def native_contract() -> None:
     ):
         if not (ROOT / path).is_file():
             ERRORS.append(f"Missing native project source: {path}")
-    if not (ROOT / "app/src/main/java/com/example/security/SecureLaptopGateway.kt").is_file():
-        ERRORS.append("Legacy Kotlin reference prematurely removed")
+    # Owner explicitly authorized removal of the old Compose/Room app.
+    # The root Gradle launcher and an unregistered adapter copy must not
+    # reappear and confuse the sole React Native Android entrypoint.
+    for obsolete in (
+        "app", "mobile/android-native", "settings.gradle.kts",
+        "build.gradle.kts", "gradle.properties", "gradle", "metadata.json",
+    ):
+        if (ROOT / obsolete).exists():
+            ERRORS.append(f"Retired Kotlin build path reintroduced: {obsolete}")
+    require_file("mobile/tests/source-retirement.test.js", (
+        "legacy Kotlin", "mobile/android/app", "mobile/ios/",
+    ))
     # Guard the owner-specific Firebase config against accidental git add.
     require_file("mobile/.gitignore", (
         "**/google-services.json", "**/GoogleService-Info.plist",
