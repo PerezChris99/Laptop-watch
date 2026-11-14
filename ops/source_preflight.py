@@ -139,7 +139,18 @@ def native_contract() -> None:
         "mobile/src/storage/db.js": (
             "encryptionKey", "cacheEncryptionKey", "laptopwatch-private-v2.sqlite", "clearCachedAlerts",
         ),
-        "mobile/src/App.jsx": ("await purgePrivateEvidence()", "await clearCachedAlerts("),
+        "mobile/src/App.jsx": (
+            "await purgePrivateEvidence()", "await clearCachedAlerts(", "reconcilePushOnForeground",
+        ),
+        "mobile/android/app/build.gradle": (
+            "laptopwatchFcmEnabled", "google-services.json",
+        ),
+        "mobile/android/app/src/main/java/com/kc/laptopwatch/LaptopWatchFcmService.kt": (
+            "token_sync_pending", "onNewToken",
+        ),
+        "mobile/src/notifications/push.js": (
+            "reconcilePushOnForeground", "acknowledgeTokenSync",
+        ),
 
     }
     for path, tokens in checks.items():

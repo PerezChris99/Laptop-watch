@@ -42,7 +42,8 @@ The old Kotlin `app/` is intentionally preserved as the independent reference.
   cannot control a sleeping/powered-off laptop. Optional Firebase incident
   hints are compile-time OFF until a real owner project/relay is approved.
   Push NEVER triggers commands or asserts a person was verified without a
-  new signed API query.
+  new signed API query. A rotated FCM token is re-enrolled only after an
+  already approved and enrolled phone opens in the foreground.
 - **Storage:** OS Keychain device-only phone signing seed, independent
   256-bit OS Keychain key for OP-SQLite **SQLCipher** private cache, single
   connection, migration schema, no offline action outbox, fail-closed DB
@@ -86,3 +87,15 @@ npm run ios      # requires macOS, Xcode and CocoaPods
 **The commands above are required, not recorded as passing.**
 Keep `app/` until complete verified parity and specific owner authorization.
 No root software LICENSE or CI workflow was created on the owner's behalf.
+
+## Optional owner Firebase activation (Android only)
+
+Firebase is disabled in normal builds. After approving a Firebase Android
+application and signed relay, place owner-provisioned `google-services.json`
+**locally** in `mobile/android/app/` (never commit the credential), then build
+using `-PlaptopwatchFcmEnabled=true` with Gradle. An enabled build fails
+when the owner configuration file is missing. The Google Services plugin is
+applied only for this opt-in. FCM token rotation stores a boolean flag,
+not the token; after owner opt-in the foreground app signs a fresh relay
+enrollment. FCM remains an untrusted hint channel and requires physical
+receipt/Doze tests; there is no iOS FCM integration asserted here.

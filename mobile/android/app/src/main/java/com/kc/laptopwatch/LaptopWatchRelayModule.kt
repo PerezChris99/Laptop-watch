@@ -1,6 +1,7 @@
 package com.kc.laptopwatch
 
 import android.util.Base64
+import android.content.Context
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.NativeModule
@@ -117,6 +118,22 @@ class LaptopWatchPushModule(private val context: ReactApplicationContext) :
     fun available(promise: Promise) {
         promise.resolve(BuildConfig.LAPTOPWATCH_FCM_ENABLED &&
             FirebaseApp.getApps(context).isNotEmpty())
+    }
+
+    /** A token rotation does not enroll by itself. An approved foreground
+     * client must re-sign the relay request with the owner pairing key. */
+    @ReactMethod
+    fun needsTokenSync(promise: Promise) {
+        promise.resolve(BuildConfig.LAPTOPWATCH_FCM_ENABLED &&
+            context.getSharedPreferences("laptopwatch-fcm", Context.MODE_PRIVATE)
+                .getBoolean("token_sync_pending", false))
+    }
+
+    @ReactMethod
+    fun acknowledgeTokenSync(promise: Promise) {
+        context.getSharedPreferences("laptopwatch-fcm", Context.MODE_PRIVATE)
+            .edit().putBoolean("token_sync_pending", false).apply()
+        promise.resolve(true)
     }
 
     @ReactMethod
