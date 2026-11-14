@@ -4,7 +4,7 @@
 cryptography and platform adapters are integrated into the repository.
 The owner deferred native builds, on-device tests and external provisioning.
 Source integration is **NOT** verified native parity or a published release.
-The old Kotlin `app/` is intentionally preserved as the independent reference.
+The owner authorized retirement of the old Kotlin Compose `app/` on 14 November 2026. Its source is preserved in Git history, not tracked as a second mobile application.
 
 ## Working source architecture
 
@@ -85,7 +85,7 @@ npm run ios      # requires macOS, Xcode and CocoaPods
 ```
 
 **The commands above are required, not recorded as passing.**
-Keep `app/` until complete verified parity and specific owner authorization.
+The owner authorized retirement of `app/` before real-device acceptance. Do not restore the deprecated Kotlin build path or claim this implies verified parity. See [retirement record](../docs/KOTLIN_RETIREMENT.md).
 No root software LICENSE or CI workflow was created on the owner's behalf.
 
 ## Optional owner Firebase activation (Android only)
@@ -99,3 +99,17 @@ applied only for this opt-in. FCM token rotation stores a boolean flag,
 not the token; after owner opt-in the foreground app signs a fresh relay
 enrollment. FCM remains an untrusted hint channel and requires physical
 receipt/Doze tests; there is no iOS FCM integration asserted here.
+
+
+## Canonical native app paths
+
+`mobile/android` and `mobile/ios` are the **only** maintained native mobile
+projects. The former root `app/`, root Gradle files and `mobile/android-native/`
+were retired with owner approval; their history remains available via Git.
+No Kotlin Compose/Room controller is shipped or maintained. Android Kotlin
+in `mobile/android/app/src/main/` is **required React Native native-module
+integration**, not a second app or an unfinished migration.
+
+Source-level retirement is distinct from successful Android/iOS builds,
+functional parity, signing or commercial acceptance. See the
+[canonical parity gates](../docs/PARITY.md) and [release runbook](../docs/RELEASE_RUNBOOK.md).
