@@ -126,6 +126,33 @@ export class SignedClient {
     return this.json('POST', paths[operation]);
   }
 
+  /** @param {string} message @returns {Promise<object>} */
+  async warn(message) {
+    const text = typeof message === 'string' ? message.trim() : '';
+    if (text.length < 1 || text.length > 400 || /[\x00-\x1f]/.test(text)) {
+      throw new GatewayError('INVALID_REQUEST', 'Warning must contain 1–400 printable characters');
+    }
+    return this.json('POST', '/api/warning/tts', { message: text });
+  }
+
+  /** @param {{auto_snapshot:boolean,auto_record:boolean,auto_alarm:boolean}} options @returns {Promise<object>} */
+  async configurePersonMonitor(options) {
+    if (!options || ['auto_snapshot','auto_record','auto_alarm'].some((field) =>
+      typeof options[field] !== 'boolean')) {
+      throw new GatewayError('INVALID_REQUEST', 'Person monitor requires three explicit boolean settings');
+    }
+    return this.json('POST', '/api/config/person-monitor', {
+      auto_snapshot: options.auto_snapshot, auto_record: options.auto_record,
+      auto_alarm: options.auto_alarm,
+    });
+  }
+
+  /** @returns {Promise<object>} */
+  async clearIncidents() { return this.json('POST', '/api/incidents/clear'); }
+
+  /** @returns {Promise<object>} */
+  async refreshLocation() { return this.json('POST', '/api/location/refresh'); }
+
   /** @returns {Promise<object>} */
   async evidenceIndex() { return this.json('GET', '/api/evidence/list'); }
 

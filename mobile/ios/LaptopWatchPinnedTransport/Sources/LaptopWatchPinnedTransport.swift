@@ -68,6 +68,138 @@ final class LaptopWatchPinnedTransport: NSObject {
       (bytes[0] == 192 && bytes[1] == 168)
   }
 
+  private func evidenceURL(_ kind: String, _ id: String) throws -> URL {
+    guard (kind == "photo" || kind == "video"),
+          id.range(of: "^[a-f0-9]{32}$", options: .regularExpression) != nil,
+          let directory = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+          ).first else { throw NSError(domain: "LaptopWatchPrivateEvidence", code: 1) }
+    let ext = kind == "photo" ? "jpg" : "mp4"
+    let url = directory.appendingPathComponent("LaptopWatchEvidence", isDirectory: true)
+      .appendingPathComponent("\(kind)-\(id).\(ext)")
+    let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    guard values.isRegularFile == true && values.isSymbolicLink != true else {
+      throw NSError(domain: "LaptopWatchPrivateEvidence", code: 2)
+    }
+    return url
+  }
+
+  @objc(deleteLocal:id:resolver:rejecter:)
+  func deleteLocal(_ kind: String, id: String,
+                   resolver resolve: @escaping RCTPromiseResolveBlock,
+                   rejecter reject: @escaping RCTPromiseRejectBlock) {
+    do {
+      try FileManager.default.removeItem(at: evidenceURL(kind, id))
+      resolve(true)
+    } catch {
+      reject("EVIDENCE_DELETE_FAILED", "Private evidence deletion denied", nil)
+    }
+  }
+
+  @objc(exportLocal:id:resolver:rejecter:)
+  func exportLocal(_ kind: String, id: String,
+                   resolver resolve: @escaping RCTPromiseResolveBlock,
+                   rejecter reject: @escaping RCTPromiseRejectBlock) {
+    DispatchQueue.main.async {
+      do {
+        let url = try self.evidenceURL(kind, id)
+        guard let scene = UIApplication.shared.connectedScenes.compactMap(
+                { $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
+              let window = scene.windows.first(where: { $0.isKeyWindow }),
+              let controller = window.rootViewController else {
+          reject("EVIDENCE_EXPORT_UNAVAILABLE", "No active owner interface to share evidence", nil)
+          return
+        }
+        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+          popover.sourceView = controller.view
+          popover.sourceRect = CGRect(x: controller.view.bounds.midX,
+                                      y: controller.view.bounds.midY, width: 1, height: 1)
+        }
+        sheet.completionWithItemsHandler = { _, completed, _, error in
+          if completed && error == nil { resolve(true) }
+          else { reject("EVIDENCE_EXPORT_CANCELLED", "Owner cancelled evidence export", nil) }
+        }
+        controller.present(sheet, animated: true)
+      } catch {
+        reject("EVIDENCE_EXPORT_FAILED", "Private evidence could not be opened", nil)
+      }
+    }
+  }
+
+  /// Public CA-trusted owner relay, separate from self-signed QR-pinned LAN.
+  /// No redirects, credentials, alternate ports, arbitrary paths or actions.
+  private class RelayDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+      completionHandler(nil)
+    }
+  }
+
+  @objc(sendSignedRelay:resolver:rejecter:)
+  func sendSignedRelay(_ params: NSDictionary,
+                       resolver resolve: @escaping RCTPromiseResolveBlock,
+                       rejecter reject: @escaping RCTPromiseRejectBlock) {
+    func fail() { reject("RELAY_FAILED", "Owner relay TLS or signed request rejected", nil) }
+    guard let raw = params["relayUrl"] as? String,
+          raw.count <= 256, let root = URLComponents(string: raw),
+          root.scheme == "https", root.user == nil, root.password == nil,
+          root.query == nil, root.fragment == nil,
+          root.path.isEmpty || root.path == "/",
+          root.port == nil || root.port == 443,
+          let host = root.host, host.count <= 220,
+          host.contains("."), !host.hasSuffix(".invalid"),
+          !host.allSatisfy({ $0.isNumber || $0 == "." }),
+          host.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$",
+                     options: .regularExpression) != nil,
+          let method = params["method"] as? String,
+          let path = params["path"] as? String,
+          ["GET","POST"].contains(method),
+          ["/api/location/latest","/api/incidents/query",
+           "/api/push/register","/api/push/unregister",
+           "/api/push/status"].contains(path),
+          let encoded = params["bodyBase64"] as? String,
+          encoded.count <= 6000, let body = Data(base64Encoded: encoded),
+          body.count <= 4096,
+          method != "GET" || body.isEmpty,
+          let headers = params["headers"] as? [String:String],
+          let destination = URL(string: "https://\(host)\(path)") else {
+      fail()
+      return
+    }
+    let keys = ["X-LaptopWatch-Device","X-LaptopWatch-Nonce",
+                "X-LaptopWatch-Timestamp","X-LaptopWatch-Signature"]
+    guard keys.allSatisfy({ (headers[$0]?.count ?? 0) > 0 &&
+                           (headers[$0]?.count ?? 0) <= 256 }),
+          headers.keys.allSatisfy({ keys.contains($0) }) else {
+      fail()
+      return
+    }
+    var request = URLRequest(url: destination, cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: 15)
+    request.httpMethod = method
+    if method == "POST" {
+      request.httpBody = body
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    }
+    for key in keys { request.setValue(headers[key], forHTTPHeaderField: key) }
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 15
+    config.httpCookieStorage = nil
+    config.urlCache = nil
+    let session = URLSession(configuration: config, delegate: RelayDelegate(),
+                             delegateQueue: nil)
+    session.dataTask(with: request) { data, response, error in
+      defer { session.invalidateAndCancel() }
+      guard error == nil, let response = response as? HTTPURLResponse,
+            let data = data, data.count <= 1_048_576,
+            response.url?.host == host else { fail(); return }
+      resolve(["status": response.statusCode, "bodyBase64": data.base64EncodedString()])
+    }.resume()
+  }
+
   /** Native download writes straight to app-private protected disk, never JS. */
   @objc(downloadPinned:resolver:rejecter:)
   func downloadPinned(_ input: NSDictionary,

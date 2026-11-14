@@ -70,7 +70,11 @@ export async function loadLastSeen(desktopId) {
   return result.rows[0] || null;
 }
 
-const PREFERENCE_KEYS = new Set(['owner_consent_v1', 'background_opt_in', 'mic_listen_opt_in']);
+const BOOLEAN_PREFERENCES = new Set([
+  'owner_consent_v1', 'background_opt_in', 'mic_listen_opt_in', 'push_opt_in',
+  'person_auto_snapshot', 'person_auto_record', 'person_auto_alarm',
+]);
+const PREFERENCE_KEYS = new Set([...BOOLEAN_PREFERENCES, 'relay_https_url']);
 
 /** @param {string} key @returns {Promise<string|null>} */
 export async function getPreference(key) {
@@ -82,7 +86,11 @@ export async function getPreference(key) {
 
 /** @param {string} key @param {string} value @returns {Promise<void>} */
 export async function setPreference(key, value) {
-  if (!PREFERENCE_KEYS.has(key) || !['0', '1'].includes(value)) {
+  if (!PREFERENCE_KEYS.has(key) || typeof value !== 'string' ||
+      (BOOLEAN_PREFERENCES.has(key) && !['0','1'].includes(value)) ||
+      (key === 'relay_https_url' && value.length > 256) ||
+      (key === 'relay_https_url' && value !== '' &&
+       !/^https:\/\/[a-z0-9][a-z0-9.-]{3,218}[a-z0-9]$/i.test(value))) {
     throw new Error('Unsupported preference value');
   }
   const db = await database();
@@ -103,6 +111,59 @@ export async function deleteDesktopCache(desktopId) {
     // prevent accidental cross-owner evidence inventory mixing.
     await tx.execute('DELETE FROM evidence_index');
   });
+}
+
+/** @param {string} kind @param {string} id @param {string} uri @returns {Promise<void>} */
+export async function recordPrivateEvidence(kind, id, uri) {
+  if (!['photo','video'].includes(kind) || !/^[a-f0-9]{32}$/.test(id) ||
+      typeof uri !== 'string' || !uri.startsWith('file://') || uri.length > 1024) {
+    throw new Error('Invalid private evidence identifier');
+  }
+  const db = await database();
+  await db.execute('UPDATE evidence_index SET local_path = ? WHERE kind = ? AND id = ?',
+    [uri, kind, id]);
+}
+
+/** @param {string} kind @param {string} id @returns {Promise<void>} */
+export async function forgetPrivateEvidence(kind, id) {
+  if (!['photo','video'].includes(kind) || !/^[a-f0-9]{32}$/.test(id)) {
+    throw new Error('Invalid private evidence identifier');
+  }
+  const db = await database();
+  await db.execute('UPDATE evidence_index SET local_path = NULL WHERE kind = ? AND id = ?', [kind,id]);
+}
+
+/** @param {string} desktopId @param {object[]} items @returns {Promise<void>} */
+export async function cacheAlerts(desktopId, items) {
+  if (!/^[a-f0-9-]{36}$/i.test(desktopId) || !Array.isArray(items) ||
+      items.length > 100) throw new Error('Invalid alert batch');
+  const db = await database();
+  await db.transaction(async (tx) => {
+    for (const item of items) {
+      if (!Number.isSafeInteger(item.id) || item.id < 1 ||
+          !Number.isSafeInteger(item.observed_at_ms) ||
+          !Number.isFinite(item.confidence) ||
+          item.confidence < 0 || item.confidence > 1) continue;
+      await tx.execute(
+        'INSERT OR IGNORE INTO alerts(desktop_id,event_id,observed_at_ms,kind,confidence) VALUES(?,?,?,?,?)',
+        [desktopId, item.id, item.observed_at_ms, 'person_verified', item.confidence],
+      );
+    }
+    await tx.execute(
+      'DELETE FROM alerts WHERE desktop_id=? AND event_id NOT IN (SELECT event_id FROM alerts WHERE desktop_id=? ORDER BY event_id DESC LIMIT 100)',
+      [desktopId,desktopId],
+    );
+  });
+}
+
+/** @param {string} desktopId @returns {Promise<object[]>} */
+export async function loadAlerts(desktopId) {
+  const db = await database();
+  const result = await db.execute(
+    'SELECT event_id AS id,observed_at_ms,kind,confidence FROM alerts WHERE desktop_id=? ORDER BY event_id DESC LIMIT 100',
+    [desktopId],
+  );
+  return [...result.rows].reverse();
 }
 
 /** @returns {Promise<void>} */

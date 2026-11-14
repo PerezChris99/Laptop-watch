@@ -3,15 +3,17 @@ import 'react-native-url-polyfill/auto';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RTCView } from 'react-native-webrtc';
 import Video from 'react-native-video';
-import { downloadEvidence } from './net/evidence.js';
+import { downloadEvidence, exportEvidenceLocal, deleteEvidenceLocal } from './net/evidence.js';
+import { signedRelayJson, normalizedRelayUrl } from './net/signedRelay.js';
+import { pushAvailable, registerPush, unregisterPush, pushEnrollmentStatus, pushStatusMessage } from './notifications/push.js';
 import { QrScanner } from './pairing/QrScanner.jsx';
 import { askNotificationPermission } from './permissions/access.js';
 import { startForegroundConnection, stopForegroundConnection } from './background/bridge.js';
 import { checkNotifications, RESULTS } from 'react-native-permissions';
 import { startLiveView } from './media/live.js';
 import { locationStatus } from './location/labels.js';
-import { cacheLastSeen, cacheEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
-import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, Image } from 'react-native';
+import { cacheLastSeen, cacheEvidence, cacheAlerts, loadAlerts, recordPrivateEvidence, forgetPrivateEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
+import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
 import { tokens } from './design/tokens.js';
 import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, DestructiveButton, ConsentNotice, Toast, EmptyState, LastSeenBadge, EvidenceThumb } from './components/Paper.jsx';
 import { loadIdentity, saveIdentity, clearIdentity } from './storage/identity.js';
@@ -47,6 +49,15 @@ export default function App() {
   const foregroundStarted = useRef(false);
   const [audioListen, setAudioListen] = useState(false);
   const [recordingRequested, setRecordingRequested] = useState(false);
+  const [warningText, setWarningText] = useState('');
+  const [relayInput, setRelayInput] = useState('');
+  const [relayUrl, setRelayUrl] = useState('');
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushEnrolled, setPushEnrolled] = useState(false);
+  const [autoSnapshot, setAutoSnapshot] = useState(true);
+  const [autoAlarm, setAutoAlarm] = useState(false);
+  const [autoRecord, setAutoRecord] = useState(false);
+  const [locationSource, setLocationSource] = useState('unavailable');
   const [tab, setTab] = useState('Home');
   const [paired, setPaired] = useState(null);
   const [qr, setQr] = useState('');
@@ -70,9 +81,27 @@ export default function App() {
   useEffect(() => {
     mounted.current = true;
     loadIdentity().then(setPaired).catch(() => setError('Secure pairing storage could not be read'));
-    Promise.all([getPreference('owner_consent_v1'), getPreference('background_opt_in')])
-      .then(([consent, fgs]) => { if (mounted.current) { setConsented(consent === '1'); setBackgroundOptIn(fgs === '1'); setConsentReady(true); } })
+    Promise.all([
+      getPreference('owner_consent_v1'), getPreference('background_opt_in'),
+      getPreference('relay_https_url'), getPreference('push_opt_in'),
+      getPreference('person_auto_snapshot'), getPreference('person_auto_alarm'),
+      getPreference('person_auto_record'),
+    ]).then(([consent, fgs, relay, push, snap, alarm, record]) => {
+      if (!mounted.current) return;
+      setConsented(consent === '1');
+      setBackgroundOptIn(fgs === '1');
+      setRelayUrl(relay || '');
+      setRelayInput(relay || '');
+      setPushEnrolled(push === '1');
+      setAutoSnapshot(snap !== '0');
+      setAutoAlarm(alarm === '1');
+      setAutoRecord(record === '1');
+      setConsentReady(true);
+    })
       .catch(() => { if (mounted.current) { setConsentReady(true); setError('Private consent storage unavailable. Controls remain disabled.'); } });
+    pushAvailable().then((isAvailable) => {
+      if (mounted.current) setPushEnabled(isAvailable);
+    }).catch(() => {});
     try { pinnedTransport(); setTransportAvailable(true); }
     catch (_) { setTransportAvailable(false); }
     return () => { mounted.current = false; };
@@ -81,7 +110,10 @@ export default function App() {
   useEffect(() => {
     if (!paired?.desktopId) { setLocation(null); return; }
     loadLastSeen(paired.desktopId).then((cached) => {
-      if (cached) { setLocation(cached); setLastFixFresh(false); }
+      if (cached) { setLocation(cached); setLocationSource('locally cached'); setLastFixFresh(false); }
+    }).catch(() => {});
+    loadAlerts(paired.desktopId).then((cached) => {
+      if (mounted.current && Array.isArray(cached)) setAlerts(cached);
     }).catch(() => {});
   }, [paired?.desktopId]);
 
@@ -145,11 +177,12 @@ export default function App() {
   }, [paired]);
 
   const refresh = useCallback(async () => {
-    if (!paired?.approved || !transportAvailable || AppState.currentState !== 'active') {
+    if (!paired?.approved || AppState.currentState !== 'active') {
       if (mounted.current) setConnected(false);
       return;
     }
     try {
+      if (!transportAvailable) throw new Error('Signed LAN transport unavailable');
       const response = await client().status();
       if (!mounted.current) return;
       if (response.online !== true) throw new Error('Invalid desktop status');
@@ -157,9 +190,14 @@ export default function App() {
       try {
         const fix = await client().lastSeen();
         if (mounted.current && fix && typeof fix === 'object') {
-          setLocation(fix);
-          setLastFixFresh(true);
-          cacheLastSeen(paired.desktopId, fix).catch(() => {});
+          if (Number.isFinite(fix.latitude) && Number.isFinite(fix.longitude) &&
+              Number.isFinite(fix.accuracy_meters) &&
+              Number.isSafeInteger(fix.observed_at_ms)) {
+            setLocation(fix);
+            setLocationSource('direct laptop');
+            setLastFixFresh(false); // Server always reports historical, not a live GNSS stream.
+            cacheLastSeen(paired.desktopId, fix).catch(() => {});
+          }
         }
       } catch (_) {
         // Retain previous location as LAST SEEN, never LIVE.
@@ -168,14 +206,47 @@ export default function App() {
       try {
         const result = await client().incidents(afterId.current);
         if (mounted.current && Array.isArray(result.events)) {
-          setAlerts((old) => [...old, ...result.events].slice(-100));
+          setAlerts((old) => {
+            const merged = new Map([...old, ...result.events].map((item) => [item.id, item]));
+            return [...merged.values()].sort((a,b) => a.id - b.id).slice(-100);
+          });
+          cacheAlerts(paired.desktopId, result.events).catch(() => {});
           if (Number.isSafeInteger(result.next_after_id)) afterId.current = result.next_after_id;
         }
       } catch (_) { /* Optional guard/relay not configured */ }
     } catch (_) {
       if (mounted.current) { setConnected(false); setStatus(null); setLastFixFresh(false); }
+      // The separately configured owner relay reports historical events only.
+      // Never interpret its result as LAN connectivity or execute actions.
+      if (relayUrl) {
+        try {
+          const remoteFix = await signedRelayJson(paired, relayUrl, 'GET', '/api/location/latest');
+          if (mounted.current && Number.isFinite(remoteFix.latitude) &&
+              Number.isFinite(remoteFix.longitude) &&
+              Number.isFinite(remoteFix.accuracy_meters) &&
+              Number.isSafeInteger(remoteFix.observed_at_ms)) {
+            setLocation(remoteFix);
+            setLocationSource('encrypted owner relay, LAST SEEN');
+            setLastFixFresh(false);
+            cacheLastSeen(paired.desktopId, remoteFix).catch(() => {});
+          }
+        } catch (_) { /* Unavailable relay never means a live location. */ }
+        try {
+          const remoteEvents = await signedRelayJson(paired, relayUrl,
+            'POST', '/api/incidents/query', { after_id: afterId.current, limit: 100 });
+          if (mounted.current && Array.isArray(remoteEvents.events)) {
+            setAlerts((old) => {
+              const merged = new Map([...old, ...remoteEvents.events].map((item) => [item.id, item]));
+              return [...merged.values()].sort((a,b) => a.id-b.id).slice(-100);
+            });
+            cacheAlerts(paired.desktopId, remoteEvents.events).catch(() => {});
+            if (Number.isSafeInteger(remoteEvents.next_after_id))
+              afterId.current = remoteEvents.next_after_id;
+          }
+        } catch (_) { /* No offline command queue or synthetic notification. */ }
+      }
     }
-  }, [paired, transportAvailable, client]);
+  }, [paired, transportAvailable, client, relayUrl]);
 
   useEffect(() => {
     refresh();
@@ -296,6 +367,20 @@ export default function App() {
       <PaperCard><SectionHeader title="Immediate actions" subtitle="Your laptop must be awake and reachable. Lock, alarm and capture are never queued." />
         <SecondaryButton title="Lock laptop" disabled={!connected || busy} onPress={() => confirm('Lock', 'lock')} />
         <SecondaryButton title="Sound alarm" disabled={!connected || busy} onPress={() => confirm('Alarm', 'alarm')} />
+        <TextInput value={warningText} onChangeText={setWarningText} maxLength={400}
+          accessibilityLabel="Text warning to speak aloud on the laptop"
+          placeholder="Optional spoken warning (1–400 characters)"
+          style={{ color: c.ink, padding: 10, backgroundColor: c.surface,
+            borderColor: c.hairline, borderWidth: 1, borderRadius: 8, marginVertical: 8 }} />
+        <SecondaryButton title="Speak warning on laptop"
+          disabled={!connected || busy || !warningText.trim()}
+          onPress={() => Alert.alert('Speak warning aloud?', 'This is audible on your paired laptop. Send only when legally appropriate.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Speak', onPress: () => perform(async () => {
+              await client().status(); await client().warn(warningText);
+              setWarningText(''); setNotice('Spoken warning accepted by laptop.');
+            }) },
+          ])} />
         <SecondaryButton title="Take photo" disabled={!connected || !status?.motion_armed || busy} onPress={() => confirm('Photo', 'photo')} />
         <SecondaryButton title="Record a clip" disabled={!connected || !status?.motion_armed || busy} onPress={() => confirm('Record', 'recordStart')} />
         <DestructiveButton title="Stop recording" disabled={!connected || busy} onPress={() => confirm('Stop recording', 'recordStop')} />
@@ -349,6 +434,7 @@ export default function App() {
               if (!file) {
                 file = await downloadEvidence(client(), item);
                 setLocalMedia((old) => ({ ...old, [item.id]: file }));
+                recordPrivateEvidence(file.kind, file.id, file.uri).catch(() => {});
               }
               setSelectedMedia(file);
             })} />
@@ -359,18 +445,47 @@ export default function App() {
           <Image source={{ uri: selectedMedia.uri }} resizeMode="contain" style={{ width: '100%', height: 260 }} /> :
           <Video source={{ uri: selectedMedia.uri }} style={{ width: '100%', height: 240 }}
             controls paused resizeMode="contain" />}
+        <SecondaryButton title="Export via system picker" disabled={busy}
+          onPress={() => Alert.alert('Export private evidence?', 'The chosen destination or app will receive a copy. Confirm you have permission to share the people and information shown.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose destination', onPress: () => perform(async () => {
+              await exportEvidenceLocal(selectedMedia);
+              setNotice('Evidence exported only to your chosen destination.');
+            }) },
+          ])} />
+        <DestructiveButton title="Delete phone copy" disabled={busy}
+          onPress={() => Alert.alert('Delete phone copy?', 'This cannot be undone. Your laptop original is NOT deleted.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete local copy', style: 'destructive', onPress: () => perform(async () => {
+              await deleteEvidenceLocal(selectedMedia);
+              await forgetPrivateEvidence(selectedMedia.kind, selectedMedia.id);
+              setLocalMedia((prior) => {
+                const next = { ...prior }; delete next[selectedMedia.id]; return next;
+              });
+              setSelectedMedia(null); setNotice('Only the phone copy was removed.');
+            }) },
+          ])} />
         <SecondaryButton title="Close preview" onPress={() => setSelectedMedia(null)} />
       </View>}
       <ConsentNotice>Files remain in app-private storage. Sharing is disabled until export permission, redaction and owner policy are separately verified.</ConsentNotice>
     </PaperCard>;
 
     if (tab === 'Alerts') return <PaperCard><SectionHeader title="Verified person alerts" />
+      <Text style={styles.body}>Events are metadata from the signed desktop or registered relay. Push notices alone are not proof of detection.</Text>
       {!connected && <StatusPill state="Offline" />}
       {alerts.length === 0 ? <EmptyState message="No authenticated incident events received. Remote push is not configured in this JS client." /> :
         alerts.slice().reverse().map((item, i) => <View key={String(item.id || i)} style={{ borderBottomWidth: 1, borderColor: c.hairline, paddingVertical: 12 }}>
           <Text style={styles.metric}>Person verification event #{item.id}</Text>
           <Text style={styles.body}>Confidence: {Number(item.confidence || 0).toFixed(2)}</Text>
         </View>)}
+      <DestructiveButton title="Clear laptop incidents" disabled={!connected || busy || alerts.length === 0}
+        onPress={() => Alert.alert('Clear incident metadata?', 'This clears the laptop incident list. Stored photographs and recordings are not deleted.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Clear', style: 'destructive', onPress: () => perform(async () => {
+            await client().status(); await client().clearIncidents();
+            setAlerts([]); afterId.current = 0; setNotice('Laptop incident metadata cleared.');
+          }) },
+        ])} />
     </PaperCard>;
 
     if (tab === 'Location') {
@@ -378,6 +493,17 @@ export default function App() {
       return <PaperCard><SectionHeader title="Laptop location" />
         <Text style={{ color: flag.live ? c.success : c.inkMuted, fontWeight: '700', marginBottom: 8 }}>{flag.label}</Text>
         <LastSeenBadge time={location ? new Date(location.observed_at_ms || 0).toLocaleString() : 'Not available'} />
+        <Text style={styles.body}>Source: {locationSource}. This is historical until a newly verified GNSS reading is fetched.</Text>
+        <SecondaryButton title="Request real laptop GNSS fix" disabled={!connected || busy}
+          onPress={() => perform(async () => {
+            const fix = await client().refreshLocation();
+            if (!Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude) ||
+                !Number.isFinite(fix.accuracy_meters) ||
+                !Number.isSafeInteger(fix.observed_at_ms)) throw new Error('Invalid GNSS response');
+            setLocation(fix); setLastFixFresh(false);
+            setLocationSource('direct laptop on-demand fix');
+            await cacheLastSeen(paired.desktopId, fix);
+          })} />
         {location ? <Text style={styles.body}>Latitude {location.latitude} · Longitude {location.longitude} · ±{location.accuracy_meters} m</Text> : null}
         <Text style={styles.body}>A real GNSS receiver is required. Cached results are always LAST SEEN and are never a promise of live tracking.</Text>
       </PaperCard>;
@@ -404,11 +530,90 @@ export default function App() {
             }) },
           ]);
         }} />
-      <Text style={styles.body}>No analytics. No covert recording. No automatic audio capture.</Text>
+      <PaperCard>
+        <SectionHeader title="Verified person response" subtitle="Requires a locally installed SHA-256 verified person model on the laptop." />
+        <Text style={styles.body}>Detector: {status?.person_detector_configured ? 'model configured' : 'not configured or laptop offline'}. No alerts are inferred without real verified events.</Text>
+        <SecondaryButton title={autoSnapshot ? 'Automatic evidence photo: enabled' : 'Automatic evidence photo: disabled'}
+          disabled={!connected || busy || !status?.person_detector_configured}
+          onPress={() => setAutoSnapshot((value) => !value)} />
+        <SecondaryButton title={autoAlarm ? 'Automatic audible alarm: enabled' : 'Automatic audible alarm: disabled'}
+          disabled={!connected || busy || !status?.person_detector_configured}
+          onPress={() => setAutoAlarm((value) => !value)} />
+        <SecondaryButton title={autoRecord ? 'Automatic video record: enabled' : 'Automatic video record: disabled'}
+          disabled={!connected || busy || !status?.person_detector_configured}
+          onPress={() => {
+            if (autoRecord) { setAutoRecord(false); return; }
+            Alert.alert('Authorize automatic video?', 'This can record other people when a verified person is detected. Obtain lawful notice/consent and install the approved detector model before enabling.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'I have permission', onPress: () => setAutoRecord(true) },
+            ]);
+          }} />
+        <PrimaryButton title="Apply monitor policy on laptop"
+          disabled={!connected || busy || !status?.person_detector_configured}
+          onPress={() => perform(async () => {
+            await client().status();
+            await client().configurePersonMonitor({
+              auto_snapshot: autoSnapshot, auto_alarm: autoAlarm, auto_record: autoRecord,
+            });
+            await Promise.all([
+              setPreference('person_auto_snapshot', autoSnapshot ? '1' : '0'),
+              setPreference('person_auto_alarm', autoAlarm ? '1' : '0'),
+              setPreference('person_auto_record', autoRecord ? '1' : '0'),
+            ]);
+            setNotice('Signed detector response policy accepted by paired laptop.');
+          })} />
+      </PaperCard>
+      <PaperCard>
+        <SectionHeader title="Optional owner HTTPS relay" subtitle="Remote last-seen and event metadata are encrypted and separately signed. No remote action queue." />
+        <TextInput style={{ backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
+          borderRadius: 8, color: c.ink, padding: 12, marginBottom: 8 }}
+          value={relayInput} onChangeText={setRelayInput} autoCapitalize="none"
+          keyboardType="url" accessibilityLabel="Owner relay HTTPS URL"
+          placeholder="https://relay.example.com" />
+        <SecondaryButton title="Save relay URL" disabled={busy}
+          onPress={() => perform(async () => {
+            const address = relayInput.trim();
+            const normalized = address ? normalizedRelayUrl(address) : '';
+            await setPreference('relay_https_url', normalized);
+            setRelayUrl(normalized); setRelayInput(normalized);
+            setNotice(normalized ? 'Owner relay configured locally. Enrollment is still required on the relay.' : 'Relay disabled locally.');
+          })} />
+        <Text style={styles.body}>Firebase: {pushEnabled ? 'available, opt-in only' : 'not provisioned on this build'}. {pushStatusMessage()}</Text>
+        <SecondaryButton title={pushEnrolled ? 'Request FCM unregistration' : 'Register optional incident notifications'}
+          disabled={!pushEnabled || !paired?.approved || !relayUrl || busy}
+          onPress={() => Alert.alert(pushEnrolled ? 'Disable push?' : 'Enable incident notifications?', 'Only signed event metadata may trigger generic notifications. Firebase is not an action channel and incident details require a signed query.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Confirm', onPress: () => perform(async () => {
+              if (pushEnrolled) {
+                await unregisterPush(paired, relayUrl);
+                await setPreference('push_opt_in','0'); setPushEnrolled(false);
+                setNotice('Remote push registration revoked.');
+              } else {
+                if (!await askNotificationPermission()) throw new Error('Notification permission denied');
+                await registerPush(paired, relayUrl);
+                await setPreference('push_opt_in','1'); setPushEnrolled(true);
+                setNotice('Push registration accepted by the owner relay.');
+              }
+            }) },
+          ])} />
+        <SecondaryButton title="Check signed push enrollment" disabled={!pushEnabled || !paired?.approved || !relayUrl || busy}
+          onPress={() => perform(async () => {
+            const remote = await pushEnrollmentStatus(paired, relayUrl);
+            setNotice('Signed relay enrollment: ' + (remote.registered === true ? 'registered' : 'not registered'));
+          })} />
+      </PaperCard>
+      <Text style={styles.body}>No analytics. No covert recording. Audio and automatic video are off by default.</Text>
       <DestructiveButton title="Forget this paired phone" disabled={!paired || busy}
         onPress={() => Alert.alert('Revoke this local pairing?', 'This removes local credentials. Revoke the device on the desktop too.', [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Forget locally', style: 'destructive', onPress: () => perform(async () => {
+            if (pushEnrolled && relayUrl) {
+              try { await unregisterPush(paired, relayUrl); }
+              catch (_) {
+                throw new Error('Remote push revocation failed. Reconnect to your owner relay and disable push before forgetting this device.');
+              }
+            }
+            await setPreference('push_opt_in','0');
             foregroundStarted.current = false; await stopForegroundConnection().catch(() => {});
             setBackgroundOptIn(false); setBackgroundActive(false);
             await setPreference('background_opt_in', '0');
