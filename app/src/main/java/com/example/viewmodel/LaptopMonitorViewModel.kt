@@ -16,6 +16,8 @@ import com.example.data.SubjectProfileEntity
 import com.example.util.NotificationHelper
 import com.example.security.SecureLaptopGateway
 import com.example.security.LiveVideoSession
+import com.example.service.PushEnrollment
+import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -49,9 +51,9 @@ enum class MonitorTab {
 data class MonitorUiState(
     val connectionState: ConnectionState = ConnectionState.DEMO_MODE,
     val statusMessage: String = "Operating in Safe Demo Mode",
-    val batteryLevel: String = "88%",
+    val batteryLevel: String = "Unknown",
     val isLocked: Boolean = false,
-    val isCameraActive: Boolean = true,
+    val isCameraActive: Boolean = false,
     val cameraRefreshTrigger: Long = System.currentTimeMillis(),
     val isAutoStreamingEnabled: Boolean = false,
     val isRecordingVoice: Boolean = false,
@@ -66,10 +68,10 @@ data class MonitorUiState(
     val toastFeedback: String? = null,
     val motionAlertActive: Boolean = false,
     val motionIntensity: Int = 0,
-    val threatLevel: String = "SECURE", // "SECURE", "ELEVATED", "ALERT"
+    val threatLevel: String = "UNVERIFIED", // "SECURE", "ELEVATED", "ALERT"
     val lastMotionTime: Long = 0L,
     val lastSnapshotTaken: String? = null,
-    val systemHealthStatus: String = "100% OPERATIONAL",
+    val systemHealthStatus: String = "NOT VERIFIED",
     val caughtErrorsCount: Int = 0,
     val activeTransport: String = "LAN", // "LAN" or "WEB"
     val networkLatencyMs: Long? = null,
@@ -107,7 +109,8 @@ data class MonitorUiState(
     val secureArmed: Boolean = false,
     val secureEvidenceId: String? = null,
     val secureRelayUrl: String = "",
-    val webRtcStatus: String = "STOPPED"
+    val webRtcStatus: String = "STOPPED",
+    val remotePushEnabled: Boolean = false
 
 )
 
@@ -129,6 +132,9 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun videoEglContext() = liveVideo.eglContext()
     private val voiceRecorder = VoiceRecorderHelper(application)
     private val notificationHelper = NotificationHelper(application)
+    private val incidentPreferences =
+        application.getSharedPreferences("laptopwatch_verified_incidents_v1", 0)
+    private var incidentSyncJob: Job? = null
 
     // Global Safe Coroutine Exception Handler to catch and log any unhandled coroutine errors proactively
     private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -189,8 +195,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }.getOrDefault("ERROR")
         _uiState.value = _uiState.value.copy(
             securePairingStatus = pairingState,
-            secureRelayUrl = secureGateway.configuredRelayUrl()
+            secureRelayUrl = secureGateway.configuredRelayUrl(),
+            remotePushEnabled = PushEnrollment.optedIn(application)
         )
+        if (pairingState == "PAIRED") {
+            startSecureIncidentSync()
+        }
         viewModelScope.launch {
             liveVideo.state.collect { mediaState ->
                 _uiState.value = _uiState.value.copy(
@@ -253,6 +263,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     activeTransport = "SIGNED_TLS",
                     statusMessage = "Paired encrypted connection"
                 )
+                startSecureIncidentSync()
             }
         }
     }
@@ -306,12 +317,15 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun forgetSecurePairing() {
+        incidentSyncJob?.cancel()
+        PushEnrollment.setOptIn(getApplication<Application>(), false)
         // User chooses to forget this desktop identity. Revoke the phone
         // from the laptop as well to prevent stale remote authorization.
         secureGateway.forgetDevice()
         _uiState.value = _uiState.value.copy(
             securePairingStatus = "NOT_PAIRED",
             secureArmed = false,
+            remotePushEnabled = false,
             connectionState = ConnectionState.DISCONNECTED,
             toastFeedback = "Phone pairing forgotten. Revoke it on the laptop too."
         )
@@ -334,9 +348,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         val result = runCatching { secureGateway.setRelayUrl(url) }
         _uiState.value = _uiState.value.copy(
             secureRelayUrl = secureGateway.configuredRelayUrl(),
-            toastFeedback = if (result.isSuccess) "Remote location endpoint configured"
+            toastFeedback = if (result.isSuccess) "Remote relay endpoint configured"
             else "Invalid relay URL: " + (result.exceptionOrNull()?.message ?: "Invalid HTTPS endpoint")
         )
+        if (result.isSuccess && PushEnrollment.optedIn(getApplication<Application>())) {
+            PushEnrollment.enqueue(getApplication<Application>())
+        }
     }
 
     fun getRemoteEnrollmentText(): String {
@@ -380,6 +397,122 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     ageMinutes + " min ago (±" + accuracy.toInt() + "m reported); not live",
                 toastFeedback = "Last seen loaded; laptop must be reachable for this query"
             )
+        }
+    }
+
+    /**
+     * While the Android app is actively running, synchronize locally verified
+     * person events over signed TLS. Background push delivery requires separate
+     * provider configuration; don't claim this is a background notification.
+     */
+    private fun startSecureIncidentSync() {
+        incidentSyncJob?.cancel()
+        if (!secureGateway.isApproved()) return
+        incidentSyncJob = viewModelScope.launch(coroutineExceptionHandler) {
+            while (isActive && secureGateway.isApproved()) {
+                val laptopId = secureGateway.pairedDesktopId()
+                if (laptopId != null) {
+                    val key = "cursor_" + laptopId
+                    val cursor = incidentPreferences.getLong(key, 0L).coerceAtLeast(0L)
+                    val localResult = secureGateway.incidents(cursor)
+                    val remotely = if (localResult.isFailure &&
+                        secureGateway.configuredRelayUrl().isNotBlank())
+                        secureGateway.remoteIncidents(cursor) else null
+                    val payload = (remotely ?: localResult).getOrNull()
+                    val events = payload?.optJSONArray("events")
+                    if (events != null) {
+                        for (index in 0 until events.length()) {
+                            val event = events.optJSONObject(index) ?: continue
+                            val id = event.optLong("id", event.optLong("event_id", 0L))
+                            if (remotely != null &&
+                                event.optString("desktop_id") != laptopId) continue
+                            val whenMs = event.optLong("observed_at_ms", 0L)
+                            val confidence = event.optDouble("confidence", -1.0)
+                            if (id <= incidentPreferences.getLong(key, 0L)) continue
+                            if (id <= 0 || id > 9_223_372_036_854_775_807L ||
+                                whenMs <= 0L || whenMs > System.currentTimeMillis() + 30_000L ||
+                                !confidence.isFinite() || confidence !in 0.5..1.0 ||
+                                event.optString("kind") != "person_verified") {
+                                // Don't lose invalid events silently; do not
+                                // accept them as actual person detections.
+                                break
+                            }
+                            val remoteEvidenceId = event.optString("evidence_id", "")
+                            var localSnapshot: String? = null
+                            if (remoteEvidenceId.matches(Regex("[0-9a-f]{32}"))) {
+                                val download = secureGateway.download("photo", remoteEvidenceId)
+                                localSnapshot = download.getOrNull()?.let {
+                                    android.net.Uri.fromFile(it).toString()
+                                }
+                            }
+                            repository.recordEvent(
+                                eventType = "Verified Person Near Laptop",
+                                description = "Desktop person classifier event #" + id +
+                                    " (confidence " + (confidence * 100).toInt() + "%)",
+                                snapshotUrl = localSnapshot,
+                                warningIssued = "LaptopWatch signed incident",
+                                wasLocked = false,
+                                severity = "ALERT",
+                                category = "SECURITY",
+                                latitude = null, longitude = null,
+                                accuracyMeters = null, locationName = null
+                            )
+                            check(incidentPreferences.edit().putLong(key, id).commit()) {
+                                "Could not persist verified incident cursor"
+                            }
+                            _uiState.value = _uiState.value.copy(
+                                motionAlertActive = true,
+                                subjectDetected = true,
+                                activeSubjectConfidence = confidence.toFloat(),
+                                lastMotionTime = whenMs,
+                                threatLevel = "ALERT"
+                            )
+                            notificationHelper.showMotionAlertNotification(
+                                title = "Person detected near your laptop",
+                                message = "Verified on the armed workstation. Tap to review local evidence.",
+                                isAwayMode = _uiState.value.isAwayMode
+                            )
+                        }
+                    }
+                }
+                delay(8_000)
+            }
+        }
+    }
+
+    fun refreshVerifiedIncidents() {
+        startSecureIncidentSync()
+    }
+
+    fun setRemotePushEnabled(enabled: Boolean) {
+        val app = getApplication<Application>()
+        if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                app, android.Manifest.permission.POST_NOTIFICATIONS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Allow Android notifications first, then enable remote push")
+            return
+        }
+        if (enabled && (!secureGateway.isApproved() ||
+                secureGateway.configuredRelayUrl().isBlank() ||
+                FirebaseApp.getApps(app).isEmpty())) {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Pair a laptop, configure HTTPS relay and connect Firebase first"
+            )
+            return
+        }
+        if (enabled) {
+            PushEnrollment.setOptIn(app, true)
+            _uiState.value = _uiState.value.copy(remotePushEnabled = true,
+                toastFeedback = "Push registration queued. Delivery requires configured FCM credentials.")
+        } else {
+            PushEnrollment.setOptIn(app, false)
+            _uiState.value = _uiState.value.copy(remotePushEnabled = false,
+                toastFeedback = "Push hints disabled locally. Revoke server token if needed.")
+            viewModelScope.launch {
+                secureGateway.unregisterPushToken()
+            }
         }
     }
 
@@ -475,54 +608,44 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     // Away Mode with heightened motion sensitivity
     fun toggleAwayMode() {
         val config = laptopConfig.value ?: return
-        val newAway = !config.isAwayMode
+        val enable = !config.isAwayMode
         viewModelScope.launch(coroutineExceptionHandler) {
-            repository.setAwayMode(newAway)
-            if (newAway) {
-                // When activating Away Mode:
-                repository.setMotionArmed(true)
-                _uiState.value = _uiState.value.copy(
-                    isAwayMode = true,
-                    threatLevel = "SECURE",
-                    toastFeedback = "🏃 Away Mode ACTIVATED! High-sensitivity radar & auto-lock armed."
-                )
-                recordDiagnostic(
-                    tag = "AWAY_MODE",
-                    status = "HEALTHY",
-                    message = "Away Mode enabled with ${config.awayMotionSensitivity} sensitivity"
-                )
-                repository.recordEvent(
-                    eventType = "Away Guard Armed",
-                    description = "Away Mode active: Radar armed to ${config.awayMotionSensitivity} sensitivity.",
-                    warningIssued = "Away Protocol Active",
-                    wasLocked = _uiState.value.isLocked,
-                    severity = "INFO"
-                )
-                if (!config.isDemoMode) {
-                    val (target, _) = repository.resolveActiveTarget(config)
-                    repository.syncMotionConfigToLaptop(
-                        target, config.port, config.pin,
-                        armed = true, sensitivity = config.awayMotionSensitivity, autoLock = true
-                    )
+            if (!config.isDemoMode) {
+                if (!secureGateway.isApproved()) {
+                    _uiState.value = _uiState.value.copy(
+                        toastFeedback = "Pair the secure desktop before enabling Away Mode")
+                    return@launch
                 }
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isAwayMode = false,
-                    toastFeedback = "Away Mode deactivated. Normal radar restored."
-                )
-                recordDiagnostic(
-                    tag = "AWAY_MODE",
-                    status = "HEALTHY",
-                    message = "Away Mode deactivated. Normal sensitivity restored."
-                )
-                if (!config.isDemoMode) {
-                    val (target, _) = repository.resolveActiveTarget(config)
-                    repository.syncMotionConfigToLaptop(
-                        target, config.port, config.pin,
-                        armed = config.isMotionArmed, sensitivity = config.motionSensitivity, autoLock = config.autoLockOnMotion
-                    )
+                val arm = secureGateway.arm(enable)
+                if (arm.isFailure) {
+                    _uiState.value = _uiState.value.copy(
+                        toastFeedback = "Away Mode was not changed: " +
+                            (arm.exceptionOrNull()?.message ?: "Desktop unreachable"))
+                    return@launch
+                }
+                if (enable) {
+                    // The person detector must be separately installed and
+                    // SHA256 verified; without it Away enables manual capture,
+                    // but never claims reliable person notifications.
+                    val configured = syncPersonMonitorSettings(
+                        config.autoSnapOnMotion,
+                        config.autoRecordOnMotion,
+                        config.autoAlarmOnMotion)
+                    _uiState.value = _uiState.value.copy(
+                        toastFeedback = if (configured) "Away camera and person alerts armed"
+                            else "Camera armed; person detector not yet configured")
                 }
             }
+            repository.setAwayMode(enable)
+            repository.setMotionArmed(enable)
+            _uiState.value = _uiState.value.copy(
+                isAwayMode = enable,
+                secureArmed = enable,
+                threatLevel = if (enable) "ARMED" else "DISARMED",
+                toastFeedback = if (config.isDemoMode) "Demo only: no live protection"
+                    else if (enable) _uiState.value.toastFeedback
+                    else "Away protection disarmed on desktop"
+            )
         }
     }
 
@@ -569,7 +692,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
             _uiState.value = _uiState.value.copy(
                 secureArmed = newState,
                 toastFeedback = if (config.isDemoMode) "Demo arming simulated"
-                    else if (newState) "Laptop camera armed (person alerts not configured)"
+                    else if (newState) "Laptop camera armed; verified alerts require configured model"
                     else "Laptop camera disarmed",
                 threatLevel = if (newState) "SECURE" else "DISARMED"
             )
@@ -602,13 +725,31 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private suspend fun syncPersonMonitorSettings(
+        snapshot: Boolean, recording: Boolean, alarm: Boolean
+    ): Boolean {
+        if (!secureGateway.isApproved()) return false
+        val payload = org.json.JSONObject()
+            .put("auto_snapshot", snapshot)
+            .put("auto_record", recording)
+            .put("auto_alarm", alarm)
+        return secureGateway.json("POST", "/api/config/person-monitor", payload).isSuccess
+    }
+
     fun toggleAutoAlarmOnMotion() {
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
-            val newState = !config.autoAlarmOnMotion
-            repository.setAutoAlarmOnMotion(newState)
+            val newValue = !config.autoAlarmOnMotion
+            if (!config.isDemoMode && !syncPersonMonitorSettings(
+                    config.autoSnapOnMotion, config.autoRecordOnMotion, newValue)) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Auto alarm requires a connected, configured person detector")
+                return@launch
+            }
+            repository.setAutoAlarmOnMotion(newValue)
             _uiState.value = _uiState.value.copy(
-                toastFeedback = if (newState) "Siren ON motion enabled" else "Siren ON motion disabled"
+                toastFeedback = if (newValue) "Alarm on verified person enabled"
+                    else "Automatic alarm disabled"
             )
         }
     }
@@ -616,10 +757,17 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun toggleAutoSnapOnMotion() {
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
-            val newState = !config.autoSnapOnMotion
-            repository.setAutoSnapOnMotion(newState)
+            val newValue = !config.autoSnapOnMotion
+            if (!config.isDemoMode && !syncPersonMonitorSettings(
+                    newValue, config.autoRecordOnMotion, config.autoAlarmOnMotion)) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Auto photo requires a connected, configured person detector")
+                return@launch
+            }
+            repository.setAutoSnapOnMotion(newValue)
             _uiState.value = _uiState.value.copy(
-                toastFeedback = if (newState) "Auto-Snapshot ON motion enabled" else "Auto-Snapshot disabled"
+                toastFeedback = if (newValue) "Photo on verified person enabled"
+                    else "Automatic person photo disabled"
             )
         }
     }
@@ -627,10 +775,17 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     fun toggleAutoRecordOnMotion() {
         val config = laptopConfig.value ?: return
         viewModelScope.launch(coroutineExceptionHandler) {
-            val newState = !config.autoRecordOnMotion
-            repository.setAutoRecordOnMotion(newState)
+            val newValue = !config.autoRecordOnMotion
+            if (!config.isDemoMode && !syncPersonMonitorSettings(
+                    config.autoSnapOnMotion, newValue, config.autoAlarmOnMotion)) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Auto video requires a connected, configured person detector")
+                return@launch
+            }
+            repository.setAutoRecordOnMotion(newValue)
             _uiState.value = _uiState.value.copy(
-                toastFeedback = if (newState) "Auto-Record Subject ON motion enabled" else "Auto-Record Subject disabled"
+                toastFeedback = if (newValue) "Bounded incident MP4 enabled"
+                    else "Automatic incident MP4 disabled"
             )
         }
     }
@@ -1510,6 +1665,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     override fun onCleared() {
         super.onCleared()
         heartbeatJob?.cancel()
+        incidentSyncJob?.cancel()
         recordingTimerJob?.cancel()
         motionCooldownJob?.cancel()
         autoStreamJob?.cancel()

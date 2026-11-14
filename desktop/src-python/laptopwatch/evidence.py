@@ -106,7 +106,7 @@ class EvidenceRecorder:
         """Save the most recently viewed WebRTC frame as well as on-demand JPEGs."""
         if not isinstance(jpeg, bytes) or not 4 <= len(jpeg) <= 16_000_000:
             raise CaptureUnavailable("Invalid JPEG image")
-        if not jpeg.startswith(b"\\xff\\xd8") or not jpeg.endswith(b"\\xff\\xd9"):
+        if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
             raise CaptureUnavailable("Frame is not JPEG encoded")
         clip_id = uuid.uuid4().hex
         filename = f"photo-{clip_id}.jpg"
@@ -207,8 +207,10 @@ class EvidenceRecorder:
         with self._lock:
             self._thread = None
             result = self._last_result
+            if self._failure is not None:
+                raise CaptureUnavailable(self._failure)
             if result is None:
-                raise CaptureUnavailable(self._failure or "Video has no frames")
+                raise CaptureUnavailable("Video has no completed frames")
             return result
 
     def stop_if_recording(self) -> None:

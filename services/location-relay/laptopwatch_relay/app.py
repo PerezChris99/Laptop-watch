@@ -6,6 +6,7 @@ enrollment of desktop and phone Ed25519 keys, and encrypted host storage.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
 from hashlib import sha256
 import json
 import math
@@ -19,6 +20,8 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from .push import IncidentReport, IncidentCursor, PushToken, IncidentRelayStore, FirebaseProvider
 
 from laptopwatch.security import (
     AuthenticationError, PairingRegistry, SignedRequestVerifier,
@@ -167,15 +170,52 @@ class RelayStore:
             self.db.close()
 
 
-def create_relay(registry: PairingRegistry, storage: RelayStore) -> FastAPI:
+def create_relay(registry: PairingRegistry, storage: RelayStore,
+                 push_provider: FirebaseProvider | None = None) -> FastAPI:
     app = FastAPI(title="LaptopWatch Private Location Relay",
                   docs_url=None, openapi_url=None, redoc_url=None)
     verifier = SignedRequestVerifier(registry, SlidingWindowLimiter(max_attempts=90, period=60))
+    incidents = IncidentRelayStore(storage)
+
+    async def flush_push():
+        while True:
+            try:
+                if push_provider is not None:
+                    for item in await asyncio.to_thread(incidents.pending_push):
+                        accepted = await asyncio.to_thread(
+                            push_provider.send, item["token"], item["desktop_id"],
+                            item["event_id"])
+                        await asyncio.to_thread(
+                            incidents.mark_push, item["desktop_id"],item["event_id"],
+                            item["phone_id"], accepted)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Avoid leaking tokens or Google credentials into logs.
+                pass
+            await asyncio.sleep(6)
+
+    @app.on_event("startup")
+    async def start_push_delivery():
+        app.state.push_task = asyncio.create_task(flush_push())
+
+    @app.on_event("shutdown")
+    async def stop_push_delivery():
+        task = getattr(app.state, "push_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     @app.middleware("http")
     async def enforce_identity(request: Request, call_next):
-        if request.url.path not in {"/api/location/report", "/api/location/latest",
-                                     "/api/location/clear"} or request.url.query:
+        if request.url.path not in {
+            "/api/location/report","/api/location/latest","/api/location/clear",
+            "/api/incidents/report","/api/incidents/query","/api/incidents/clear",
+            "/api/push/register","/api/push/unregister","/api/push/status",
+        } or request.url.query:
             return JSONResponse({"error":"Not found"}, status_code=404)
         data = bytearray()
         size = request.headers.get("content-length")
@@ -195,9 +235,10 @@ def create_relay(registry: PairingRegistry, storage: RelayStore) -> FastAPI:
         except (AuthenticationError, ValueError, TypeError, OverflowError):
             return JSONResponse({"error":"Unauthorized"},status_code=401)
         role=storage.role(request.state.device_id)
-        if request.url.path.endswith("/report") and role!="desktop":
+        desktop_path=request.url.path in {"/api/location/report","/api/incidents/report"}
+        if desktop_path and role!="desktop":
             return JSONResponse({"error":"Insufficient device authority"},status_code=403)
-        if not request.url.path.endswith("/report") and role!="owner_phone":
+        if not desktop_path and role!="owner_phone":
             return JSONResponse({"error":"Insufficient device authority"},status_code=403)
         response=await call_next(request)
         response.headers["Cache-Control"]="no-store"
@@ -230,5 +271,55 @@ def create_relay(registry: PairingRegistry, storage: RelayStore) -> FastAPI:
             raise HTTPException(status_code=400,detail="Body not allowed")
         storage.clear()
         return {"deleted":True}
+
+    @app.post("/api/incidents/report")
+    async def report_incident(request: Request):
+        try:
+            event=IncidentReport.model_validate_json(request.state.raw_body)
+            event.validate_incident()
+            digest=sha256(request.state.raw_body).hexdigest()
+            incidents.report(request.state.device_id,event,digest)
+        except (ValidationError, ValueError):
+            raise HTTPException(status_code=422,detail="Invalid or conflicting incident event")
+        return {"accepted":True,"event_id":event.event_id,"sha256":digest}
+
+    @app.post("/api/incidents/query")
+    async def query_incidents(request: Request):
+        try:
+            cursor=IncidentCursor.model_validate_json(request.state.raw_body)
+        except (ValidationError,ValueError):
+            raise HTTPException(status_code=400,detail="Invalid incident cursor")
+        rows=incidents.query(cursor.after_id,cursor.limit)
+        return {"events":rows,
+                "next_after_id":rows[-1]["event_id"] if rows else cursor.after_id}
+
+    @app.post("/api/incidents/clear")
+    async def delete_incidents(request: Request):
+        if request.state.raw_body:
+            raise HTTPException(status_code=400,detail="No body allowed")
+        incidents.clear_events()
+        return {"deleted":True}
+
+    @app.post("/api/push/register")
+    async def push_register(request: Request):
+        try:
+            item=PushToken.model_validate_json(request.state.raw_body)
+            item.validate_token()
+            incidents.register_phone(request.state.device_id,item.token)
+        except (ValidationError,ValueError):
+            raise HTTPException(status_code=400,detail="Invalid push registration")
+        return {"registered":True,"configured":push_provider is not None}
+
+    @app.post("/api/push/unregister")
+    async def push_unregister(request: Request):
+        if request.state.raw_body:
+            raise HTTPException(status_code=400,detail="No body allowed")
+        incidents.unregister_phone(request.state.device_id)
+        return {"registered":False}
+
+    @app.get("/api/push/status")
+    async def push_status(request: Request):
+        return {"registered":incidents.is_registered(request.state.device_id),
+                "provider_configured":push_provider is not None}
 
     return app

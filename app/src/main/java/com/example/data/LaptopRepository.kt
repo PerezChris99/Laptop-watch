@@ -142,10 +142,10 @@ class LaptopRepository(
         wasLocked: Boolean = false,
         severity: String = "WARNING",
         category: String = "SECURITY",
-        latitude: Double? = 40.7128902,
-        longitude: Double? = -74.0060804,
-        accuracyMeters: Float? = 1.0f,
-        locationName: String? = "Workstation Floor 3 • Desk 4B"
+        latitude: Double? = null,
+        longitude: Double? = null,
+        accuracyMeters: Float? = null,
+        locationName: String? = null
     ): Long {
         val entity = IntruderLogEntity(
             timestamp = System.currentTimeMillis(),

@@ -21,6 +21,7 @@ from .security import AuthenticationError, SignedRequestVerifier
 from .evidence import CaptureUnavailable, EvidenceRecorder
 from .tracking import TrackingService
 from .pairing import PairingCoordinator
+from .incidents import IncidentStore, PersonCameraGuard
 from .webrtc import RtcController, MediaUnavailable
 
 MAX_CONTROL_BODY = 64 * 1024
@@ -42,6 +43,8 @@ class GatewayState:
     tracking: TrackingService | None = None
     pairing: PairingCoordinator | None = None
     rtc: RtcController | None = None
+    incidents: IncidentStore | None = None
+    guard: PersonCameraGuard | None = None
     armed: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -52,6 +55,19 @@ class GatewayState:
     def get_armed(self) -> bool:
         with self._lock:
             return self.armed
+
+
+class PersonMonitorPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    auto_snapshot: bool = True
+    auto_record: bool = False
+    auto_alarm: bool = False
+
+
+class IncidentQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    after_id: int = 0
+    limit: int = 100
 
 
 class ArmRequest(BaseModel):
@@ -93,6 +109,8 @@ def create_app(state: GatewayState) -> FastAPI:
             await state.rtc.close()
         if state.evidence is not None:
             await asyncio.to_thread(state.evidence.stop_if_recording)
+        if state.guard is not None:
+            await asyncio.to_thread(state.guard.stop)
 
     @app.middleware("http")
     async def secure_request(request: Request, call_next):
@@ -157,7 +175,10 @@ def create_app(state: GatewayState) -> FastAPI:
         return {"online": True, "motion_armed": state.get_armed(), "location": None,
                 "subject_identified": None,
                 "media_transport": "WEBRTC" if state.rtc is not None else "SNAPSHOT_ONLY",
-                "media_active": bool(state.rtc is not None and state.rtc.active)}
+                "media_active": bool(state.rtc is not None and state.rtc.active),
+                "person_detector_configured": state.guard is not None,
+                "person_monitor_operational": state.guard.operational if state.guard is not None else False,
+                "person_monitor_error": state.guard.last_error if state.guard is not None else None}
 
     @app.post("/api/warning/tts")
     async def tts_warning(request: Request):
@@ -189,6 +210,8 @@ def create_app(state: GatewayState) -> FastAPI:
                 # device release can no longer leave the app armed.
                 state.set_armed(False)
                 try:
+                    if state.guard is not None:
+                        await asyncio.to_thread(state.guard.disarm)
                     if state.rtc is not None:
                         await state.rtc.close()
                     if state.evidence is not None:
@@ -198,9 +221,55 @@ def create_app(state: GatewayState) -> FastAPI:
                                        metadata={"armed":"False","release":"failed"})
                     raise HTTPException(status_code=503, detail="Disarmed but camera release failed")
             else:
+                if state.guard is not None:
+                    await asyncio.to_thread(state.guard.arm)
                 state.set_armed(True)
             state.audit.append("config", request.state.paired_device, result="success", metadata={"armed": str(parsed.armed)})
             return {"success": True, "armed": parsed.armed}
+
+    @app.post("/api/config/person-monitor")
+    async def configure_person_monitor(request: Request):
+        async with media_lock:
+            if state.guard is None:
+                raise HTTPException(status_code=503, detail="Person detector model not installed")
+            try:
+                pref=PersonMonitorPreferences.model_validate_json(request.state.raw_body)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid monitor configuration")
+            settings=await asyncio.to_thread(
+                state.guard.configure, auto_snapshot=pref.auto_snapshot,
+                auto_alarm=pref.auto_alarm, auto_record=pref.auto_record,
+            )
+            state.audit.append("config", request.state.paired_device, result="success",
+                metadata={k:str(v) for k,v in settings.items()})
+            return {"configured":True,**settings}
+
+    @app.post("/api/incidents/query")
+    async def query_incidents(request: Request):
+        if state.incidents is None:
+            raise HTTPException(status_code=503, detail="Incident monitor storage not configured")
+        try:
+            query = IncidentQuery.model_validate_json(request.state.raw_body)
+            if query.after_id < 0 or not 1 <= query.limit <= 100:
+                raise ValueError("invalid incident cursor")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid incident query")
+        incidents = await asyncio.to_thread(
+            state.incidents.recent, after_id=query.after_id, limit=query.limit
+        )
+        return {"events": incidents, "next_after_id": (
+            incidents[-1]["id"] if incidents else query.after_id)}
+
+    @app.post("/api/incidents/clear")
+    async def clear_incidents(request: Request):
+        if request.state.raw_body:
+            raise HTTPException(status_code=400, detail="No body allowed")
+        if state.incidents is None:
+            raise HTTPException(status_code=503, detail="Incident monitor storage not configured")
+        count = await asyncio.to_thread(state.incidents.clear)
+        state.audit.append("incident_clear", request.state.paired_device, result="success",
+                           metadata={"count":str(count)})
+        return {"deleted":count}
 
     @app.post("/api/lock")
     async def lock(request: Request):
@@ -228,11 +297,22 @@ def create_app(state: GatewayState) -> FastAPI:
             raise HTTPException(status_code=503, detail="OS alarm unavailable")
         return {"success": True}
 
+    async def pause_person_monitor():
+        if state.guard is not None:
+            await asyncio.to_thread(state.guard.pause)
+
+    def resume_person_monitor():
+        if state.guard is not None and state.get_armed() and not (
+            state.rtc is not None and state.rtc.active
+        ) and not (state.evidence is not None and state.evidence.recording):
+            state.guard.resume()
+
     @app.get("/api/camera/frame")
     async def camera_snapshot(request: Request):
         async with media_lock:
             if not state.get_armed():
                 raise HTTPException(status_code=409, detail="Camera monitoring is disarmed")
+            await pause_person_monitor()
             try:
                 if state.rtc is not None and state.rtc.active:
                     image = await state.rtc.snapshot_jpeg()
@@ -242,6 +322,8 @@ def create_app(state: GatewayState) -> FastAPI:
                     image = await asyncio.to_thread(state.controller.snapshot)
             except Exception:
                 image = None
+            finally:
+                resume_person_monitor()
             if not image:
                 raise HTTPException(status_code=503, detail="Camera unavailable")
             return Response(image, media_type="image/jpeg")
@@ -255,6 +337,7 @@ def create_app(state: GatewayState) -> FastAPI:
                 raise HTTPException(status_code=400, detail="No body allowed")
             if state.evidence is None:
                 raise HTTPException(status_code=503, detail="Evidence recorder not configured")
+            await pause_person_monitor()
             try:
                 if state.rtc is not None and state.rtc.active:
                     jpeg = await state.rtc.snapshot_jpeg()
@@ -266,6 +349,8 @@ def create_app(state: GatewayState) -> FastAPI:
             except (CaptureUnavailable, OSError):
                 state.audit.append("snapshot", request.state.paired_device, result="failure")
                 raise HTTPException(status_code=503, detail="Unable to capture photo")
+            finally:
+                resume_person_monitor()
             state.audit.append("snapshot", request.state.paired_device, result="success",
                                metadata={"evidence_id": str(result["id"])})
             return {"success": True, **result}
@@ -280,6 +365,7 @@ def create_app(state: GatewayState) -> FastAPI:
             if state.evidence is None:
                 raise HTTPException(status_code=503, detail="Evidence recorder not configured")
             try:
+                await pause_person_monitor()
                 # A single-owner webcam may not be opened by both WebRTC and
                 # a separate MP4 writer. Recording pauses live media; clients
                 # must reconnect deliberately after the clip finalizes.
@@ -287,6 +373,7 @@ def create_app(state: GatewayState) -> FastAPI:
                     await state.rtc.close()
                 session = await asyncio.to_thread(state.evidence.start_recording)
             except (CaptureUnavailable, OSError):
+                resume_person_monitor()
                 state.audit.append("record_start", request.state.paired_device, result="failure")
                 raise HTTPException(status_code=503, detail="Video recorder unavailable")
             state.audit.append("record_start", request.state.paired_device, result="success",
@@ -305,6 +392,8 @@ def create_app(state: GatewayState) -> FastAPI:
             except CaptureUnavailable:
                 state.audit.append("record_stop", request.state.paired_device, result="failure")
                 raise HTTPException(status_code=409, detail="No completed video recording")
+            finally:
+                resume_person_monitor()
             state.audit.append("record_stop", request.state.paired_device, result="success",
                                metadata={"evidence_id": clip.id})
             return {"success": True, "recording": False, "id": clip.id,
@@ -320,12 +409,14 @@ def create_app(state: GatewayState) -> FastAPI:
             if state.evidence is not None and state.evidence.recording:
                 raise HTTPException(status_code=409, detail="MP4 recording has exclusive camera access")
             try:
+                await pause_person_monitor()
                 info=RtcOffer.model_validate_json(request.state.raw_body)
                 if info.type!="offer":
                     raise ValueError("Expected an SDP offer")
                 return await state.rtc.offer(request.state.paired_device,
                                              info.sdp, include_audio=info.include_audio)
             except (MediaUnavailable, ValueError, OSError) as error:
+                resume_person_monitor()
                 raise HTTPException(status_code=503, detail=str(error))
 
     @app.post("/api/webrtc/stop")
@@ -335,6 +426,7 @@ def create_app(state: GatewayState) -> FastAPI:
                 raise HTTPException(status_code=400, detail="No body allowed")
             if state.rtc is not None:
                 await state.rtc.close(request.state.paired_device)
+            resume_person_monitor()
             return {"success": True}
 
     @app.get("/api/evidence/{kind}/{evidence_id}")

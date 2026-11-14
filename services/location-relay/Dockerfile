@@ -10,7 +10,8 @@ COPY desktop/src-python/laptopwatch/security.py /app/laptopwatch/security.py
 COPY services/location-relay/laptopwatch_relay/ /app/laptopwatch_relay/
 
 RUN pip install --no-cache-dir "fastapi>=0.115,<1" "uvicorn>=0.30,<1" \
-    "cryptography>=44,<47" "pydantic>=2,<3"
+    "cryptography>=44,<47" "pydantic>=2,<3" \
+    "google-auth>=2.30,<3" "requests>=2.32,<3"
 
 RUN mkdir /srv/laptopwatch && chown laptopwatch:laptopwatch /srv/laptopwatch
 USER laptopwatch

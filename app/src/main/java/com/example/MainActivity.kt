@@ -427,7 +427,8 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onGetSecureLastSeen = { viewModel.refreshSecureLastSeen() },
                         onRediscoverSecureLaptop = { viewModel.rediscoverSecureLaptop() },
                         onConfigureRemoteRelay = { url -> viewModel.configureRemoteRelay(url) },
-                        onCopyRemoteEnrollment = { viewModel.getRemoteEnrollmentText() }
+                        onCopyRemoteEnrollment = { viewModel.getRemoteEnrollmentText() },
+                        onRemotePushChanged = { enabled -> viewModel.setRemotePushEnabled(enabled) }
                     )
                 }
             }

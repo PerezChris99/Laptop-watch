@@ -162,39 +162,74 @@ class SecureLaptopGateway(context: Context) {
         return pair.deviceId to PairingCrypto.b64(PairingCrypto.publicKey(pair.privateSeed))
     }
 
-    suspend fun remoteLastSeen(): Result<JSONObject> = withContext(Dispatchers.IO) {
+    /** Public CA-trusted HTTPS for the explicitly configured single-owner
+     * relay. Neither unpinned http nor redirects are permitted. */
+    private suspend fun remoteSigned(
+        method: String, path: String, payload: JSONObject? = null
+    ): Result<JSONObject> = withContext(Dispatchers.IO) {
         runCatching {
             val pair = store.load()?.takeIf { it.approved }
-                ?: error("Approve the phone before retrieving remote records")
+                ?: error("Approve the phone before contacting the relay")
             val base = configuredRelayUrl()
-            require(base.isNotEmpty()) { "Configure your trusted remote HTTPS relay first" }
-            val path = "/api/location/latest"
+            require(base.isNotEmpty()) { "Configure your trusted HTTPS relay domain first" }
+            val allowed = setOf(
+                "/api/location/latest",
+                "/api/incidents/query",
+                "/api/push/register",
+                "/api/push/unregister",
+                "/api/push/status"
+            )
+            require(path in allowed && method in setOf("GET", "POST"))
+            val data = payload?.toString()?.toByteArray(Charsets.UTF_8) ?: byteArrayOf()
+            require(data.size <= 4096) { "Relay request too large" }
             val nonce = PairingCrypto.b64(PairingCrypto.randomBytes(16))
             val stamp = System.currentTimeMillis() / 1000L
             val transcript = PairingCrypto.requestTranscript(
-                pair.deviceId, "GET", path, byteArrayOf(), stamp, nonce
+                pair.deviceId, method, path, data, stamp, nonce
             )
-            val request = Request.Builder().url(base + path)
+            val builder = Request.Builder().url(base + path)
                 .header("X-LaptopWatch-Device", pair.deviceId)
                 .header("X-LaptopWatch-Nonce", nonce)
                 .header("X-LaptopWatch-Timestamp", stamp.toString())
                 .header("X-LaptopWatch-Signature", PairingCrypto.b64(
                     PairingCrypto.sign(pair.privateSeed, transcript)))
-                .get().build()
-            // Standard publicly trusted TLS. Never permit a self-signed or
-            // unpinned fallback for this public Internet endpoint.
+            if (method == "GET") builder.get()
+            else builder.post(data.toRequestBody(jsonMedia))
             OkHttpClient.Builder()
                 .connectTimeout(5, TimeUnit.SECONDS)
                 .callTimeout(15, TimeUnit.SECONDS)
                 .followRedirects(false).followSslRedirects(false)
-                .build().newCall(request).execute().use { response ->
+                .build().newCall(builder.build()).execute().use { response ->
                     if (!response.isSuccessful) throw IOException(
-                        "Remote last-seen unavailable (HTTP " + response.code + ")"
+                        "Relay denied " + path + " (HTTP " + response.code + ")"
                     )
-                    JSONObject(response.body?.string() ?: "{}")
+                    val raw=response.body?.string() ?: "{}"
+                    require(raw.length < 1024 * 1024) { "Relay response exceeded size limit" }
+                    JSONObject(raw)
                 }
         }
     }
+
+    suspend fun remoteLastSeen(): Result<JSONObject> =
+        remoteSigned("GET", "/api/location/latest")
+
+    suspend fun remoteIncidents(afterId: Long): Result<JSONObject> {
+        require(afterId>=0L)
+        return remoteSigned("POST", "/api/incidents/query",
+            JSONObject().put("after_id",afterId).put("limit",100))
+    }
+
+    suspend fun registerPushToken(token: String): Result<JSONObject> {
+        require(token.length in 20..4096 && token.all { it.code in 33..126 })
+        return remoteSigned("POST", "/api/push/register",
+            JSONObject().put("token",token))
+    }
+
+    suspend fun unregisterPushToken(): Result<JSONObject> =
+        remoteSigned("POST", "/api/push/unregister")
+
+    suspend fun remotePushStatus(): Result<JSONObject> =
+        remoteSigned("GET", "/api/push/status")
 
     suspend fun rediscoverTrustedLaptop(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -241,6 +276,19 @@ class SecureLaptopGateway(context: Context) {
     suspend fun status() = json("GET", "/api/status")
     suspend fun lastSeen() = json("GET", "/api/location/last-seen")
     suspend fun refreshLocation() = json("POST", "/api/location/refresh")
+    /** Fetch only verified person events since the phone's durable cursor.
+     * This is authenticated foreground sync, not a replacement for FCM push. */
+    suspend fun incidents(afterId: Long, limit: Int = 100): Result<JSONObject> {
+        require(afterId >= 0 && limit in 1..100)
+        return json("POST", "/api/incidents/query",
+            JSONObject().put("after_id", afterId).put("limit", limit))
+    }
+
+    suspend fun clearIncidents(): Result<JSONObject> =
+        json("POST", "/api/incidents/clear")
+
+    fun pairedDesktopId(): String? = store.load()?.takeIf { it.approved }?.desktopId
+
 
     suspend fun download(kind: String, id: String): Result<File> = withContext(Dispatchers.IO) {
         runCatching {

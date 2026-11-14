@@ -109,6 +109,11 @@ dependencies {
   // implementation(libs.googleid)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
+  // Authenticated, opt-in FCM security-event hints. A real Firebase project
+  // and google-services.json are provisioned outside source control.
+  implementation("com.google.firebase:firebase-messaging")
+  // Retry token enrollment after device reboot/offline conditions.
+  implementation("androidx.work:work-runtime-ktx:2.12.0")
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

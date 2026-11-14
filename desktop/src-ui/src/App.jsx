@@ -10,6 +10,7 @@ const panels = [
   { id: 'pair', title: 'Pair a phone' },
   { id: 'devices', title: 'Paired devices' },
   { id: 'evidence', title: 'Evidence' },
+  { id: 'alerts', title: 'Person alerts' },
   { id: 'settings', title: 'Settings' },
 ]
 
@@ -22,9 +23,17 @@ export default function App () {
   const [pending, setPending] = useState([])
   const [devices, setDevices] = useState([])
   const [evidence, setEvidence] = useState([])
+  const [incidents, setIncidents] = useState([])
   const [autostart, setAutostart] = useState(false)
   const [enableGpsd, setEnableGpsd] = useState(false)
-  const [relayUrl, setRelayUrl] = useState('')
+  const [relayUrl, setRelayUrl] = useState(
+    () => window.localStorage.getItem('laptopwatch_gnss_relay') || '')
+  const [personModelPath, setPersonModelPath] = useState(
+    () => window.localStorage.getItem('laptopwatch_person_model_path') || '')
+  const [personModelSha, setPersonModelSha] = useState(
+    () => window.localStorage.getItem('laptopwatch_person_model_sha') || '')
+  const [incidentRelayUrl, setIncidentRelayUrl] = useState(
+    () => window.localStorage.getItem('laptopwatch_incident_relay') || '')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -35,12 +44,13 @@ export default function App () {
   }
   const refresh = useCallback(async () => {
     try {
-      const [p, d, e] = await Promise.all([
-        invoke('pending_pairs'),
-        invoke('paired_devices'),
+      const [snapshot, files] = await Promise.all([
+        invoke('dashboard_snapshot'),
         invoke('evidence_files'),
       ])
-      setPending(JSON.parse(p)); setDevices(JSON.parse(d)); setEvidence(e)
+      const state = JSON.parse(snapshot)
+      setPending(state.pending); setDevices(state.devices)
+      setIncidents(state.incidents); setEvidence(files)
     } catch (e) { /* transient startup or sidecar process state; never fake data */ }
   }, [])
 
@@ -53,18 +63,31 @@ export default function App () {
       try { setAutostart(await isEnabled()) } catch (_) {}
       refresh()
     }).catch(e => { if (active) setError(formatError(e)) })
-    const id = setInterval(() => { if (active) refresh() }, 4000)
+    const id = setInterval(() => { if (active) refresh() }, 6000)
     return () => { active = false; clearInterval(id) }
   }, [refresh])
 
-  const createInvite = () => execute('pair', async () => {
-    const response = await invoke('create_pair_invitation', { host: lanIP })
-    const parsed = JSON.parse(response)
+  const startGateway = async () => {
     await invoke('start_companion', {
       allowLan: true,
       enableGpsd,
       relayUrl: enableGpsd && relayUrl.trim() ? relayUrl.trim() : null,
+      personModelPath: personModelPath.trim() || null,
+      personModelSha: personModelSha.trim() || null,
+      incidentRelayUrl: personModelPath.trim() && incidentRelayUrl.trim()
+        ? incidentRelayUrl.trim() : null,
     })
+    setProtecting(true)
+  }
+  const startExisting = () => execute('start', async () => {
+    await startGateway()
+    setMessage('Paired laptop gateway started. Use Android to arm and control it.')
+  })
+
+  const createInvite = () => execute('pair', async () => {
+    const response = await invoke('create_pair_invitation', { host: lanIP })
+    const parsed = JSON.parse(response)
+    await startGateway()
     setInvite(parsed)
     setMessage('Secure listener started. Scan this QR and approve the phone below.')
     setProtecting(true)
@@ -88,6 +111,14 @@ export default function App () {
     setProtecting(false)
     setMessage('Desktop gateway stopped.')
   })
+
+  const saveMonitoringSettings = () => {
+    window.localStorage.setItem('laptopwatch_gnss_relay', relayUrl.trim())
+    window.localStorage.setItem('laptopwatch_person_model_path', personModelPath.trim())
+    window.localStorage.setItem('laptopwatch_person_model_sha', personModelSha.trim())
+    window.localStorage.setItem('laptopwatch_incident_relay', incidentRelayUrl.trim())
+    setMessage('Optional monitoring settings saved on this desktop. Restart gateway to apply.')
+  }
 
   const updateAutostart = (checked) => execute('autostart', async () => {
     if (checked) await enable()
@@ -118,7 +149,11 @@ export default function App () {
           </div>
           <h2>Desktop gateway</h2>
           <p>Pairing requires a running HTTPS gateway and a valid signed QR. To stop the listener and release resources, use Stop gateway or quit.</p>
-          <button className="danger" disabled={!protecting || !!busy} onClick={stop}>Stop gateway</button>
+          {devices.some(d => !d.revoked) && !protecting &&
+            <button className="primary" disabled={!ready || !!busy} onClick={startExisting}>
+              Start secure gateway for paired phone
+            </button>}
+          {protecting && <button className="danger" disabled={!!busy} onClick={stop}>Stop gateway</button>}
         </>}
         {page === 'pair' && <>
           <h1>Pair an Android phone</h1>
@@ -141,6 +176,20 @@ export default function App () {
           <h1>Local evidence</h1>
           <p className="lede">Photographs and recordings remain on this laptop. Only armed, authenticated actions can create new evidence. Files are not uploaded by default.</p>
           {evidence.length === 0 ? <p className="empty">No evidence files yet. Arm from a paired phone, then capture a photo or video.</p> : <ul className="files">{evidence.map(e => <li key={e.name}><strong>{e.name}</strong><span>{(e.size / 1048576).toFixed(2)} MB</span></li>)}</ul>}
+          <button disabled={!ready} onClick={() => execute('evidence-folder',
+            () => invoke('open_evidence_directory'))}>Open private evidence folder</button>
+          <p className="muted">Evidence remains on this laptop. Export or share manually only with the permission of affected people.</p>
+        </>}
+        {page === 'alerts' && <>
+          <h1>Verified person alerts</h1>
+          <p className="lede">No unverified motion is treated as a person. Events require an explicit camera arm and SHA-256 verified person model. Automatic evidence remains on this computer unless you configure a separate incident notification relay.</p>
+          {incidents.length === 0 ? <p className="empty">No verified incidents received yet. This does not prove the camera or model is active; check Settings.</p> :
+            <ul className="files">{incidents.map(i => <li key={i.id}>
+              <div><strong>Person detected · # {i.id}</strong><small>{new Date(i.observed_at_ms).toLocaleString()} · confidence {(i.confidence * 100).toFixed(1)}% · {i.evidence_id ? 'photo captured' : 'no auto-photo' }{i.video_id ? ' · MP4 recorded' : ''}</small></div>
+              <span>{i.state || 'unread'}</span>
+            </li>)}</ul>}
+          <button disabled={!ready} onClick={refresh}>Refresh incidents</button>
+          <p className="muted">Foreground Android sync uses signed HTTPS. Background FCM notifications require a separately configured provider, owner enrollment and Internet access.</p>
         </>}
         {page === 'settings' && <>
           <h1>Safety &amp; startup</h1>
@@ -159,6 +208,26 @@ export default function App () {
               onChange={e => setRelayUrl(e.target.value)}
               style={{ width:'100%',padding:10,border:'1px solid #ccd7e1',borderRadius:6,marginTop:8 }} />
             <p>Tracking settings apply only when you next start the desktop gateway. Disable the service to stop sampling and uploading. No data is sent until a real receiver, explicit opt-in and trusted, reachable relay exist.</p>
+          </div>
+          <div className="panel">
+            <h3>Person detection — installed model required</h3>
+            <p>Place your legally licensed YOLOX Nano ONNX file on this laptop and enter its verified SHA-256 checksum. No untrusted downloaded model is executed automatically. Until installed, person alerts and automatic capture are unavailable.</p>
+            <label htmlFor="personModelPath">Absolute ONNX file path</label>
+            <input id="personModelPath" value={personModelPath}
+              disabled={protecting} onChange={e => setPersonModelPath(e.target.value)}
+              placeholder="C:\\Models\\yolox_nano.onnx"
+              style={{width:'100%',padding:10,margin:'8px 0',border:'1px solid #ccd7e1',borderRadius:6}} />
+            <label htmlFor="personModelSha">Verified model SHA-256</label>
+            <input id="personModelSha" value={personModelSha}
+              disabled={protecting} onChange={e => setPersonModelSha(e.target.value)}
+              placeholder="64 lowercase hexadecimal characters"
+              style={{width:'100%',padding:10,margin:'8px 0',border:'1px solid #ccd7e1',borderRadius:6}} />
+            <label htmlFor="incidentRelayUrl">Optional HTTPS incident push relay</label>
+            <input id="incidentRelayUrl" value={incidentRelayUrl}
+              disabled={protecting} onChange={e => setIncidentRelayUrl(e.target.value)}
+              placeholder="https://relay.yourdomain.com"
+              style={{width:'100%',padding:10,margin:'8px 0',border:'1px solid #ccd7e1',borderRadius:6}} />
+            <button disabled={protecting} onClick={saveMonitoringSettings}>Save optional settings</button>
           </div>
           <div className="panel"><h3>Privacy</h3><p>Only record where you are legally permitted. Camera hardware indicators stay on during capture; stop and disarm explicitly. Sleeping or powered-off laptops cannot stream live video or run ordinary GNSS polling.</p></div>
           <div className="panel"><h3>Release status</h3><p>This desktop frontend is under development and requires packaging, signing, installer tests, OS key-storage hardening and real-device verification.</p></div>
