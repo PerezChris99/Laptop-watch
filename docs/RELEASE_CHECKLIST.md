@@ -39,7 +39,7 @@ or statement of 100% security unless all gates are independently evidenced.
 All phases remain **BLOCKED**, not DELIVERED, because the new Rust/React
 Native changes lack fresh-checkout native builds, full lint/checkJs and
 hardware acceptance. Earlier checked source capabilities refer to the
-**Kotlin/Python reference**, not a verified React Native distribution.
+**historical Kotlin/Python reference in Git**, not a verified React Native distribution.
 Do not interpret them as a passing feature-parity matrix.
 
 - [ ] Confirm full checkout is available through network or a local mounted ZIP.
@@ -56,8 +56,10 @@ Do not interpret them as a passing feature-parity matrix.
       person alerts, GNSS last-seen and offline action denial on hardware.
 - [ ] Approve commercial/legal/OS key management, release signing, storage
       encryption, installation, security scans, SBOM and 24-hour soak.
-- [ ] Document **verified** parity and obtain explicit owner approval before
-      deleting the frozen Kotlin `app/`.
+- [x] Owner explicitly authorized and executed deletion of frozen Kotlin
+      `app/`; reference source is recoverable from Git history.
+- [ ] Document **verified** runtime Android/iOS parity separately using
+      actual builds, devices and signed gateway evidence.
 
 ## Superseding source checkout inventory — after PR #14
 
@@ -75,7 +77,8 @@ Do not interpret them as a passing feature-parity matrix.
       an accessible checkout; these checks are not recorded as passing.
 - [ ] Create and review real npm/Cargo locks; run integrated tests.
 - [ ] Verify full hardware/OS/native behavior and legal/release gates.
-- [ ] Owner separately approves any deletion of Kotlin `app/`.
+- [x] Owner separately approved Kotlin `app/` removal on 14 November 2026.
+      This is independent of device acceptance and store certification.
 
 Earlier lines suggesting native project scaffolds or registered modules are
 missing describe an older checkpoint and no longer match the source tree.

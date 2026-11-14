@@ -1,234 +1,184 @@
 <div align="center">
-
-<img src="docs/images/app_icon.jpg" alt="LaptopWatch security shield emblem" width="112" />
+<img src="docs/images/app_icon.jpg" alt="LaptopWatch emblem" width="96" />
 
 # LaptopWatch
 
-**Remote workstation vigilance · Private evidence capture · Anti-theft response**
+**A permission-first, owner-controlled laptop security companion**
 
-Android controller + Tauri desktop companion — **0.3.0-dev, not a production release**
+React Native Android/iOS · Tauri + Rust desktop · Python signed gateway
 
-<img src="docs/images/hero_banner.jpg" alt="LaptopWatch anti-theft system concept: laptop protection paired with an Android phone" width="100%" />
-
+<img src="docs/images/hero_banner.jpg" alt="LaptopWatch product concept" width="100%" />
 </div>
 
-> [!WARNING]
-> **Not production-ready.** The signed Android/desktop pairing implementation is present in source but is not yet verified on real devices or distributable as a signed release. Never expose the insecure, PIN-based legacy companion on a public network. This is an engineering repository, not a signed installable consumer product.
+> **Engineering checkpoint — NOT READY FOR RELEASE.**
+> The owner authorized retiring the former Kotlin Compose app on
+> **14 November 2026**. The overhaul has one canonical React Native mobile app,
+> but neither its native builds nor cross-device security and performance have
+> been certified. Do not sell or distribute this revision as a finished
+> anti-theft product.
 
-## Technology stack
+## What it does
 
-| Layer | Technologies | Purpose |
-|---|---|---|
-| Android UI | Kotlin, Jetpack Compose, Material 3, Lifecycle/Coroutines | Owner controls, device pairing, dashboards and consent |
-| Mobile persistence | Android Room, SQLite, Android Keystore AES-GCM | History, device identity and encrypted phone signing key |
-| Mobile networking | OkHttp, Bouncy Castle Ed25519, signed HTTPS/TLS fingerprint, Android NsdManager, Google Code Scanner | QR-based authorized device pairing and trusted LAN discovery |
-| Mobile media | GetStream WebRTC for Android, Coil, Android microphone permissions | DTLS-SRTP live video, opt-in two-way audio and evidence preview |
-| Mobile notifications | Android notifications, Firebase Cloud Messaging, AndroidX WorkManager | Optional background event hints and retryable signed token enrollment |
-| Desktop frontend | React 19, Vite 7, QRCodeSVG, Tauri 2 | Native owner dashboard, QR, tray, trusted devices, evidence and settings |
-| Native desktop | Rust, Tauri shell/autostart, rusqlite | Restricted native controls, sidecar lifecycle and direct read-only status |
-| Gateway/backend | Python 3.11+, FastAPI, Uvicorn, Pydantic | Authenticated local REST API and OS laptop actions |
-| Security | Ed25519, SHA-256, replay-resistant nonces, cryptography, AES-256-GCM | Signed commands, integrity, local identity and encrypted relay records |
-| Camera/detection | OpenCV, NumPy, YOLOX Nano ONNX (optional externally supplied/pinned), PyAV, aiortc, sounddevice | Person confirmation, visible JPEG/MP4 recording and encrypted media |
-| Recovery/network | gpsd with genuine GNSS, SQLite offline queues, mDNS/Zeroconf, ICE/STUN/TURN options | Last verified location and authenticated reconnect delivery |
-| Optional self-hosted relay | Python/FastAPI, Docker Compose, Caddy HTTPS, SQLite AES-GCM, Google Auth/FCM HTTP v1 | Owner-provisioned location and incident receipt/push service |
-| Packaging/testing | PyInstaller, Tauri native bundler, Gradle, Android SDK, Pytest, Robolectric, instrumentation tests | Source test harnesses, builds and eventual signed installers |
+LaptopWatch lets the person controlling a laptop explicitly pair their phone,
+approve/revoke that phone on the laptop, and request signed actions while the
+laptop is awake and reachable. Users can arm or disarm visible protection,
+lock the OS, sound an alarm, send a spoken warning, request JPEG/MP4 evidence,
+view encrypted WebRTC media and examine recorded incidents. The person
+detector needs a separately installed, licensed, SHA-256-verified ONNX model;
+it is not bundled or active by default.
 
-**Platforms:** Android controller and Windows/macOS/Linux desktop source.
-There is **no iOS client** in this repository. Optional relay hosting and
-Firebase services require separate owner-provisioned accounts.
+Opt-in GNSS needs a **real gpsd-compatible receiver**; stored and remotely
+retrieved fixes are clearly **LAST SEEN**, not guaranteed live tracking.
+An optional owner-hosted HTTPS relay transfers encrypted event metadata and
+can deliver Android FCM *hints*, never executable phone commands or proof of
+an incident. Internet streaming/TURN needs additional infrastructure.
 
-## What LaptopWatch is
-
-LaptopWatch pairs an Android owner device with a user-owned laptop for visible,
-permission-based anti-theft monitoring. The signed local gateway can arm and
-disarm the camera, lock the operating system, sound an alarm, speak a warning,
-capture JPEG images, record bounded MP4 clips and negotiate WebRTC video and
-optional phone microphone audio.
-
-A SHA-256 verified external ONNX person model is required for person-triggered
-incidents. With it and explicit arming, motion is only a prefilter; a verified
-person can create an incident and optional local photo/video. Signed Android
-foreground polling retrieves events and evidence. Optional remote push sends
-generic FCM hints only; an owner-controlled relay and verification are necessary.
-
-### Café/restroom example
-
-Lock your laptop, leave the camera visible where lawful, arm from the paired
-phone and step away. A configured model can detect a person, save bounded
-local evidence and log an event. Your phone can view the signed incident log,
-start encrypted video, download media or sound an alarm while the laptop is
-awake and reachable. If you configured remote FCM alerts, a signed incident
-event may trigger a generic notification that asks you to open the app and
-verify it. **Field reliability and legal consent must be validated first.**
-
-See [usage and emergency scenarios](docs/SCENARIOS.md).
-
-## Architecture and original artwork
-
-<img src="docs/images/arch_overview.jpg" alt="LaptopWatch architecture artwork" width="100%" />
-
-The existing artwork remains in `docs/images/`: `app_icon.jpg`,
-`hero_banner.jpg` and `arch_overview.jpg`.
+### Intended flow
 
 ```mermaid
 flowchart LR
-  A[Android owner] <-->|QR pin + signed HTTPS| G[Python laptop gateway]
-  G --> E[Private JPEG + MP4 evidence]
-  G --> V[WebRTC DTLS-SRTP media]
-  G --> P[Verified person guard]
-  G --> L[Validated GNSS location]
-  P --> I[SQLite incidents]
-  L --> Q[Offline location queue]
-  I -. signed metadata .-> R[Optional owner relay]
-  Q -. signed receipts .-> R
-  R -. generic opted-in FCM hints .-> A
-  R -. authenticated history queries .-> A
-  T[Tauri/React desktop host] --> G
+    O[Owner opens desktop] --> I[Initialize private identity]
+    I --> Q[Display expiring QR]
+    Q --> P[Phone scans QR]
+    P --> A{Owner approves phone locally?}
+    A -->|No| R[Reject signed control]
+    A -->|Yes| S[Store pairing and pin]
+    S --> C[Signed HTTPS commands]
+    C --> G[Awake laptop gateway]
+    G --> E[Visible evidence and audit]
 ```
 
-The remote paths require real DNS/TLS, provider accounts, enrolled device
-public keys and operating infrastructure. The laptop must be awake and
-running; no software guarantees camera/GNSS activity in deep sleep or
-power-off.
+### Component and trust boundaries
 
-## Implementation and release gates
+```mermaid
+flowchart TB
+    M[React Native Android/iOS JS]
+    N[OS Keychain + native pinned TLS]
+    T[Tauri 2 React owner UI]
+    R[Rust tray and supervised sidecar]
+    P[Python FastAPI Ed25519 gateway]
+    X[Camera / OS lock / GNSS / signed audit]
+    L[Optional private HTTPS relay]
+    M --> N
+    N -->|QR-pinned signed LAN API| P
+    M <-->|DTLS-SRTP with consent| P
+    T -->|allowlisted Tauri IPC| R
+    R -->|per-launch authenticated health| P
+    P --> X
+    P -. owner opt-in signed metadata .-> L
+    L -. historical reads / generic FCM hints .-> M
+```
 
-| Feature | Source implementation | Still requires |
+**Not a surveillance bypass:** pairing and capture require owner approval,
+lawful notice, explicit controls and applicable operating-system permissions.
+No PIN-in-URL fallback or fabricated biometric identification is part of the
+new client. Power off, sleep, disconnected network, blocked hardware and
+unprovisioned external services impose real limits.
+
+## Implemented source and verification status
+
+| Capability | Present in source | Not yet proven |
 |---|---|---|
-| QR pairing and security | Signed invites, per-phone Ed25519 key, TLS fingerprint verification, local approval/revocation, signed API and replay denial | Real phone pairing, cross-OS TLS and security testing |
-| Photos/recordings | Armed JPEG and bounded MP4 with authenticated download and desktop evidence folder | Webcam, codecs, clean stop/retention tests |
-| Live video and intercom | aiortc signaling/stream and Android WebRTC receiver/opt-in audio | Physical phones, ICE/TURN, WAN changes, microphone tests |
-| Person-triggered alerts | Optional model hash check, camera guard, motion/person confirmation, verified incident API, local auto-JPEG/MP4 and signed phone sync | Licensed model weights, false-positive trials, thermal soak |
-| Remote push | Signed incident uploader, encrypted owner relay, FCM adapter, Android opt-in registration and foreground validation | Deployed relay, Firebase credentials, actual notification/wake tests |
-| Last-seen location | Genuine opt-in gpsd fixes, durable local queue, signed receipts, AES-GCM encrypted self-hosted remote record, phone queries | Working receiver, DNS, backups and Internet-outage tests |
-| Desktop distribution | React/Tauri tray, settings, Python sidecar, per-target bundler inputs | Native OS builds, verified lockfiles, code signing, notarization |
-| Commercial sale | Draft privacy/EULA/data safety/pricing, installation instructions and source architecture | Owner-approved license, rights review, merchant, customer support and signed installers |
+| Phone pairing, signed commands and private evidence | JS client, Android/iOS native bridges, Python signed API | Cross-platform device and attack testing |
+| Desktop background supervision | Tauri tray, single instance, restart budget, HMAC-proven owner health | Installed OS restart, sleep and soak |
+| Photo, recording, camera/WebRTC and opt-in audio | Python media adapter and RN viewer | Physical camera, codecs and end-to-end latency |
+| Verified person incidents | Model-gated local guard and signed incident metadata | Licensed weights, accuracy and false positives |
+| GNSS/recovery | Real gpsd last-seen history, opt-in signed encrypted relay | Receiver, network outage and field testing |
+| Push/notifications | Android owner-gated FCM source + relay token rotation | Firebase provisioning, delivery and Doze |
+| Private local storage | Keychain seed and OP-SQLite SQLCipher configuration | Native encryption, migrations and reinstall behavior |
+| Commercial distribution | Build recipes and draft legal policies | Dependency locks, builds, signing, compliance, sale approval |
 
-Source-level implementation is **not** a verified installation. The complete
-integrated Android, Python, Rust, React and relay suite has not passed on actual
-devices. An external person model is not bundled. Apple/Windows OS geolocation
-providers beyond `gpsd` are not implemented. The legacy HTTP/PIN transport
-has been disabled; no PINs are sent in URLs.
+**Source implementation is not equivalent to a passing build.**
+The original Kotlin app was retired at the owner's direction, not because
+physical feature parity had been established. See
+[the retirement decision](docs/KOTLIN_RETIREMENT.md),
+[the parity matrix](docs/PARITY.md) and [the release gates](docs/STATUS.md).
 
-## Location, offline continuity and limitations
+## Technology stack
 
-Real receiver-reported uncertainty is shown rather than invented GPS
-precision. A saved last-seen fix is **historical even if recent**. Records
-persist while the laptop is offline; reports are sent to the opt-in HTTPS
-relay when connectivity returns and a signed receipt matches. A tiny
-connection window may not permit a complete HTTPS transmission.
-
-Deep sleep, power-off, dead battery or a physically blocked webcam prevent
-ordinary software tracking and recording. Enable legitimate OS Find My
-features or install independently powered GNSS/cellular hardware if
-power-independent recovery is needed. No computer software can guarantee
-theft prevention. [Recovery limits](docs/LOCATION_AND_RECOVERY.md).
-
-## Build and test prerequisites
-
-**Desktop Python** (development): install Python 3.11+, then:
-
-```bash
-python -m pip install -e 'desktop/src-python[test,media,discovery]'
-cd desktop/src-python
-python -m pytest -q
-```
-
-**Tauri desktop**: Node 22+, Rust/Tauri 2 OS prerequisites, Python,
-PyInstaller and Pillow:
-
-```bash
-python -m pip install pyinstaller pillow
-python desktop/scripts/prepare_sidecar.py
-cd desktop
-npm install
-npm run tauri dev
-```
-
-**Android**: Android Studio, JDK 17+, Android SDK 36.1 and Gradle 9.3.1.
-The repository contains distribution properties but lacks the verified
-Gradle wrapper JAR/launchers. Obtain them from the official Gradle
-distribution and verify official checksums before committing. Native
-Android and desktop builds are unverified.
-
-**Optional relay**: Docker Compose and Caddy, owner domain, TLS, device
-public-key enrollment, opt-in GNSS/push and provider credentials. Do not
-upload secrets or test personally identifying data to Git.
-
-Full [build/run/install/acceptance guide](docs/BUILD_AND_RELEASE.md),
-[desktop instructions](desktop/README.md) and
-[optional relay setup](services/location-relay/README.md).
+| Component | Technology |
+|---|---|
+| Shared phone UX | React Native 0.88, React 19, **JavaScript/JSX** |
+| Android native adapters | Gradle, Kotlin, OkHttp, Android NsdManager, foreground service, optional Firebase |
+| iOS native adapters | Xcode/Swift, URLSession leaf-certificate pinning, Keychain, share sheet |
+| Mobile private data | React Native Keychain, OP-SQLite with SQLCipher option |
+| Desktop UI | React, Vite, CSS, Tauri 2 |
+| Desktop native process | Rust, Tauri shell/autostart/single instance, rusqlite |
+| Laptop engine | Python 3.11+, FastAPI, Uvicorn, Pydantic |
+| Cryptography | Ed25519 signed requests, nonce replay defense, TLS pinning, SHA-256, AES-GCM |
+| Media/detection | OpenCV, PyAV, aiortc/WebRTC, sounddevice, optional owner-provided ONNX model |
+| GNSS/discovery/relay | gpsd, Zeroconf, SQLite, FastAPI, Caddy, Docker Compose, opt-in FCM |
+| Validation | pytest, Node test runner, Jest, Vitest, ESLint, JS check, Cargo, Gradle, Xcode |
 
 ## Repository layout
 
-| Location | Contents |
-|---|---|
-| `app/` | Frozen Kotlin Compose Android reference; retained pending verified RN parity and owner approval |
-| `mobile/` | JavaScript React Native migration, pinned networking source and signed controls; **native build blocked** |
-| `design/`, `shared/` | Shared paper/gold design tokens and exact Ed25519 vectors |
-| `desktop/src-ui/` | React/Vite desktop owner dashboard |
-| `desktop/src-tauri/` | Rust/Tauri shell, tray and restricted native operations |
-| `desktop/src-python/` | Secure Python controller, camera guard, GNSS and tests |
-| `services/location-relay/` | Optional encrypted single-owner metadata relay |
-| `docs/images/` | Existing logo, hero image and architecture artwork |
-| `docs/SCENARIOS.md` | Café/restroom, privacy and theft workflows |
-| `docs/BUILD_AND_RELEASE.md`, `docs/STATUS.md` | Gates and reproducibility |
-| `docs/commercial/` | Draft EULA, privacy, data safety, website and pricing |
+```text
+mobile/
+  src/          Shared JavaScript/JSX owner app, signed APIs, privacy
+  android/      ONLY maintained Android native application
+  ios/          ONLY maintained iOS native application
+desktop/
+  src-ui/       White-paper React/Vite desktop experience
+  src-tauri/    Rust native shell, tray, supervised sidecar
+  src-python/   Python authenticated service, tests, capture and GNSS
+services/location-relay/    Optional encrypted owner metadata service
+design/                     Shared paper/blue/yellow/gold design tokens
+shared/protocol-vectors/    Cross-language signing fixtures
+ops/source_preflight.py     Offline source-contract preflight
+docs/                       Architecture, parity, threat model, release runbooks
+```
 
-## November 2026 — mobile/desktop source overhaul checkpoint
+The deleted Kotlin Compose app and root Gradle build remain recoverable from
+Git history. Android **Kotlin native adapters inside the React Native app**
+are still required; those are not the retired product. No additional branches
+or GitHub Actions workflows are used.
 
-The current `main` includes React Native JavaScript Android/iOS native
-scaffolds, signed Ed25519 pairing/controls, certificate-pinned transport,
-consent-gated camera/WebRTC/two-way audio, native app-private evidence
-lifecycle, real gpsd GNSS history, model-backed person incident controls,
-encrypted SQLCipher mobile cache, optional owner-verified relay/FCM
-integration, and the supervised Rust/Tauri Python sidecar.
+## Development and verification
 
-**Source integration is not 100% runtime verification.** The owner explicitly
-deferred builds, external accounts, native device tests, security audits,
-release signing and legal approval. See [feature parity](docs/PARITY.md),
-[hardware/build runbook](docs/RELEASE_RUNBOOK.md),
-[source-only preflight](ops/source_preflight.py), and
-[warning ledger](Warning.txt) before distributing.
+Start from a trusted full clone with the documented toolchains. Examples:
 
-The Kotlin `app/` reference is retained. Its sample biometric dossiers,
-virtual unlock, demo tamper/geofence controls and fabricated coordinates
-are not represented as real threat evidence in the new client.
+```bash
+python ops/source_preflight.py
+python design/generate.py --check
 
-## Overhaul checkpoint — release blocked
+python -m pip install -e './desktop/src-python[test,media,discovery]'
+python -m pytest -q desktop/src-python/tests
 
-The 2026-11-14 JavaScript mobile migration and Rust supervised desktop code
-remain **BLOCKED** under the owner's strict acceptance definition. Native
-builds and integrated test suites have not been executed because this runner
-lacks a mountable Git checkout, package registries, Rust/Gradle/Android
-toolchains and devices. Only deterministic Ed25519 fixture checks and
-generated-design-token equality passed.
+cd mobile
+npm install          # first dependency resolution; review/commit lockfile
+npm run test:protocol
+npm run test:ui
+npm run lint
+npm run check:js
+cd android
+./gradlew assembleDebug test lint
+```
 
-See [defect and required human actions](docs/DEFECTS.md),
-[Android parity](docs/PARITY.md), [frozen protocol](docs/PROTOCOL.md)
-and [release commands](docs/RELEASE_RUNBOOK.md).
+Desktop builds need Rust/Tauri prerequisites and the packaged Python sidecar;
+iOS requires macOS, Xcode and CocoaPods. Do not use `npm ci` until a reviewed
+lockfile has actually been created and committed. Credentials, signing
+identities, real hardware and live provider services are not included.
 
-## Git workflow
+**Authoritative commands and stop-ship checklist:**
+[build and release runbook](docs/RELEASE_RUNBOOK.md) ·
+[release checklist](docs/RELEASE_CHECKLIST.md) ·
+[security threat model](docs/THREAT_MODEL.md).
 
-Exactly two active branches: `perez` for development and `main` for
-integration. Commit coherent work to `perez`, verify source, open a normal
-PR and merge to `main`. Fast-forward `perez` to the merge commit so both
-tips are identical. No GitHub Actions or extra branches. A main merge is
-**not** proof of release safety and does not authorize a versioned tag.
+## Development and security policy
 
-## Legal, security and distribution
+- Develop and commit on `perez`, open a PR to `main`, merge after review and
+  fast-forward `perez` to the merged commit. No feature branches or CI
+  workflows without a separate decision.
+- Never commit identity files, Firebase configuration, signing keys, actual
+  evidence, model weights or customer data. No unsafe certificate bypass,
+  unauthenticated owner routes or automatic offline lock/alarm queue.
+- User-mode software cannot protect a laptop while power is unavailable,
+  impersonate real GPS/identity evidence, guarantee capture in sleep or
+  provide independent theft-recovery hardware.
+- Installer signing, package audits, physical acceptance, privacy/consent,
+  commercial license and any store approvals are mandatory before sale.
+  **No approved repository-wide license or commercial distribution rights
+  are implied by this README.**
 
-Only monitor a laptop you own or have permission to control. Give legally
-required notice and obtain recording consent; never record covertly.
-Evidence, audit, precise location and push tokens are personal data. Apply
-data retention, access restrictions, backups and OS disk encryption.
-The desktop identity still uses protected local key files rather than
-fully integrated Windows CNG/macOS Keychain/Linux Secret Service storage.
-
-**Commercial status:** No approved source `LICENSE`, production signing
-assets, consumer installer, verified checkout, app-store acceptance or
-approved legal policies are provided by these source commits. The rights
-holder must decide licensing, supported devices, buyer terms and compliance
-before publishing or selling. See [release checklist](docs/RELEASE_CHECKLIST.md) and [signing/notarization runbook](docs/SIGNING_AND_NOTARIZATION.md),
-[threat model](docs/THREAT_MODEL.md), [draft EULA](docs/commercial/EULA.md)
-and [draft privacy policy](docs/commercial/PRIVACY.md).
+See [scenarios](docs/SCENARIOS.md), [architecture](docs/ARCHITECTURE.md),
+[status](docs/STATUS.md) and [commercial policy drafts](docs/commercial/).

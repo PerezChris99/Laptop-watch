@@ -1,3 +1,5 @@
+> **Retirement checkpoint:** the former Kotlin controller was deleted with express owner permission before device parity acceptance. Apply this test matrix to the current React Native `mobile/android` and `mobile/ios` apps plus Tauri/Python service. Old Kotlin test names are historical. No hardware outcomes have been certified.
+
 # LaptopWatch — automated and physical acceptance matrix
 
 | Gate | Environment | Test case | Pass condition | Evidence status |

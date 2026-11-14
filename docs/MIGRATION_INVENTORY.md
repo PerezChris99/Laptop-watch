@@ -1,3 +1,5 @@
+> **Historical migration inventory.** This document records the 2026-09-20/November 13 Kotlin baseline. On 14 November 2026, owner authorization retired the old `app/`, root Gradle launcher and staging adapter. Current mobile source is `mobile/src`, `mobile/android`, and `mobile/ios`. Do not use the historical recommendations below to re-add the insecure Android app. See [KOTLIN_RETIREMENT.md](KOTLIN_RETIREMENT.md) and [STATUS.md](STATUS.md).
+
 # LaptopWatch — migration and source inventory
 
 **Baseline:** `main` and `perez` at `7a0c23d169d74b06241db95689c267eae8a13378` (2026-09-20).  

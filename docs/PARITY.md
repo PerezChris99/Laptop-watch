@@ -1,16 +1,18 @@
-# LaptopWatch migration parity — source integration baseline
+# LaptopWatch historical Kotlin → React Native parity — verification ledger
 
-**Status: SOURCE INTEGRATION PREPARED, NATIVE ACCEPTANCE DEFERRED.** This
-matrix compares only **real, consent-based functionality** against the Kotlin
-reference `app/` and Python gateway. A checked source integration means the
+**Status: OWNER AUTHORIZED LEGACY RETIREMENT; RUNTIME PARITY UNVERIFIED.** This
+matrix compares real, consent-based React Native features against the former
+Kotlin application in Git history (last tracked in `e52f19d`) and the Python gateway. A checked source integration means the
 implementation and entrypoint/wiring are present, **not** that it compiled,
 ran on a phone, passed a penetration test, or is production-ready.
 
-The owner deferred builds, infra, independent verification and hardware
-tests to a separate phase. The Kotlin reference must be retained until that
-phase passes and the owner separately authorizes its removal.
+The owner explicitly authorized deletion of the old Kotlin `app/` on
+14 November 2026, superseding the earlier retention restriction. The app
+was retired as a product decision **before** independent native/hardware
+acceptance. That does not make unexecuted tests pass. See
+[KOTLIN_RETIREMENT.md](KOTLIN_RETIREMENT.md).
 
-| Feature | Kotlin reference | React Native JavaScript / native integration | Acceptance still required |
+| Feature | Historical Kotlin implementation (Git only) | React Native JavaScript / native integration | Acceptance still required |
 |---|---|---|---|
 | First-run consent | Compose onboarding | Persisted owner opt-in in SQLCipher private cache; blocks action screen until saved | Android/iOS reinstall/lock-state UX |
 | Signed physical pairing | QR, proof and local approval | QR camera scanner, exact LWPAIR1 QR verification, phone Ed25519 proof, signed approval test | Live owner-display scan, approval and negative cases |
@@ -46,8 +48,9 @@ tamper simulations. They are not evidence from authenticated laptop sensors or
 consented face identification. They are intentionally **not** represented as
 live, verified alerts or biometric profiles in the new client. Adding them
 as real data would violate the owner's no-fake-telemetry/no-covert-capture
-requirements. Kotlin `app/` is kept as the review reference, not proof
-that its simulated features are production capabilities.
+requirements. Kotlin `app/` is retained only in Git history, not as a
+maintained or installable second app; its simulated data was never proof
+of production sensor capabilities.
 
 A remote OpenStreetMap SDK is not installed by default, as requested. The
 location screen shows verified coordinates, source, accuracy, timestamps,
@@ -68,7 +71,8 @@ of full visual one-for-one legacy reproduction.
 5. Complete OS keystore protection for desktop private keys, updater
    credential/config and signed installers, audit review and approved
    privacy/EULA/license/support and commercialization.
-6. Explicit owner authorization before removing Kotlin `app/`.
+6. Owner authorization to remove Kotlin `app/` was granted and executed;
+   still require fully logged, cross-platform runtime acceptance before release.
 
 ## Verification record
 
@@ -81,5 +85,5 @@ of full visual one-for-one legacy reproduction.
   foreground FCM/GNSS and penetration tests.
 - No performance or signed-release measurements were made or invented.
 
-The source migration is substantially integrated. **Full verified runtime
-parity and commercial release remain blocked until those real tests pass.**
+The source migration and owner-approved retirement are recorded. **Verified
+runtime parity and commercial release remain blocked until real tests pass.**

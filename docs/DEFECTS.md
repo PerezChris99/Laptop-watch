@@ -1,3 +1,5 @@
+> **Current record (14 November 2026):** The owner authorized retiring the old Kotlin Compose `app/` and root Gradle build. SEC/QA/REL entries tied exclusively to that removed implementation describe **historical baseline defects**, not active React Native source paths. They do **not** prove replacement runtime safety. Open security/release gates remain active. See [STATUS.md](STATUS.md), [PARITY.md](PARITY.md) and [KOTLIN_RETIREMENT.md](KOTLIN_RETIREMENT.md).
+
 # LaptopWatch — defect register and acceptance evidence
 
 **Inspected revision:** `7a0c23d169d74b06241db95689c267eae8a13378`. Severity is potential user impact; status reflects code inspection, NOT a successful exploit or runtime reproduction.

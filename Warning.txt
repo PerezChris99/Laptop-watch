@@ -1,58 +1,44 @@
-LaptopWatch overhaul — release/acceptance warning ledger
-=======================================================
-Engineering checkpoint: 2026-11-14
-THIS IS A NEW ENGINEERING WARNING LEDGER. The original Warning.txt demanded
-by the older master prompt was not available. The owner waived waiting for it.
+LaptopWatch overhaul — security and release gate ledger
+=====================================================
+Updated: 14 November 2026
 
-RELEASE STATUS: NOT BUILD-VERIFIED. NOT DEVICE-VERIFIED. NOT CERTIFIED FOR
-PRODUCTION, STORE DISTRIBUTION OR COMMERCIAL SALE.
+OWNER AUTHORIZED REMOVAL of the obsolete Kotlin Compose/Room app on
+14 November 2026. The historical source remains in Git. The canonical
+mobile app is React Native JavaScript with registered Android native
+Kotlin adapters and iOS Swift adapters. Old root Gradle builds and the
+duplicate mobile/android-native staging copy have been retired.
 
-Major source integration now present:
-[x] Android RN native project and genuine official Gradle 0.88.x wrapper;
-    registered pinned HTTPS/foreground/evidence/relay/FCM/NSD modules.
-[x] iOS RN Xcode source project, Keychain, Swift TLS pin, private evidence,
-    report export and signed public-CA relay; no iOS FGS/NSD claim.
-[x] Exact LW1 signing, strict pairing, signed controls, owner approval,
-    private evidence media, GNSS current/history, optional intercom, real
-    model-gated verified incidents and owner-specific privacy permissions.
-[x] SQLCipher private cache key stored separately in the OS Keychain;
-    never fallback to plaintext or queue non-idempotent remote actions.
-[x] Desktop Rust/Tauri supervisor, independent authenticated localhost
-    per-launch health, owner-only audit history, rotating sanitized logs.
-[x] User-facing source parity matrix and source-policy audit commands.
+This owner decision does NOT certify installed/native feature parity,
+device reliability or security acceptance.
 
-Unexecuted external/native verification gates per owner's instruction:
-[ ] Real clean checkout with reviewed Node/Cargo/Pod/Gradle locks and
-    installed dependencies; npm, Python pytest, Rust cargo, Gradle and Xcode.
-[ ] Actual Android/iOS devices with QR/pinning/replay, GNSS, audio, camera,
-    media codecs, app-private export/deletion, Doze/FGS and 24-hour soak.
-[ ] Managed Firebase owner project, optional encrypted relay/TURN, genuine
-    GNSS hardware and legally licensed, hash-verified person ONNX model.
-[ ] Full security assessment, supply-chain SBOM/audits, memory and battery
-    measurements, real signed desktop/mobile installers and store acceptance.
-[ ] Owner-approved privacy/EULA/license/commerce and signing certificates.
-[ ] Full verified hardware/feature parity and owner's **separate explicit**
-    approval before removing the Kotlin app/ reference.
+CODE/SOURCE INTEGRATION PRESENT (not externally tested):
+[x] Short-lived owner-approved QR pairing, signed Ed25519 gateway controls
+    and native Android/iOS certificate pinning.
+[x] React Native phone UX; explicit consent, evidence download/preview,
+    bounded metadata reports, Android optional FGS and opt-in FCM/relay.
+[x] Private Keychain signing seed and SQLCipher-provisioned private cache.
+[x] Authenticated Python HTTPS gateway, audit chain, real GNSS history,
+    model-gated incidents, WebRTC and opt-in audio source.
+[x] Tauri Rust process supervisor, signed owner health response challenge
+    and bounded rotating diagnostics; legacy Compose app removed.
+[x] Source-level parity, retired-code prevention and release runbooks.
 
-Legacy Kotlin subject biometric dossiers, sample NYC coordinates, demo
-tamper actions, fake geofencing and virtual unlock are intentionally NOT
-converted into verified sensor-backed evidence. No fabricated telemetry.
-Legacy Kotlin app/ remains in the tree.
+UNVERIFIED / STOP-SHIP:
+[ ] Complete clean checkout and actual reviewed npm/Cargo/Pod/Gradle locks;
+    full Python/JS/Rust/Android/iOS native builds, tests and static analysis.
+[ ] Physical Android/iOS/laptop pairing, TLS pinning, revoked-key and replay,
+    battery/FGS, media codec, recording, evidence and network recovery tests.
+[ ] Correct actual hardware GNSS, external licensed person detector,
+    false-positive evaluation, real self-hosted relay and FCM provisioning.
+[ ] Real installer signing/notarization, upgrade/recovery, privacy, audits,
+    24-hour soak, commercial terms, app-store acceptance and support.
+[ ] Owner's explicit commercial release approval after logged acceptance.
 
-Isolated verification actually performed:
-- Earlier independent Python and Node cryptographic signed fixture checks:
-  LW1 request vectors, signed QR, phone proof and tamper refusal PASS.
-- Design token parity --check previously executed in isolated copy.
-- Latest isolated JS V8 checks: CSV formula injection prevention, bounded
-  reports, location freshness, foreground consent and SQLite schema PASS.
-- GitHub source, branch and binary-blob integrity inspections performed.
+DO NOT SHIP, SELL, CLAIM GUARANTEED ANTI-THEFT OR MARK AS PRODUCTION-READY.
 
-NOT EXECUTED on native integrated checkout: full pytest, RN Jest/lint/checkJs,
-npm ci, Rust Cargo/Tauri, Gradle Android, Xcode iOS, hardware/UI/E2E,
-attestation, penetration tests or release readiness.
+A powered-off/asleep laptop or unprovisioned external service cannot
+guarantee new evidence or location. Historical data is LAST SEEN; no
+fabricated coordinates, biometric dossiers or covert camera/audio.
 
-See docs/PARITY.md for exact feature mapping, docs/RELEASE_RUNBOOK.md for
-all later test commands, docs/DEFECTS.md for evidence/action ownership,
-docs/DECISIONS.md and docs/SIGNING_AND_NOTARIZATION.md.
-
-STOP-SHIP persists even though source integrations are committed and merged.
+See docs/STATUS.md, docs/KOTLIN_RETIREMENT.md, docs/PARITY.md and
+docs/RELEASE_RUNBOOK.md for exact source and separate acceptance gates.

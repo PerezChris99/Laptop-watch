@@ -1,8 +1,8 @@
 """Explicitly paired Ed25519 control authentication with durable nonce replay protection.
 
-This module is intentionally not connected to the legacy Flask server: that
-server's insecure PIN protocol must be removed atomically when a new paired TLS
-gateway and Android client are ready. Never expose the legacy server to WAN.
+The former Kotlin embedded Flask/PIN implementation has been retired by
+owner approval. Only the QR-paired signed TLS gateway may serve phone
+controls; never restore the legacy HTTP/PIN route.
 """
 from __future__ import annotations
 
