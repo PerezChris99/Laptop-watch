@@ -15,6 +15,7 @@ import com.example.data.LaptopRepository
 import com.example.data.SubjectProfileEntity
 import com.example.util.NotificationHelper
 import com.example.security.SecureLaptopGateway
+import com.example.security.LiveVideoSession
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -103,7 +105,9 @@ data class MonitorUiState(
     val activeSubjectCategory: String = "UNKNOWN", // "AUTHORIZED", "INVESTIGATE", "FLAGGED_THREAT"
     val securePairingStatus: String = "NOT_PAIRED",
     val secureArmed: Boolean = false,
-    val secureEvidenceId: String? = null
+    val secureEvidenceId: String? = null,
+    val secureRelayUrl: String = "",
+    val webRtcStatus: String = "STOPPED"
 
 )
 
@@ -120,6 +124,9 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         subjectProfileDao = database.subjectProfileDao()
     )
     private val secureGateway = SecureLaptopGateway(application)
+    private val liveVideo = LiveVideoSession(application, secureGateway)
+    val liveVideoTrack = liveVideo.track
+    fun videoEglContext() = liveVideo.eglContext()
     private val voiceRecorder = VoiceRecorderHelper(application)
     private val notificationHelper = NotificationHelper(application)
 
@@ -180,7 +187,18 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 else -> "NOT_PAIRED"
             }
         }.getOrDefault("ERROR")
-        _uiState.value = _uiState.value.copy(securePairingStatus = pairingState)
+        _uiState.value = _uiState.value.copy(
+            securePairingStatus = pairingState,
+            secureRelayUrl = secureGateway.configuredRelayUrl()
+        )
+        viewModelScope.launch {
+            liveVideo.state.collect { mediaState ->
+                _uiState.value = _uiState.value.copy(
+                    webRtcStatus = mediaState,
+                    isAutoStreamingEnabled = mediaState == "CONNECTED"
+                )
+            }
+        }
         viewModelScope.launch(coroutineExceptionHandler) {
             repository.initializeDefaultsIfNeeded()
             val initialConfig = repository.getConfigDirect()
@@ -197,12 +215,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 status = "HEALTHY",
                 message = "Laptop Security Engine started. Ready for LAN & Web connections."
             )
-            try {
-                com.example.service.LaptopMonitorService.start(application)
-            } catch (e: Exception) {
-                Log.w("LaptopMonitorVM", "Foreground service init notice: ${e.message}")
-            }
-            startHeartbeat()
+            // The old foreground dataSync service polls the insecure legacy
+            // HTTP/PIN interface and cannot run indefinitely on Android 15+.
+            // Do not auto-start it or its heartbeat. The paired gateway is
+            // explicitly owner-operated while the app is foregrounded.
         }
     }
 
@@ -229,6 +245,7 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     else (result.exceptionOrNull()?.message ?: "Approval pending")
             )
             if (result.isSuccess) {
+                repository.setDemoMode(false)
                 val status = secureGateway.status().getOrNull()
                 _uiState.value = _uiState.value.copy(
                     secureArmed = status?.optBoolean("motion_armed", false) == true,
@@ -237,6 +254,53 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                     statusMessage = "Paired encrypted connection"
                 )
             }
+        }
+    }
+
+    fun startLiveVideo() {
+        if (!secureGateway.isApproved() || !_uiState.value.secureArmed) {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Pair your laptop and arm the camera before starting live video"
+            )
+            return
+        }
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val started = liveVideo.connect()
+            if (started.isFailure) {
+                _uiState.value = _uiState.value.copy(
+                    toastFeedback = "Encrypted video negotiation failed. Try an authenticated photo: " +
+                        (started.exceptionOrNull()?.message ?: "Transport unavailable")
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    activeTransport = "WEBRTC",
+                    toastFeedback = "WebRTC negotiated; waiting for first live frame"
+                )
+            }
+        }
+    }
+
+    fun stopLiveVideo() {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            liveVideo.disconnect()
+            _uiState.value = _uiState.value.copy(
+                webRtcStatus = "STOPPED",
+                isAutoStreamingEnabled = false,
+                toastFeedback = "Encrypted live camera session stopped"
+            )
+        }
+    }
+
+    fun rediscoverSecureLaptop() {
+        viewModelScope.launch(coroutineExceptionHandler) {
+            val discovered = secureGateway.rediscoverTrustedLaptop()
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = if (discovered.isSuccess)
+                    "Verified paired laptop on trusted LAN: " + discovered.getOrThrow()
+                else "Paired laptop not found: " +
+                    (discovered.exceptionOrNull()?.message ?: "Check Wi-Fi and desktop gateway")
+            )
+            if (discovered.isSuccess) testConnection()
         }
     }
 
@@ -265,14 +329,32 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    fun configureRemoteRelay(url: String) {
+        val result = runCatching { secureGateway.setRelayUrl(url) }
+        _uiState.value = _uiState.value.copy(
+            secureRelayUrl = secureGateway.configuredRelayUrl(),
+            toastFeedback = if (result.isSuccess) "Remote location endpoint configured"
+            else "Invalid relay URL: " + (result.exceptionOrNull()?.message ?: "Invalid HTTPS endpoint")
+        )
+    }
+
+    fun getRemoteEnrollmentText(): String {
+        val info = secureGateway.enrollmentInfo()
+        return if (info == null) "Approve and verify this phone first"
+        else "PHONE DEVICE ID: " + info.first + "\nPUBLIC KEY (base64url): " + info.second
+    }
+
     fun refreshSecureLastSeen() {
         viewModelScope.launch(coroutineExceptionHandler) {
-            val response = secureGateway.lastSeen()
-            val json = response.getOrNull()
+            val local = secureGateway.lastSeen()
+            val remote = if (local.isFailure && secureGateway.configuredRelayUrl().isNotBlank()) {
+                secureGateway.remoteLastSeen()
+            } else null
+            val json = (remote ?: local).getOrNull()
             if (json == null) {
                 _uiState.value = _uiState.value.copy(
-                    toastFeedback = "No verified location delivered: " +
-                        (response.exceptionOrNull()?.message ?: "Receiver unavailable")
+                    toastFeedback = "No verified last-seen record available: " +
+                        ((remote ?: local).exceptionOrNull()?.message ?: "Receiver unavailable")
                 )
                 return@launch
             }
@@ -293,8 +375,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 isLocationTrackingActive = false, gpsAccuracyMeters = accuracy.toFloat(),
                 lastGpsFixTime = seen,
                 gpsProvider = json.optString("provider", "UNKNOWN"),
-                locationAddress = "Last verified GNSS fix " + ageMinutes +
-                    " min ago (±" + accuracy.toInt() + "m); not a live track",
+                locationAddress = (if (remote != null) "Remote-delivered last seen " else "Local laptop last seen ") +
+                    ageMinutes + " min ago (±" + accuracy.toInt() + "m reported); not live",
                 toastFeedback = "Last seen loaded; laptop must be reachable for this query"
             )
         }
@@ -1002,24 +1084,23 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun refreshCameraFrame() {
-        _uiState.value = _uiState.value.copy(cameraRefreshTrigger = System.currentTimeMillis())
+        if (secureGateway.isApproved() && _uiState.value.secureArmed) {
+            captureManualSnapshot()
+        } else {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Pair and arm the laptop to capture an authenticated camera frame"
+            )
+        }
     }
 
     fun toggleAutoStreaming() {
-        val willEnable = !_uiState.value.isAutoStreamingEnabled
+        // A periodic JPEG refresh is not encrypted real-time WebRTC, and
+        // displaying a 'LIVE' badge would be a false security promise.
         _uiState.value = _uiState.value.copy(
-            isAutoStreamingEnabled = willEnable,
-            toastFeedback = if (willEnable) "🟢 Live auto-stream preview active" else "Stream paused (Manual mode)"
+            isAutoStreamingEnabled = false,
+            toastFeedback = "Live WebRTC streaming not active. Capture an authenticated photo instead."
         )
         autoStreamJob?.cancel()
-        if (willEnable) {
-            autoStreamJob = viewModelScope.launch {
-                while (isActive) {
-                    delay(1200)
-                    _uiState.value = _uiState.value.copy(cameraRefreshTrigger = System.currentTimeMillis())
-                }
-            }
-        }
     }
 
     fun captureManualSnapshot() {
@@ -1387,19 +1468,10 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun getCameraSnapshotUrl(): String? {
-        val config = laptopConfig.value ?: return null
-        if (config.isDemoMode) return null
-        val target = if (config.activeTransport == "WEB" && config.remoteWebUrl.isNotBlank()) {
-            config.remoteWebUrl
-        } else {
-            "${config.ipAddress}:${config.port}"
-        }
-        val (quality, scale) = when (_uiState.value.streamQualityPreset) {
-            "ECO" -> Pair(40, 0.5f)
-            "ULTRA" -> Pair(90, 1.0f)
-            else -> Pair(70, 0.75f)
-        }
-        return repository.getCameraSnapshotUrl(target, config.port, config.pin, quality, scale)
+        // Never construct legacy HTTP URLs containing PIN query parameters.
+        // Coil previews a previously authenticated JPEG from app-private files.
+        if (laptopConfig.value?.isDemoMode == true) return null
+        return _uiState.value.lastCapturedPhotoUrl
     }
 
     fun setStreamQuality(preset: String) {
@@ -1410,17 +1482,13 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun toggleBackgroundService() {
-        val newState = !_uiState.value.isBackgroundServiceActive
+        // The legacy sticky dataSync FGS performs unsigned PIN polling and
+        // is time-limited by newer Android platform policy. Do not start it.
+        com.example.service.LaptopMonitorService.stop(getApplication<Application>())
         _uiState.value = _uiState.value.copy(
-            isBackgroundServiceActive = newState,
-            toastFeedback = if (newState) "Background surveillance service ACTIVE" else "Background service STOPPED"
+            isBackgroundServiceActive = false,
+            toastFeedback = "Background monitoring requires signed push delivery; legacy polling is disabled"
         )
-        val app = getApplication<Application>()
-        if (newState) {
-            com.example.service.LaptopMonitorService.start(app)
-        } else {
-            com.example.service.LaptopMonitorService.stop(app)
-        }
     }
 
     private fun startRecordingTimer() {
@@ -1542,5 +1610,6 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         autoStreamJob?.cancel()
         subjectRecordingJob?.cancel()
         voiceRecorder.cancelRecording()
+        liveVideo.release()
     }
 }

@@ -27,6 +27,7 @@ class SecureLaptopGateway(context: Context) {
     private val app = context.applicationContext
     private val store = PairingStore(app)
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
+    private val relayPrefs = app.getSharedPreferences("laptopwatch_relay_settings", Context.MODE_PRIVATE)
     private val maxDownload = 150L * 1024L * 1024L
 
     fun hasPairing(): Boolean = store.load() != null
@@ -67,7 +68,8 @@ class SecureLaptopGateway(context: Context) {
 
     private fun signed(
         method: String, path: String, body: ByteArray = byteArrayOf(),
-        allowPending: Boolean = false
+        allowPending: Boolean = false,
+        hostOverride: String? = null
     ): okhttp3.Response {
         val pair = store.load() ?: error("Scan the QR on your laptop before connecting")
         require(allowPending || pair.approved) { "Approve this phone on the laptop first" }
@@ -79,7 +81,9 @@ class SecureLaptopGateway(context: Context) {
             pair.deviceId, method, path, body, timestamp, nonce
         )
         val auth = PairingCrypto.b64(PairingCrypto.sign(pair.privateSeed, transcript))
-        val url = "https://" + pair.host + ":" + pair.port + path
+        val targetHost = hostOverride ?: pair.host
+        require(PairingCrypto.isPrivateIPv4(targetHost))
+        val url = "https://" + targetHost + ":" + pair.port + path
         val request = Request.Builder().url(url)
             .header("X-LaptopWatch-Device", pair.deviceId)
             .header("X-LaptopWatch-Nonce", nonce)
@@ -88,7 +92,7 @@ class SecureLaptopGateway(context: Context) {
         if (method == "GET") request.get()
         else if (method == "POST") request.post(body.toRequestBody(jsonMedia))
         else error("Unsupported signed method")
-        return client(pair.host, pair.tlsFingerprint).newCall(request.build()).execute()
+        return client(targetHost, pair.tlsFingerprint).newCall(request.build()).execute()
     }
 
     /** A QR alone does not authorize the phone: it must prove its Ed25519
@@ -130,6 +134,83 @@ class SecureLaptopGateway(context: Context) {
             }
             val pair = store.load() ?: error("Pairing not found")
             store.save(pair.copy(approved = true))
+        }
+    }
+
+    fun configuredRelayUrl(): String =
+        relayPrefs.getString("relay_https_url", "") ?: ""
+
+    fun setRelayUrl(value: String) {
+        val trimmed = value.trim().removeSuffix("/")
+        if (trimmed.isNotEmpty()) {
+            val url = java.net.URI(trimmed)
+            require(url.scheme == "https" && url.host != null &&
+                (url.port == -1 || url.port == 443) &&
+                (url.path == null || url.path.isEmpty() || url.path == "/") &&
+                url.rawQuery == null && url.rawFragment == null &&
+                url.userInfo == null && trimmed.length <= 256) {
+                "Enter a normal HTTPS relay domain, without paths or credentials"
+            }
+            require(!url.host.endsWith(".invalid")) { "Placeholder relay domain not allowed" }
+        }
+        check(relayPrefs.edit().putString("relay_https_url", trimmed).commit())
+    }
+
+    /** Relay enrollment uses public keys ONLY. The private seed never leaves Keystore storage. */
+    fun enrollmentInfo(): Pair<String, String>? {
+        val pair = store.load()?.takeIf { it.approved } ?: return null
+        return pair.deviceId to PairingCrypto.b64(PairingCrypto.publicKey(pair.privateSeed))
+    }
+
+    suspend fun remoteLastSeen(): Result<JSONObject> = withContext(Dispatchers.IO) {
+        runCatching {
+            val pair = store.load()?.takeIf { it.approved }
+                ?: error("Approve the phone before retrieving remote records")
+            val base = configuredRelayUrl()
+            require(base.isNotEmpty()) { "Configure your trusted remote HTTPS relay first" }
+            val path = "/api/location/latest"
+            val nonce = PairingCrypto.b64(PairingCrypto.randomBytes(16))
+            val stamp = System.currentTimeMillis() / 1000L
+            val transcript = PairingCrypto.requestTranscript(
+                pair.deviceId, "GET", path, byteArrayOf(), stamp, nonce
+            )
+            val request = Request.Builder().url(base + path)
+                .header("X-LaptopWatch-Device", pair.deviceId)
+                .header("X-LaptopWatch-Nonce", nonce)
+                .header("X-LaptopWatch-Timestamp", stamp.toString())
+                .header("X-LaptopWatch-Signature", PairingCrypto.b64(
+                    PairingCrypto.sign(pair.privateSeed, transcript)))
+                .get().build()
+            // Standard publicly trusted TLS. Never permit a self-signed or
+            // unpinned fallback for this public Internet endpoint.
+            OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .callTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(false).followSslRedirects(false)
+                .build().newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException(
+                        "Remote last-seen unavailable (HTTP " + response.code + ")"
+                    )
+                    JSONObject(response.body?.string() ?: "{}")
+                }
+        }
+    }
+
+    suspend fun rediscoverTrustedLaptop(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val previous = store.load() ?: error("Pair laptop first")
+            require(previous.approved) { "Approve phone on desktop before finding it" }
+            val candidate = TrustedLaptopDiscovery(app).find(previous)
+                ?: throw IOException("No matching paired desktop advertised over LAN")
+            // A forged mDNS TXT record is insufficient: verify that the candidate
+            // holds the QR-pinned desktop certificate and accepts a signed request.
+            signed("GET", "/api/status", hostOverride = candidate).use { response ->
+                if (!response.isSuccessful) throw IOException(
+                    "Discovered laptop rejected signed identity test (HTTP " + response.code + ")"
+                )
+            }
+            store.save(previous.copy(host = candidate))
+            candidate
         }
     }
 

@@ -1,0 +1,10 @@
+{$RELAY_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy relay:8080
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Strict-Transport-Security "max-age=63072000; includeSubDomains"
+        Cache-Control "no-store"
+    }
+}

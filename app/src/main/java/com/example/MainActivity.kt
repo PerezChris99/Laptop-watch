@@ -99,6 +99,7 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
     val context = LocalContext.current
     val haptics = rememberAppHaptics()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val liveTrack by viewModel.liveVideoTrack.collectAsStateWithLifecycle()
     val config by viewModel.laptopConfig.collectAsStateWithLifecycle()
     val logs by viewModel.intruderLogs.collectAsStateWithLifecycle()
     val locationHistory by viewModel.locationHistory.collectAsStateWithLifecycle()
@@ -353,6 +354,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                     LiveCameraScreen(
                         uiState = uiState,
                         cameraUrl = viewModel.getCameraSnapshotUrl(),
+                        liveVideoTrack = liveTrack,
+                        eglContext = viewModel.videoEglContext(),
+                        onStartLive = { viewModel.startLiveVideo() },
+                        onStopLive = { viewModel.stopLiveVideo() },
                         onCaptureSnapshot = { viewModel.captureManualSnapshot() },
                         onLockToggle = {
                             if (uiState.isLocked) {
@@ -418,7 +423,10 @@ fun LaptopMonitorApp(viewModel: LaptopMonitorViewModel) {
                         onVerifySecurePairing = { viewModel.verifySecurePairing() },
                         onForgetSecurePairing = { viewModel.forgetSecurePairing() },
                         onSetSecureCameraArmed = { armed -> viewModel.setSecureCameraArmed(armed) },
-                        onGetSecureLastSeen = { viewModel.refreshSecureLastSeen() }
+                        onGetSecureLastSeen = { viewModel.refreshSecureLastSeen() },
+                        onRediscoverSecureLaptop = { viewModel.rediscoverSecureLaptop() },
+                        onConfigureRemoteRelay = { url -> viewModel.configureRemoteRelay(url) },
+                        onCopyRemoteEnrollment = { viewModel.getRemoteEnrollmentText() }
                     )
                 }
             }

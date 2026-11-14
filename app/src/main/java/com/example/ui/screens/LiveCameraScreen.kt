@@ -89,6 +89,9 @@ import com.example.ui.theme.EmeraldSafe
 import com.example.ui.theme.LightBlue100
 import com.example.ui.theme.LightBlueSoft
 import com.example.ui.theme.MutedSlate500
+import com.example.ui.components.WebRtcSurface
+import org.webrtc.VideoTrack
+import org.webrtc.EglBase
 import com.example.ui.theme.SkyBlueDark
 import com.example.ui.theme.SkyBluePrimary
 import com.example.ui.theme.WhitePure
@@ -105,6 +108,10 @@ import java.util.Locale
 fun LiveCameraScreen(
     uiState: MonitorUiState,
     cameraUrl: String?,
+    liveVideoTrack: VideoTrack? = null,
+    eglContext: EglBase.Context? = null,
+    onStartLive: () -> Unit = {},
+    onStopLive: () -> Unit = {},
     onCaptureSnapshot: () -> Unit,
     onLockToggle: () -> Unit,
     onRefreshCamera: () -> Unit,
@@ -176,11 +183,17 @@ fun LiveCameraScreen(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                if (!isDemo && cameraUrl != null) {
-                    // Live camera stream / frame from laptop webcam
+                if (!isDemo && liveVideoTrack != null && eglContext != null) {
+                    WebRtcSurface(
+                        videoTrack = liveVideoTrack,
+                        eglContext = eglContext,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (!isDemo && cameraUrl != null) {
+                    // Authenticated image from local private phone storage.
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data("$cameraUrl?t=${uiState.cameraRefreshTrigger}")
+                            .data(cameraUrl)
                             .crossfade(true)
                             .build(),
                         contentDescription = "Laptop Live Camera Feed",
@@ -226,7 +239,7 @@ fun LiveCameraScreen(
                             )
                             Text(
                                 text = if (isRecording) "REC 00:${uiState.subjectRecordingDurationSec.toString().padStart(2, '0')}"
-                                else if (uiState.isAutoStreamingEnabled) "LIVE STREAM"
+                                else if (uiState.isAutoStreamingEnabled) "PREVIEW" 
                                 else "MANUAL PREVIEW",
                                 color = if (isRecording) CrimsonAlert else Color.White,
                                 fontSize = 10.sp,
@@ -299,7 +312,8 @@ fun LiveCameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isDemo) "FEED: DEMO SIMULATOR" else "LINK: ${uiState.activeTransport} (HD)",
+                            text = if (isDemo) "FEED: DEMO" else if (cameraUrl == null)
+                                "No live feed — use Photo to capture" else "AUTHENTICATED LAST PHOTO",
                             color = Color(0xFF94A3B8),
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace
@@ -352,6 +366,29 @@ fun LiveCameraScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // True peer media is explicitly initiated by the owner. No false
+        // LIVE badge while only a still image or radar illustration exists.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onStartLive,
+                modifier = Modifier.weight(1f).testTag("start_webrtc_video"),
+                enabled = uiState.securePairingStatus == "PAIRED" &&
+                    uiState.secureArmed && uiState.webRtcStatus != "CONNECTED"
+            ) {
+                Text("Start encrypted live view", fontSize = 11.sp)
+            }
+            OutlinedButton(
+                onClick = onStopLive,
+                modifier = Modifier.weight(1f).testTag("stop_webrtc_video"),
+                enabled = uiState.webRtcStatus != "STOPPED"
+            ) {
+                Text("Stop live view", fontSize = 11.sp)
             }
         }
 

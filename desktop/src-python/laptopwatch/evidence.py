@@ -100,7 +100,14 @@ class EvidenceRecorder:
             return jpeg.tobytes()
 
     def take_photo(self) -> dict[str, str | int]:
-        jpeg = self.snapshot()
+        return self.store_photo(self.snapshot())
+
+    def store_photo(self, jpeg: bytes) -> dict[str, str | int]:
+        """Save the most recently viewed WebRTC frame as well as on-demand JPEGs."""
+        if not isinstance(jpeg, bytes) or not 4 <= len(jpeg) <= 16_000_000:
+            raise CaptureUnavailable("Invalid JPEG image")
+        if not jpeg.startswith(b"\\xff\\xd8") or not jpeg.endswith(b"\\xff\\xd9"):
+            raise CaptureUnavailable("Frame is not JPEG encoded")
         clip_id = uuid.uuid4().hex
         filename = f"photo-{clip_id}.jpg"
         path = self.directory / filename
