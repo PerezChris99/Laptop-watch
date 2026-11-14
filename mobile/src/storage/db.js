@@ -4,31 +4,45 @@
  */
 import { open } from '@op-engineering/op-sqlite';
 import { LATEST_SCHEMA_VERSION, statementsFor } from './schema.js';
+import { cacheEncryptionKey } from './encryption.js';
 
 let connection = null;
+let opening = null;
 
-/** @returns {Promise<object>} */
+/** Single-flight encrypted connection. Never open a plaintext cache or
+ * silently delete an unrecognized legacy SQLite file. The key is stored only
+ * in OS Keychain/Keystore, and is NOT the pairing signing seed.
+ * @returns {Promise<object>}
+ */
 export async function database() {
   if (connection) return connection;
-  const db = open({ name: 'laptopwatch-cache.sqlite' });
-  try {
-    await db.execute('PRAGMA foreign_keys=ON');
-    const result = await db.execute('PRAGMA user_version');
-    const version = Number(result.rows[0]?.user_version);
-    if (!Number.isSafeInteger(version)) throw new Error('Cannot read cache schema');
-    const statements = statementsFor(version);
-    if (statements.length) {
-      await db.transaction(async (tx) => {
-        for (const statement of statements) await tx.execute(statement);
-        await tx.execute(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION}`);
-      });
+  if (opening) return opening;
+  opening = (async () => {
+    const encryptionKey = await cacheEncryptionKey();
+    // A distinct name prevents silently reading an earlier plaintext cache.
+    const db = open({ name: 'laptopwatch-private-v2.sqlite', encryptionKey });
+    try {
+      await db.execute('PRAGMA foreign_keys=ON');
+      const result = await db.execute('PRAGMA user_version');
+      const version = Number(result.rows[0]?.user_version);
+      if (!Number.isSafeInteger(version)) throw new Error('Cannot read private cache schema');
+      const statements = statementsFor(version);
+      if (statements.length) {
+        await db.transaction(async (tx) => {
+          for (const statement of statements) await tx.execute(statement);
+          await tx.execute(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION}`);
+        });
+      }
+      connection = db;
+      return db;
+    } catch (error) {
+      db.close();
+      // No fallback to an unencrypted connection. The app must fail closed.
+      throw error;
     }
-    connection = db;
-    return db;
-  } catch (error) {
-    db.close();
-    throw error;
-  }
+  })();
+  try { return await opening; }
+  finally { opening = null; }
 }
 
 /** @param {object} item @returns {Promise<void>} */

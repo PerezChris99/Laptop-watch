@@ -24,6 +24,7 @@ class LaptopWatchEvidenceManagement(private val app: ReactApplicationContext)
     private val worker = Executors.newSingleThreadExecutor()
     private var pending: Promise? = null
     private var source: File? = null
+    private var reportContent: String? = null
     private val requestCode = 0x5A21
 
     override fun getName() = "LaptopWatchEvidenceManagement"
@@ -74,13 +75,41 @@ class LaptopWatchEvidenceManagement(private val app: ReactApplicationContext)
         }
     }
 
+    @ReactMethod
+    fun exportReport(format: String, content: String, promise: Promise) {
+        app.runOnUiQueueThread {
+            try {
+                require(format in setOf("csv", "text") && content.length <= 131_072 &&
+                        content.none { it == '\\u0000' })
+                check(pending == null) { "An export is already in progress" }
+                val activity = app.currentActivity ?: error("Open the app to export a report")
+                pending = promise
+                source = null
+                reportContent = content
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType(if (format == "csv") "text/csv" else "text/plain")
+                    .putExtra(Intent.EXTRA_TITLE,
+                        if (format == "csv") "LaptopWatch-incidents.csv"
+                        else "LaptopWatch-incidents.txt")
+                    .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                activity.startActivityForResult(intent, requestCode)
+            } catch (_: Exception) {
+                pending = null; source = null; reportContent = null
+                promise.reject("REPORT_EXPORT_FAILED", "Could not open a safe report picker")
+            }
+        }
+    }
+
     private val listener = object : BaseActivityEventListener() {
         override fun onActivityResult(activity: Activity, code: Int, resultCode: Int, data: Intent?) {
             if (code != requestCode) return
             val callback = pending ?: return
             val file = source
-            pending = null; source = null
-            if (resultCode != Activity.RESULT_OK || data?.data == null || file == null) {
+            val report = reportContent
+            pending = null; source = null; reportContent = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null ||
+                (file == null && report == null)) {
                 callback.reject("EVIDENCE_EXPORT_CANCELLED", "Evidence export was not completed")
                 return
             }
@@ -91,8 +120,11 @@ class LaptopWatchEvidenceManagement(private val app: ReactApplicationContext)
                     // path from JS and do not permit export of any other file.
                     val sink = app.contentResolver.openOutputStream(destination, "w")
                         ?: error("No writable destination")
-                    file.inputStream().use { input ->
-                        sink.use { output -> input.copyTo(output, 16_384) }
+                    sink.use { output ->
+                        if (file != null) file.inputStream().use { input ->
+                            input.copyTo(output, 16_384)
+                        }
+                        else output.write((report ?: "").toByteArray(Charsets.UTF_8))
                     }
                     callback.resolve(true)
                 } catch (_: Exception) {

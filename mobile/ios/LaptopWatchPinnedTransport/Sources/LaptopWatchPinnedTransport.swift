@@ -84,6 +84,53 @@ final class LaptopWatchPinnedTransport: NSObject {
     return url
   }
 
+  @objc(exportReport:content:resolver:rejecter:)
+  func exportReport(_ format: String, content: String,
+                    resolver resolve: @escaping RCTPromiseResolveBlock,
+                    rejecter reject: @escaping RCTPromiseRejectBlock) {
+    guard (format == "csv" || format == "text"),
+          content.utf8.count <= 131_072,
+          !content.contains("\u{0000}") else {
+      reject("REPORT_INVALID", "Incident report exceeds privacy export limits", nil)
+      return
+    }
+    DispatchQueue.main.async {
+      guard let scene = UIApplication.shared.connectedScenes.compactMap(
+              { $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
+            let window = scene.windows.first(where: { $0.isKeyWindow }),
+            let controller = window.rootViewController else {
+        reject("REPORT_UNAVAILABLE", "No active owner window", nil)
+        return
+      }
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("LaptopWatch-\(UUID().uuidString)", isDirectory: true)
+      do {
+        try FileManager.default.createDirectory(at: directory,
+                                                withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent(
+          format == "csv" ? "LaptopWatch-incidents.csv" : "LaptopWatch-incidents.txt")
+        try content.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+          [.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
+        let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+          popover.sourceView = controller.view
+          popover.sourceRect = CGRect(x: controller.view.bounds.midX,
+                                      y: controller.view.bounds.midY, width: 1, height: 1)
+        }
+        sheet.completionWithItemsHandler = { _, completed, _, error in
+          try? FileManager.default.removeItem(at: directory)
+          if completed && error == nil { resolve(true) }
+          else { reject("REPORT_EXPORT_CANCELLED", "Owner cancelled report export", nil) }
+        }
+        controller.present(sheet, animated: true)
+      } catch {
+        try? FileManager.default.removeItem(at: directory)
+        reject("REPORT_EXPORT_FAILED", "Private report export unavailable", nil)
+      }
+    }
+  }
+
   @objc(deleteLocal:id:resolver:rejecter:)
   func deleteLocal(_ kind: String, id: String,
                    resolver resolve: @escaping RCTPromiseResolveBlock,

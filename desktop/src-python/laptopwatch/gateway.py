@@ -467,6 +467,15 @@ def create_app(state: GatewayState) -> FastAPI:
             raise HTTPException(status_code=404, detail="No verified laptop location recorded")
         return location
 
+    @app.get("/api/location/history")
+    async def location_history(request: Request):
+        if state.tracking is None:
+            raise HTTPException(status_code=503, detail="Location tracking not enabled")
+        # No request parameters and no simulated fixes. Signed access and
+        # replay protection are enforced by existing /api middleware.
+        locations = await asyncio.to_thread(state.tracking.store.recent, limit=100)
+        return {"fixes": locations, "limit": 100, "is_live_fix": False}
+
     @app.post("/api/location/refresh")
     async def refresh_location(request: Request):
         if request.state.raw_body:
