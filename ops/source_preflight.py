@@ -187,6 +187,10 @@ def native_contract() -> None:
             ERRORS.append(f"Missing native project source: {path}")
     if not (ROOT / "app/src/main/java/com/example/security/SecureLaptopGateway.kt").is_file():
         ERRORS.append("Legacy Kotlin reference prematurely removed")
+    # Guard the owner-specific Firebase config against accidental git add.
+    require_file("mobile/.gitignore", (
+        "**/google-services.json", "**/GoogleService-Info.plist",
+    ))
     for path in (ROOT / ".github/workflows", ROOT / "LICENSE"):
         if path.is_file() or path.is_dir():
             ERRORS.append(f"New workflow or owner-unapproved LICENSE must be reviewed: {path.relative_to(ROOT)}")
