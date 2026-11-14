@@ -20,6 +20,7 @@ from .audit import SignedAuditLog
 from .security import AuthenticationError, SignedRequestVerifier
 from .evidence import CaptureUnavailable, EvidenceRecorder
 from .tracking import TrackingService
+from .pairing import PairingCoordinator
 
 MAX_CONTROL_BODY = 64 * 1024
 
@@ -37,6 +38,7 @@ class GatewayState:
     controller: ControlSurface
     evidence: EvidenceRecorder | None = None
     tracking: TrackingService | None = None
+    pairing: PairingCoordinator | None = None
     armed: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -54,16 +56,27 @@ class ArmRequest(BaseModel):
     armed: bool
 
 
+class PairingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    device_id: str
+    pubkey: str
+    nonce: str
+    proof: str
+    label: str
+
+
 def create_app(state: GatewayState) -> FastAPI:
     app = FastAPI(title="LaptopWatch Paired Gateway", docs_url=None, redoc_url=None, openapi_url=None)
     # Serializes camera side effects against disarm/stop requests so a
     # concurrent start cannot turn the camera back on after the owner disarms.
     media_lock = asyncio.Lock()
+    pairing_limit = __import__('laptopwatch.security', fromlist=['SlidingWindowLimiter']).SlidingWindowLimiter(max_attempts=6, period=60)
 
     @app.middleware("http")
     async def secure_request(request: Request, call_next):
         path = request.url.path
-        if not path.startswith("/api/"):
+        is_pairing = path == "/pair/request" and request.method == "POST"
+        if not path.startswith("/api/") and not is_pairing:
             return JSONResponse({"error": "Not found"}, status_code=404)
         # No GET query credentials or arguments: all protected APIs use signed headers.
         if request.url.query:
@@ -85,17 +98,37 @@ def create_app(state: GatewayState) -> FastAPI:
                 return JSONResponse({"error": "Body too large"}, status_code=413)
         request.state.raw_body = bytes(data)
         peer_ip = request.client.host if request.client else "unknown"
-        try:
-            request.state.paired_device = state.verifier.verify(
-                request.method, path, request.state.raw_body, request.headers,
-                client_ip=peer_ip,
-            )
-        except (AuthenticationError, ValueError, KeyError):
-            return JSONResponse({"error": "Unauthorized"}, status_code=401, headers={"Cache-Control": "no-store"})
+        if is_pairing:
+            if not pairing_limit.allow(peer_ip, float(__import__('time').time())):
+                return JSONResponse({"error": "Too many pairing attempts"}, status_code=429)
+            if len(request.state.raw_body) > 4096:
+                return JSONResponse({"error": "Pairing request too large"}, status_code=413)
+        else:
+            try:
+                request.state.paired_device = state.verifier.verify(
+                    request.method, path, request.state.raw_body, request.headers,
+                    client_ip=peer_ip,
+                )
+            except (AuthenticationError, ValueError, KeyError):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401, headers={"Cache-Control": "no-store"})
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+    @app.post("/pair/request")
+    async def request_pairing(request: Request):
+        if state.pairing is None:
+            raise HTTPException(status_code=404, detail="Pairing disabled")
+        try:
+            payload = PairingRequest.model_validate_json(request.state.raw_body)
+            pending_id = state.pairing.request(
+                device_id=payload.device_id, pubkey=payload.pubkey,
+                challenge=payload.nonce, proof=payload.proof, label=payload.label,
+            )
+        except (AuthenticationError, ValueError):
+            raise HTTPException(status_code=403, detail="Invalid or expired pairing invitation")
+        return {"pending_id": pending_id, "status": "AWAITING_LOCAL_APPROVAL"}
 
     @app.get("/api/status")
     async def status(request: Request):
