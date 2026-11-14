@@ -35,8 +35,9 @@ python -m pip install pip-audit
 pip-audit
 ```
 
-Check actual project's optional extras and toolchain versions against its
-pyproject metadata; do not substitute an incompatible package. At minimum
+Both Python packages now declare explicit `[test]` extras in their
+`pyproject.toml` files, and the relay also declares optional `[fcm]` dependencies.
+Review and lock actual resolved versions before accepting any build. At minimum
 run the signed gateway, Ed25519 replay, pairing, audit-tamper, owner-health
 and new signed GNSS history tests. Capture complete non-secret output.
 
@@ -60,7 +61,10 @@ npm run android
 ```
 
 React Native Android/iOS project **source and the official Android 0.88.x
-Gradle wrapper are now present**. Native modules are registered. These
+Gradle wrapper are now present**. The tracked wrapper targets Gradle 9.4.1
+with an official SHA-256 distribution checksum; the Android build uses
+NDK 28.2.13676358, consistent with the React Native 0.88 template.
+Toolchain alignment in source is not proof of an executed native build. Native modules are registered. These
 commands are still unexecuted because this runner lacks a local checkout,
 npm registry dependencies, Android SDK/NDK and devices. Review RN package
 versions, Kotlin/Swift API signatures, Gradle plugins, dynamic dependencies
