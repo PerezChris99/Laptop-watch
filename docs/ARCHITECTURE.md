@@ -126,3 +126,39 @@ remains the parity reference.
 **Do not distribute** the checkpoint as a production laptop security
 system, market it as always-on during OS sleep, or describe native
 security/recovery as externally verified. See `docs/DEFECTS.md`.
+
+## Current source architecture — 2026-11-14 superseding earlier incomplete notes
+
+```text
+Android RN JS UI / native Kotlin                 iOS RN JS UI / native Swift
+   | QR camera + owner approved Ed25519 pairing      | QR + Keychain + pinning
+   | native pinned OkHttp / signed LW1               | native pinned URLSession / LW1
+   +--------------- paired private LAN ------------+
+                               |
+                  Python HTTPS port 8765
+             SignedRequestVerifier/replay cache
+                               |
+                 actions / GNSS / aiortc
+              person model / evidence / audit
+                               |
+        Tauri Rust supervised Python sidecar
+        separate owner-only bearer health 127.0.0.1:8766
+        visible white-paper React owner dashboard
+
+Android optional FGS (signed status only) + explicit NSD rediscovery
+Android optional Firebase hints (OFF without owner credentials)
+Android/iOS signed public-CA remote HTTPS relay (alerts/GNSS/FCM ONLY)
+Android/iOS app-private media + OS user-directed export
+Android/iOS SQLCipher cache with independent OS Keychain key
+```
+
+The foreground service does NOT run the camera, microphone, lock or alarm.
+WebRTC is initiated only by authenticated, approved phone controls with
+owner permission. On-device evidence remains private until deliberate
+export. No lock/alarm/photo command is queued when the laptop is offline.
+
+Source code and native project scaffolds exist in the repo; this checkpoint
+has no clean compiled Android/iOS/Windows/macOS/Linux acceptance. There is
+no promise that a sleeping or powered-off laptop can receive instant actions.
+The old Kotlin Compose app has simulated biometric/geo/tamper UI; such
+simulations are not ported as verified data. See docs/PARITY.md.

@@ -175,6 +175,26 @@ Full [build/run/install/acceptance guide](docs/BUILD_AND_RELEASE.md),
 | `docs/BUILD_AND_RELEASE.md`, `docs/STATUS.md` | Gates and reproducibility |
 | `docs/commercial/` | Draft EULA, privacy, data safety, website and pricing |
 
+## November 2026 — mobile/desktop source overhaul checkpoint
+
+The current `main` includes React Native JavaScript Android/iOS native
+scaffolds, signed Ed25519 pairing/controls, certificate-pinned transport,
+consent-gated camera/WebRTC/two-way audio, native app-private evidence
+lifecycle, real gpsd GNSS history, model-backed person incident controls,
+encrypted SQLCipher mobile cache, optional owner-verified relay/FCM
+integration, and the supervised Rust/Tauri Python sidecar.
+
+**Source integration is not 100% runtime verification.** The owner explicitly
+deferred builds, external accounts, native device tests, security audits,
+release signing and legal approval. See [feature parity](docs/PARITY.md),
+[hardware/build runbook](docs/RELEASE_RUNBOOK.md),
+[source-only preflight](ops/source_preflight.py), and
+[warning ledger](Warning.txt) before distributing.
+
+The Kotlin `app/` reference is retained. Its sample biometric dossiers,
+virtual unlock, demo tamper/geofence controls and fabricated coordinates
+are not represented as real threat evidence in the new client.
+
 ## Overhaul checkpoint — release blocked
 
 The 2026-11-14 JavaScript mobile migration and Rust supervised desktop code

@@ -175,3 +175,35 @@ test was executed. **All phases remain BLOCKED.**
 | Performance / soak | BLOCKED | Owner run 24-hour device soak, CPU/RSS/installer-size/cold-start and action/stream latency measurements on named hardware; attach raw logs and actual numbers |
 
 A merged PR does **not** turn any of these BLOCKED rows into DELIVERED.
+
+## Source-integration completion checkpoint — 2026-11-14
+
+After merged PRs #13 and #14, the source tree includes Android RN 0.88.x
+Gradle wrapper and native modules, iOS Xcode/Swift pinned bridge, optional
+FCM+HTTPS owner relay, signed incident/GNSS history, Android NSD trusted
+rediscovery, explicit two-way audio, native evidence lifecycle, formula-safe
+incident exports, and Keychain-backed SQLCipher storage. The next source
+checkpoint updates preflight and documentation to match actual files.
+
+The owner explicitly deferred ALL clean builds/native tests, real credentials,
+infrastructure, signing, legal approval and hardware checks to a separate
+verification phase. The **code cannot be certified 100% complete or runtime
+parity-verified before those checks**. No fake evidence or biometric persona
+is substituted for absent real sensor input.
+
+| Gate | Current status | Exact owner verification required later |
+|---|---|---|
+| Android native/Kotlin/RN | BLOCKED | Review mobile npm lock and official Gradle 0.88.x plugins; run npm ci, lint, checkJs, unit and ./gradlew assembleDebug/test/lint; test real handset |
+| iOS Swift/Xcode | BLOCKED | Run pods/Xcode compile/sign and iPhone Keychain/pinning/evidence/media tests |
+| Desktop Rust/Tauri | BLOCKED | Generate reviewed Cargo lock; run cargo test/build and verify sidecar child start/crash/stop/health/log security on Windows/macOS/Linux |
+| Signed Python and relay | BLOCKED | Execute full pytest, live TLS replay/revocation and external owner relay tests |
+| Encrypted cache | BLOCKED | Verify OP-SQLite SQLCipher native integration, random Keychain key, database open failure, reboot/upgrade/reinstall and old plaintext cache cleanup |
+| Media/biometric | BLOCKED | Real camera/MPEG/WebRTC, permission denial, microphone background teardown, genuinely licensed person ONNX and scene evaluation |
+| Location / FGS / FCM | BLOCKED | Real gpsd, 100-item history, Android NSD spoofing, Doze/FGS/reboot, authorized Firebase signed enrollment/delivery |
+| Distribution | BLOCKED | Signing/notarization, dependency SBOM/audits, privacy/EULA/license/store owner acceptance and 24h soak |
+
+**Known deliberate source feature exclusions:** legacy Kotlin demo
+subject/biometric classifications, virtual unlock, fabricated GNSS readings
+and simulated geofence/tamper controls; these are not real authenticated
+security features and are NOT parity requirements. Existing Kotlin app/
+remains; remove it only after green acceptance and explicit owner approval.

@@ -1,45 +1,58 @@
-LaptopWatch release warnings — 2026-11-14 (new engineering record)
-=================================================================
-This file was newly generated as a release warning ledger. The original
-Warning.txt demanded by the old master prompt was absent at baseline.
-The owner explicitly instructed continuing without that original file.
+LaptopWatch overhaul — release/acceptance warning ledger
+=======================================================
+Engineering checkpoint: 2026-11-14
+THIS IS A NEW ENGINEERING WARNING LEDGER. The original Warning.txt demanded
+by the older master prompt was not available. The owner waived waiting for it.
 
-NOT PRODUCTION-READY. NOT VERIFIED ON PHYSICAL DEVICES. NOT SALE-READY.
+RELEASE STATUS: NOT BUILD-VERIFIED. NOT DEVICE-VERIFIED. NOT CERTIFIED FOR
+PRODUCTION, STORE DISTRIBUTION OR COMMERCIAL SALE.
 
-Stop ship:
-[ ] Phase 0 clean Python/Gradle/Rust/npm/React Native build/test matrix green.
-[ ] Official Gradle wrapper, npm/Cargo dependency locks reviewed and committed.
-[ ] React Native Android and iOS native projects generated; pinned transport
-    registered, tested, and verified against a hostile certificate.
-[ ] Real QR scan, approval, revocation, replay/skew and signed actions tested.
-[ ] Hardware camera/MP4/WebRTC, mic opt-in, alert accuracy tested.
-[ ] Background foreground-service, FCM, battery and GNSS tests proven.
-[ ] Tauri supervisor crash/restart/quit, updater, installer tests proven.
-[ ] OS-backed private key storage and recovery tested on target platforms.
-[ ] 24h soak, accessibility, performance, dependency scans and SBOM.
-[ ] Owner-approved LICENSE/privacy/EULA, release signing/store/commerce.
-[ ] Owner explicitly approves deletion of Kotlin app/ after full mobile parity.
+Major source integration now present:
+[x] Android RN native project and genuine official Gradle 0.88.x wrapper;
+    registered pinned HTTPS/foreground/evidence/relay/FCM/NSD modules.
+[x] iOS RN Xcode source project, Keychain, Swift TLS pin, private evidence,
+    report export and signed public-CA relay; no iOS FGS/NSD claim.
+[x] Exact LW1 signing, strict pairing, signed controls, owner approval,
+    private evidence media, GNSS current/history, optional intercom, real
+    model-gated verified incidents and owner-specific privacy permissions.
+[x] SQLCipher private cache key stored separately in the OS Keychain;
+    never fallback to plaintext or queue non-idempotent remote actions.
+[x] Desktop Rust/Tauri supervisor, independent authenticated localhost
+    per-launch health, owner-only audit history, rotating sanitized logs.
+[x] User-facing source parity matrix and source-policy audit commands.
 
-What was executed in the isolated workspace:
-- Python cryptography Ed25519 deterministic golden signatures verified.
-- Node 22 crypto verified matching signatures, QR and proof and tamper rejection.
-- Shared design token generator and --check executed on a local isolated copy.
-- GitHub source blob round-trip inspections performed after editing files.
+Unexecuted external/native verification gates per owner's instruction:
+[ ] Real clean checkout with reviewed Node/Cargo/Pod/Gradle locks and
+    installed dependencies; npm, Python pytest, Rust cargo, Gradle and Xcode.
+[ ] Actual Android/iOS devices with QR/pinning/replay, GNSS, audio, camera,
+    media codecs, app-private export/deletion, Doze/FGS and 24-hour soak.
+[ ] Managed Firebase owner project, optional encrypted relay/TURN, genuine
+    GNSS hardware and legally licensed, hash-verified person ONNX model.
+[ ] Full security assessment, supply-chain SBOM/audits, memory and battery
+    measurements, real signed desktop/mobile installers and store acceptance.
+[ ] Owner-approved privacy/EULA/license/commerce and signing certificates.
+[ ] Full verified hardware/feature parity and owner's **separate explicit**
+    approval before removing the Kotlin app/ reference.
 
-What was NOT executed:
-- Current repository full pytest, npm install/build/lint/checkJs,
-  cargo build/test, Gradle wrapper tests, RN native/physical device tests,
-  installer/package size or OS-level benchmark measurements.
+Legacy Kotlin subject biometric dossiers, sample NYC coordinates, demo
+tamper actions, fake geofencing and virtual unlock are intentionally NOT
+converted into verified sensor-backed evidence. No fabricated telemetry.
+Legacy Kotlin app/ remains in the tree.
 
-Full evidence, source-only status and blocked commands are in:
-docs/DEFECTS.md, docs/PARITY.md, docs/RELEASE_RUNBOOK.md,
-docs/DECISIONS.md and docs/RELEASE_CHECKLIST.md.
+Isolated verification actually performed:
+- Earlier independent Python and Node cryptographic signed fixture checks:
+  LW1 request vectors, signed QR, phone proof and tamper refusal PASS.
+- Design token parity --check previously executed in isolated copy.
+- Latest isolated JS V8 checks: CSV formula injection prevention, bounded
+  reports, location freshness, foreground consent and SQLite schema PASS.
+- GitHub source, branch and binary-blob integrity inspections performed.
 
-Additional engineering warnings:
-- The new locally verified audit-history subcommand and desktop screens are
-  not yet validated by Python pytest, Rust cargo or React/Vitest build.
-- Maestro YAML flows are reviewable input for later device testing, not
-  passing automated acceptance evidence.
-- Desktop live UI currently does not implement a self-rendering media stream.
-- Foreground React Native connection, complete native certificate pinning
-  registration, SQLCipher and consent-scanned QR camera remain unavailable.
+NOT EXECUTED on native integrated checkout: full pytest, RN Jest/lint/checkJs,
+npm ci, Rust Cargo/Tauri, Gradle Android, Xcode iOS, hardware/UI/E2E,
+attestation, penetration tests or release readiness.
+
+See docs/PARITY.md for exact feature mapping, docs/RELEASE_RUNBOOK.md for
+all later test commands, docs/DEFECTS.md for evidence/action ownership,
+docs/DECISIONS.md and docs/SIGNING_AND_NOTARIZATION.md.
+
+STOP-SHIP persists even though source integrations are committed and merged.
