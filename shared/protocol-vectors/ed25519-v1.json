@@ -1,0 +1,55 @@
+{
+  "notice": "Deterministic public test key and example certificate hash only. NEVER use seed in production.",
+  "test_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "public_key_b64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "signed_requests": [
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "body_utf8": "",
+      "timestamp": 1794657600,
+      "nonce": "EBESExQVFhcYGRobHB0eHw",
+      "device_id": "123e4567-e89b-12d3-a456-426614174000",
+      "canonical_utf8": "LW1\nGET\n/api/status\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1794657600\nEBESExQVFhcYGRobHB0eHw\n123e4567-e89b-12d3-a456-426614174000\n",
+      "signature_b64url": "1FJs46S5Ojop6RoWrAA2SKwzoA4vkO0F0xX8Isv8GglPIIBY3GWBmAmlVwKkp0PfKpFNvGJnXQ94K8NSfMHKAQ"
+    },
+    {
+      "method": "POST",
+      "path": "/api/config/armed",
+      "body_utf8": "{\"armed\":true}",
+      "timestamp": 1794657660,
+      "nonce": "EBESExQVFhcYGRobHB0eHw",
+      "device_id": "123e4567-e89b-12d3-a456-426614174000",
+      "canonical_utf8": "LW1\nPOST\n/api/config/armed\n07d74696f8e8600aaf185d554e3d720d43630ecc7cfb0f46161d2f52af369a63\n1794657660\nEBESExQVFhcYGRobHB0eHw\n123e4567-e89b-12d3-a456-426614174000\n",
+      "signature_b64url": "gssE_chf8BGldWXvsatwWNOnYS8-qoGyBfAIlZe-UQANudgpELS6kJ3Q7J3dQXHsf-noVTnV1xFbt4ccBwiqAA"
+    },
+    {
+      "method": "POST",
+      "path": "/api/camera/record/start",
+      "body_utf8": "",
+      "timestamp": 1794657720,
+      "nonce": "EBESExQVFhcYGRobHB0eHw",
+      "device_id": "123e4567-e89b-12d3-a456-426614174000",
+      "canonical_utf8": "LW1\nPOST\n/api/camera/record/start\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1794657720\nEBESExQVFhcYGRobHB0eHw\n123e4567-e89b-12d3-a456-426614174000\n",
+      "signature_b64url": "SGO6Rbn5geyJL8w82U7J8Yq37B-uFYhc-GhvcoC5ZbAoGeWjqfyOCFOKBsAlN6TKCGVwQkApe_5RpP0TXMKRCg"
+    }
+  ],
+  "pairing_qr": {
+    "laptop_id": "123e4567-e89b-12d3-a456-426614174000",
+    "host": "192.168.1.8",
+    "port": 8765,
+    "public_key_b64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "tls_fingerprint_hex": "f95bfaf49a1cfca912d5997c65c5f070a41416d77e793e3f44d9c23783f652a0",
+    "challenge": "EBESExQVFhcYGRobHB0eHw",
+    "expires": 1794657740,
+    "canonical_utf8": "LWPAIR1\n123e4567-e89b-12d3-a456-426614174000\n192.168.1.8\n8765\nA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg\nf95bfaf49a1cfca912d5997c65c5f070a41416d77e793e3f44d9c23783f652a0\nEBESExQVFhcYGRobHB0eHw\n1794657740\n",
+    "signature_b64url": "Vgoknays9KQfKHfkKDCnaOh3vqZ8Afjt6HQYNHEXPNsRtjR2Ya1iH-4i9W9nhoImRss_DHdeHdcNZb72zI3KAw"
+  },
+  "pairing_proof": {
+    "device_id": "123e4567-e89b-12d3-a456-426614174000",
+    "phone_public_key_b64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "challenge": "EBESExQVFhcYGRobHB0eHw",
+    "canonical_utf8": "LWPAIR-PROOF1\n123e4567-e89b-12d3-a456-426614174000\nA6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg\nEBESExQVFhcYGRobHB0eHw\n",
+    "signature_b64url": "j4Eeecx-j3rfqvT0DjHwbgAJm68jyghLBRdkwa6HS7JwgcBldTIz7fcVwzx4pjtg-pMNbOBi8-d-pGmBWrARBg"
+  }
+}

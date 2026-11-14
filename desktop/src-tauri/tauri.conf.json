@@ -10,14 +10,16 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "title": "LaptopWatch — Security Companion",
-      "width": 1120,
-      "height": 740,
-      "minWidth": 800,
-      "minHeight": 560,
-      "backgroundColor": "#F5F5F7"
-    }],
+    "windows": [
+      {
+        "title": "LaptopWatch — Security Companion",
+        "width": 1120,
+        "height": 740,
+        "minWidth": 800,
+        "minHeight": 560,
+        "backgroundColor": "#FAF9F5"
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'"
     }
@@ -25,8 +27,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico", "icons/icon.icns"],
-    "externalBin": ["binaries/laptopwatch-sidecar"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "externalBin": [
+      "binaries/laptopwatch-sidecar"
+    ],
     "category": "Utility",
     "shortDescription": "Paired security companion for your laptop",
     "longDescription": "Visible, consent-based laptop webcam monitoring and encrypted paired control with local evidence."
