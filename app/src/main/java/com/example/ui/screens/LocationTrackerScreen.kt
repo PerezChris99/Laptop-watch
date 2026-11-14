@@ -307,9 +307,7 @@ fun LocationTrackerScreen(
                                 latitude = uiState.currentLatitude,
                                 longitude = uiState.currentLongitude,
                                 accuracyMeters = uiState.gpsAccuracyMeters,
-                                isLiveFix = !uiState.isLocationDemo && uiState.isLocationTrackingActive &&
-                        uiState.lastGpsFixTime > 0L &&
-                        System.currentTimeMillis() - uiState.lastGpsFixTime < 30_000L,
+                                isLiveFix = false, // last-seen is never live, even if its timestamp is recent
                                 isGeofenceArmed = uiState.isGeofenceArmed && !uiState.isLocationDemo,
                                 geofenceRadiusMeters = uiState.geofenceRadiusMeters,
                                 locationHistory = locationHistory
