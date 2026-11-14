@@ -1,53 +1,46 @@
-# LaptopWatch — current implementation vs production target
+# LaptopWatch — implementation and release status
 
-> **November 14, 2026 repository checkpoint:** Signed QR approval, Android signed
-> controls, Tauri shell, development WebRTC interfaces, opt-in mDNS, signed TTS,
-> offline GPS queue and self-hosted location receiver are now written to `perez`.
-> The legacy insecure Android PIN client has been disabled. The recipient
-> encrypts GPS coordinates at rest with AES-256-GCM. This is a **code-level
-> integration milestone only**: Android/desktop builds, real connected phones,
-> TURN connectivity, push notifications, person weights, DNS, signed packages,
-> legal/purchase accounts and actual sleep-state tests remain unverified.
+**Checkpoint: November 14, 2026.** Code milestone only; NOT production ready.
+Latest source is developed on perez then integrated into main. A merge is
+not the same as a verified consumer release.
 
+| Workstream | Present in source | Outstanding acceptance / non-code gate |
+|---|---|---|
+| Android | Compose/Room, QR-pinned TLS, phone-specific Ed25519/AES-GCM, signed photos/MP4, WebRTC media, optional FCM/WorkManager | Android build, real phone pairing/recording/push tests, permissions, OEM battery profiles |
+| Desktop | React/Tauri 2 Rust owner UI, controlled Python sidecar, tray, device/incident/evidence screens | Rust/npm builds, OS installers, signing/notarization and reboots |
+| Detection | Owner-armed verified person detector adapter with SHA256-pinned external ONNX weights, bounded auto-photo/MP4 | Licensed weights, seven+ scene false-positive evaluation, camera resource/thermal tests |
+| Recovery | Opt-in real GNSS/gpsd, durable last-seen and signed retry queue, owner relay encryption AES-256-GCM | True GNSS hardware, public DNS/TLS deployment, backups, outage/resume field tests |
+| Alerting | Signed incident metadata uploader, owner-only authenticated relay, encrypted FCM tokens, phone opt-in and generic push hints | Live Firebase project/ADC, actual FCM/device delivery and recovery |
+| Security | Paired signed controls, replay denial, TLS fingerprint, audit chain, no runnable legacy PIN/HTTP | Desktop OS-native secret protection, independent penetration review, retention/deletion |
+| Commercial | Source-level packaging recipes and draft policies/pricing | Signed installers, buyer-approved license, merchant, support and store acceptance |
 
-**Status date:** 2026-11-14. **Working branch:** `perez`. **No v1.0.0 release candidate.** The existence of code does not constitute a physical test, commercial permission or app-store acceptance.
+### Technical boundaries
 
-| Workstream | Where we are | Where we must be | Release gap |
-|---|---|---|---|
-| Mobile | Legacy Kotlin/Compose prototype, demo UI, Room data and foreground service | Stable signed Android app with native paired-key control, user consent, privacy and tested background delivery | **Critical** |
-| Desktop | Python CLI and secure gateway prototype | Tauri 2 + React UI, sidecar/tray, signed Windows/Mac/Linux installers | **Critical** |
-| Network/auth | Python Ed25519 signature verification and pinned TLS identity provisioning | QR peer pairing, Android keystore keys, mobile TLS pinning, WAN ICE/WebRTC, relay, safe revocation | **Critical** |
-| Photo/recording | Signed local JPEG and bounded MP4 endpoints, tested with mocks | Phone controls, real camera/codec validation, evidence UX, retention/export, visible consent | **High** |
-| Live feed | Still snapshot fallback | Low-latency WebRTC video/Opus audio and seamless handoff | **Critical** |
-| Motion/person | Legacy motion-difference daemon | Real person detector false-positive matrix and reliable alerting | **High** |
-| GPS | Opt-in `gpsd` receiver adapter, validated non-fake position and accuracy | Native OS providers, live device tests, explicit consent, no fake 1m precision | **High** |
-| Stolen-device recovery | Durable local last-seen + unacknowledged sync queue | Deployed trusted remote recipient, signed encrypted transfer, phone retrieval, network-resume hooks, push alerts | **Critical** |
-| Sleep/power-loss | Ordinary processes suspend; no general guarantee | OS-supported wake where possible; enable platform Find My; independent powered tracker for true offline/power-off | **Hardware constraint** |
-| Data security | Audit chain, local DB, no default LAN exposure | OS keystore, encrypted location/evidence, external audit checkpoint, adversarial testing | **High** |
-| Quality | New evidence/GNSS unit tests: 13/13 locally passed | Full Android/Python/Tauri CI-equivalent gates, real hardware, 24h soak, performance report | **Critical** |
-| Release/commercial | Draft legal documents and site copy | Owner-approved license and policies, live website, checkout/MoR, signed binaries, Play/MS Store acceptance | **Critical** |
+Current location adapter uses **real gpsd/GNSS hardware**, not universal
+Windows/macOS geolocation. Stored fixes are historical even when recently
+observed. User-space cameras/GNSS cannot run through deep sleep or power off.
+A disconnected laptop cannot guarantee future ping or capture. Universal
+offline power-independent recovery needs independently powered hardware.
 
-## Actually completed in the latest implementation pass
+Person detection is disabled without externally sourced hash-pinned model
+weights. FCM is optional and best-effort; notifications are non-forensic
+hints. Signed history must confirm events. Internet WebRTC needs signaling,
+TURN/ICE and actual network handoff tests. Desktop long-term signing keys
+are stored in restricted files, not fully OS-backed hardware keystores.
 
-- Existing `main` PR merge incorporated into `perez` by fast-forward before changes.
-- New evidence subsystem and authenticated API: save JPG, start/stop bounded MP4, signed download.
-- New GNSS adapter with true fix checks and no claim of accuracy without receiver; local persistent last-seen and offline queue, enabled only by explicit flag.
-- Mocked evidence/GPS tests executed in local Python 3.13 environment: 13 passing; exact tested source blobs match GitHub blob SHAs.
-- Source/documentation and café/restroom scenario updated with original existing repository imagery.
-- There are no real signed installers, QR pairing UI or remote sync provider yet.
+### Unverified stop-ship conditions
 
-## Definition of done before public production claim
+- [ ] Complete Python/relay test suites verified on the exact integrated commit
+- [ ] Android Gradle 9.3.1 wrapper binary/scripts checked in, Android build/lint/tests pass
+- [ ] Node/Cargo lockfiles and Tauri Windows/Mac/Linux builds verified
+- [ ] Android-phone ↔ laptop QR, camera, recorder, WebRTC, audio and revocation tests
+- [ ] Verified person model, false-positive benchmarks, 24-hour heat/power soak
+- [ ] Real Firebase/FCM Android notification, reconnect and key lifecycle tests
+- [ ] Real GNSS device, encrypted relay, signed receipts, offline/wake restore tests
+- [ ] OS desktop keychain, storage quotas, encryption and deletion security review
+- [ ] Signed/verified/notarized installers and documented update/rollback process
+- [ ] Legal/privacy approval, commercial license/merchant, stores/customer support
 
-1. Android and desktop complete the owner flow, reliably paired, without PIN/HTTP bypass.
-2. Real camera photos/video and live WebRTC work on tested devices (not simulator only).
-3. Person detection demonstrably controls alerts, with measured false positives.
-4. Accurate location source identifies its precision and returns unavailable honestly; remote last-seen survives laptop loss because it was delivered and acknowledged before disconnection.
-5. No unsupported promise of tracking through deep sleep or power-off; native Find My instructions or independent tracker option documented.
-6. Every permission, storage, key and network channel reviewed for security and privacy.
-7. Hardware/OS/network matrix, performance budgets, long soak and release build green.
-8. Signatures, notarization, EULA/privacy, merchant, website and store submissions completed with owner-controlled accounts.
-9. Only verified milestones merged to `main`; tagged checkpoints represent actual known-good releases.
-
-## Release interpretation
-
-Security and media work remains on `perez` until required validation succeeds. Branch synchronization is not evidence of production readiness. No version tag should be created until its test/build gate passes.
+These are engineering or external release gates, not checkmarks from a
+source commit. No versioned production release has been certified. See
+BUILD_AND_RELEASE.md, RELEASE_CHECKLIST.md and SCENARIOS.md.

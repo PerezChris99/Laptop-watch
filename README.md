@@ -15,187 +15,185 @@ Android controller + Tauri desktop companion — **0.3.0-dev, not a production r
 > [!WARNING]
 > **Not production-ready.** The signed Android/desktop pairing implementation is present in source but is not yet verified on real devices or distributable as a signed release. Never expose the insecure, PIN-based legacy companion on a public network. This is an engineering repository, not a signed installable consumer product.
 
+## Technology stack
+
+| Layer | Technologies | Purpose |
+|---|---|---|
+| Android UI | Kotlin, Jetpack Compose, Material 3, Lifecycle/Coroutines | Owner controls, device pairing, dashboards and consent |
+| Mobile persistence | Android Room, SQLite, Android Keystore AES-GCM | History, device identity and encrypted phone signing key |
+| Mobile networking | OkHttp, Bouncy Castle Ed25519, signed HTTPS/TLS fingerprint, Android NsdManager, Google Code Scanner | QR-based authorized device pairing and trusted LAN discovery |
+| Mobile media | GetStream WebRTC for Android, Coil, Android microphone permissions | DTLS-SRTP live video, opt-in two-way audio and evidence preview |
+| Mobile notifications | Android notifications, Firebase Cloud Messaging, AndroidX WorkManager | Optional background event hints and retryable signed token enrollment |
+| Desktop frontend | React 19, Vite 7, QRCodeSVG, Tauri 2 | Native owner dashboard, QR, tray, trusted devices, evidence and settings |
+| Native desktop | Rust, Tauri shell/autostart, rusqlite | Restricted native controls, sidecar lifecycle and direct read-only status |
+| Gateway/backend | Python 3.11+, FastAPI, Uvicorn, Pydantic | Authenticated local REST API and OS laptop actions |
+| Security | Ed25519, SHA-256, replay-resistant nonces, cryptography, AES-256-GCM | Signed commands, integrity, local identity and encrypted relay records |
+| Camera/detection | OpenCV, NumPy, YOLOX Nano ONNX (optional externally supplied/pinned), PyAV, aiortc, sounddevice | Person confirmation, visible JPEG/MP4 recording and encrypted media |
+| Recovery/network | gpsd with genuine GNSS, SQLite offline queues, mDNS/Zeroconf, ICE/STUN/TURN options | Last verified location and authenticated reconnect delivery |
+| Optional self-hosted relay | Python/FastAPI, Docker Compose, Caddy HTTPS, SQLite AES-GCM, Google Auth/FCM HTTP v1 | Owner-provisioned location and incident receipt/push service |
+| Packaging/testing | PyInstaller, Tauri native bundler, Gradle, Android SDK, Pytest, Robolectric, instrumentation tests | Source test harnesses, builds and eventual signed installers |
+
+**Platforms:** Android controller and Windows/macOS/Linux desktop source.
+There is **no iOS client** in this repository. Optional relay hosting and
+Firebase services require separate owner-provisioned accounts.
+
 ## What LaptopWatch is
 
-LaptopWatch is intended to help the owner protect a laptop when they briefly step away at a café, library, office or campus. A visible camera can monitor a user-owned workstation; the paired owner should be able to review the feed, take photos, record a clip, trigger an alarm, lock the screen and inspect the last verified location. These features require the relevant hardware, OS permissions, power and connectivity; no app prevents physical theft.
+LaptopWatch pairs an Android owner device with a user-owned laptop for visible,
+permission-based anti-theft monitoring. The signed local gateway can arm and
+disarm the camera, lock the operating system, sound an alarm, speak a warning,
+capture JPEG images, record bounded MP4 clips and negotiate WebRTC video and
+optional phone microphone audio.
 
-### The café / restroom use case
+A SHA-256 verified external ONNX person model is required for person-triggered
+incidents. With it and explicit arming, motion is only a prefilter; a verified
+person can create an incident and optional local photo/video. Signed Android
+foreground polling retrieves events and evidence. Optional remote push sends
+generic FCM hints only; an owner-controlled relay and verification are necessary.
 
-You are working at a café and need to go to the restroom. You **lock the laptop**, leave it open and plugged in where permitted, arm LaptopWatch with a paired phone, and step away. The intended flow is: person approaches → on-device person detection → owner alert → owner opens a live view and can save a photo or video → owner may sound an alarm and call for help. Recording bystanders requires lawful notice and consent. A closed lid can physically block the webcam; suspension disables ordinary camera processing. **This complete Android-to-desktop flow is a target, not yet working end-to-end.** See [the detailed café/restroom and theft scenarios](docs/SCENARIOS.md).
+### Café/restroom example
 
-## Project imagery and architecture
+Lock your laptop, leave the camera visible where lawful, arm from the paired
+phone and step away. A configured model can detect a person, save bounded
+local evidence and log an event. Your phone can view the signed incident log,
+start encrypted video, download media or sound an alarm while the laptop is
+awake and reachable. If you configured remote FCM alerts, a signed incident
+event may trigger a generic notification that asks you to open the app and
+verify it. **Field reliability and legal consent must be validated first.**
 
-<img src="docs/images/arch_overview.jpg" alt="Original LaptopWatch Android-to-laptop architecture illustration" width="100%" />
+See [usage and emergency scenarios](docs/SCENARIOS.md).
 
-**The original imagery is retained** in `docs/images/`: `hero_banner.jpg`, `arch_overview.jpg`, and `app_icon.jpg`.
+## Architecture and original artwork
+
+<img src="docs/images/arch_overview.jpg" alt="LaptopWatch architecture artwork" width="100%" />
+
+The existing artwork remains in `docs/images/`: `app_icon.jpg`,
+`hero_banner.jpg` and `arch_overview.jpg`.
 
 ```mermaid
 flowchart LR
-    A[Android Compose prototype] -. pairing not integrated .-> G[Signed HTTPS gateway]
-    G --> E[Python native controller]
-    G --> P[Photos and MP4 clips on laptop]
-    G --> L[Verified GNSS location / last-seen]
-    G --> S[Signed local audit records]
-    A -. WebRTC, mDNS and optional WAN relay pending .-> G
+  A[Android owner] <-->|QR pin + signed HTTPS| G[Python laptop gateway]
+  G --> E[Private JPEG + MP4 evidence]
+  G --> V[WebRTC DTLS-SRTP media]
+  G --> P[Verified person guard]
+  G --> L[Validated GNSS location]
+  P --> I[SQLite incidents]
+  L --> Q[Offline location queue]
+  I -. signed metadata .-> R[Optional owner relay]
+  Q -. signed receipts .-> R
+  R -. generic opted-in FCM hints .-> A
+  R -. authenticated history queries .-> A
+  T[Tauri/React desktop host] --> G
 ```
 
-## What is implemented and what remains
+The remote paths require real DNS/TLS, provider accounts, enrolled device
+public keys and operating infrastructure. The laptop must be awake and
+running; no software guarantees camera/GNSS activity in deep sleep or
+power-off.
 
-| Capability | Implementation today | Production gap |
+## Implementation and release gates
+
+| Feature | Source implementation | Still requires |
 |---|---|---|
-| Android interface | Kotlin, Compose, Room, signed QR/Ed25519 pairing, private photo/MP4 controls and WebRTC receiver source | Physical builds, camera and audio permission tests, real end-to-end tests |
-| Laptop control | Signed Python gateway: status, arm/disarm, lock and alarm | OS-specific device verification, desktop UI and installs |
-| **Take a photo** | Signed `POST /api/camera/photo` writes private JPEG | Android controls, actual camera tests, retention and export UX |
-| **Record video** | Signed `POST /api/camera/record/start` and `stop`; bounded local MP4 | Android integration, hardware codecs, durability/soak and quality tuning |
-| View/download evidence | Signed `GET /api/evidence/{kind}/{id}` | In-app evidence vault and secure retention/deletion |
-| Live camera | aiortc Python offer/stop signaling and Android DTLS-SRTP video receiver source | Physical latency validation, TURN, mobile network handoff, 24-hour soak |
-| Motion alerts | Legacy OpenCV frame difference | Person-only on-device model, notification/push reliability |
-| Authentication | Per-phone Ed25519 signatures, nonce/replay denial, paired registry in Python | Phone-side key management/QR, cert pinning and mobile integration |
-| **Real location** | Opt-in `gpsd` GNSS provider, rejects missing/invalid fixes | Native Windows/macOS providers, receiver hardware and privacy consent UI |
-| **Last-seen location** | Durable local SQLite fix and optional AES-GCM encrypted, authenticated self-hosted relay | Production hosting, verified delivery and retention/recovery tests |
-| Offline reconnect queue | Local queue, signed HTTPS desktop sender and opt-in self-hosted encrypted relay source | Real DNS/TLS deployment, owner enrollment, phone remote tests, OS resume hooks |
-| Work while asleep/offline | Last known record survives on storage | Ordinary app code cannot run in deep sleep/power-off; see OS recovery |
-| Desktop app | Tauri 2 + React owner UI, tray, pairing QR, Python sidecar packaging source | Native build/sign/notarize/install and service recovery tests |
-| Commercial release | Draft privacy, pricing, EULA and Play listing | Owner review, real accounts, payment, signed binaries, device matrix |
+| QR pairing and security | Signed invites, per-phone Ed25519 key, TLS fingerprint verification, local approval/revocation, signed API and replay denial | Real phone pairing, cross-OS TLS and security testing |
+| Photos/recordings | Armed JPEG and bounded MP4 with authenticated download and desktop evidence folder | Webcam, codecs, clean stop/retention tests |
+| Live video and intercom | aiortc signaling/stream and Android WebRTC receiver/opt-in audio | Physical phones, ICE/TURN, WAN changes, microphone tests |
+| Person-triggered alerts | Optional model hash check, camera guard, motion/person confirmation, verified incident API, local auto-JPEG/MP4 and signed phone sync | Licensed model weights, false-positive trials, thermal soak |
+| Remote push | Signed incident uploader, encrypted owner relay, FCM adapter, Android opt-in registration and foreground validation | Deployed relay, Firebase credentials, actual notification/wake tests |
+| Last-seen location | Genuine opt-in gpsd fixes, durable local queue, signed receipts, AES-GCM encrypted self-hosted remote record, phone queries | Working receiver, DNS, backups and Internet-outage tests |
+| Desktop distribution | React/Tauri tray, settings, Python sidecar, per-target bundler inputs | Native OS builds, verified lockfiles, code signing, notarization |
+| Commercial sale | Draft privacy/EULA/data safety/pricing, installation instructions and source architecture | Owner-approved license, rights review, merchant, customer support and signed installers |
 
-## Evidence capture workflow
+Source-level implementation is **not** a verified installation. The complete
+integrated Android, Python, Rust, React and relay suite has not passed on actual
+devices. An external person model is not bundled. Apple/Windows OS geolocation
+providers beyond `gpsd` are not implemented. The legacy HTTP/PIN transport
+has been disabled; no PINs are sent in URLs.
 
-The **development Python HTTPS gateway** offers signed, authenticated operations. Every request must be signed using the enrolled phone/device's private key, TLS certificate pinning is mandatory for remote use, and **no credentials go in URLs**.
+## Location, offline continuity and limitations
 
-```mermaid
-sequenceDiagram
-    participant Client as Paired client
-    participant API as Python HTTPS gateway
-    participant Cam as Laptop camera
-    participant Disk as Local private evidence
-    Client->>API: Signed POST /api/config/armed
-    Client->>API: Signed POST /api/camera/photo
-    API->>Cam: Open / read JPEG / release
-    API->>Disk: Save photo-ID.jpg
-    API-->>Client: Evidence ID
-    Client->>API: Signed POST /api/camera/record/start
-    API->>Cam: Open camera / start bounded MP4
-    Client->>API: Signed POST /api/camera/record/stop
-    API->>Disk: Finalize video-ID.mp4
-    API-->>Client: Evidence ID, frames, size
-    Client->>API: Signed GET /api/evidence/photo/ID
-    API-->>Client: Authenticated evidence download
-```
+Real receiver-reported uncertainty is shown rather than invented GPS
+precision. A saved last-seen fix is **historical even if recent**. Records
+persist while the laptop is offline; reports are sent to the opt-in HTTPS
+relay when connectivity returns and a signed receipt matches. A tiny
+connection window may not permit a complete HTTPS transmission.
 
-**Available routes**: `GET /api/status`; `POST /api/lock`; `POST /api/alarm`; `POST /api/config/armed`; `GET /api/camera/frame`; `POST /api/camera/photo`; `POST /api/camera/record/start`; `POST /api/camera/record/stop`; `GET /api/evidence/photo/{id}`; `GET /api/evidence/video/{id}`; `GET /api/location/last-seen`; `POST /api/location/refresh`. Photo/video files live under the configured state directory's `evidence/` folder. No audio recording is provided by this new recorder; it saves webcam video without sound.
+Deep sleep, power-off, dead battery or a physically blocked webcam prevent
+ordinary software tracking and recording. Enable legitimate OS Find My
+features or install independently powered GNSS/cellular hardware if
+power-independent recovery is needed. No computer software can guarantee
+theft prevention. [Recovery limits](docs/LOCATION_AND_RECOVERY.md).
 
-**Photo and record actions are implemented in the desktop Python gateway, not yet accessible from a correctly paired Android UI.** Camera access needs explicit arming, ownership and legal consent.
+## Build and test prerequisites
 
-## Location, sleep, loss and connectivity
-
-```mermaid
-flowchart TD
-    A[Explicit opt-in and connected GNSS receiver] --> B{Valid real fix?}
-    B -->|Yes| C[Store coordinates, timestamp and accuracy locally]
-    B -->|No| X[Unavailable: never invent location]
-    C --> D[Pending, durable event queue]
-    D --> E{Trusted paired uplink available?}
-    E -->|Yes, integration pending| F[Send signed update and require receipt]
-    E -->|No| G[Retain for future reconnect]
-    G --> E
-    C --> H[Last-known fix, marked stale after 2 minutes]
-```
-
-- **Location accuracy** comes from real receiver-reported uncertainty. Ordinary laptops seldom have dedicated GNSS/GPS receivers. Optional `gpsd` support works only with a configured receiver while the app is running; Wi-Fi or IP estimates are not meter-accurate GPS.
-- **Live versus last-seen:** A previously stored location is **never** labeled live, even if its timestamp is recent. Only a successful immediate receiver read can set the live flag.\n- **Offline** means no new remote report is delivered. Fixes already stored locally survive app restart; the phone only knows the **last location previously delivered to it or a trusted remote service**. An offline queue on a stolen laptop is not, by itself, a remote tracking service.
-- **After reconnection** a tested queue hook can send unacknowledged fixes when a future paired end-to-end encrypted remote channel is available. The sender/service is still missing, so no instant reconnect alert is claimed.
-- **Sleep, shutdown or dead battery:** user-mode Python cannot guarantee tracking, networking, or webcam operation. Supported macOS Find My hardware/network functionality may locate an offline sleeping Mac; Windows Find My Device should be enabled separately on Windows. A discrete cellular GPS tracker with its own battery is needed for tracking independent of laptop power/network.
-
-Detailed feasibility, architecture and limitations: [Location, Lost Device & Reconnection Design](docs/LOCATION_AND_RECOVERY.md).
-
-## New integrated development modules (November 14, 2026)
-
-The existing Android QR screen now requests a short-lived signed invite; the desktop
-owner explicitly approves the phone. Signed HTTPS actions support arming, taking
-JPEG photos, recording MP4, locking, alarm and text-to-speech. The live-view
-source includes an aiortc signaling endpoint and Android WebRTC video receiver,
-with an opt-in microphone path and local network discovery. Optional real GNSS
-last-seen reports may be delivered to a separately deployed encrypted,
-single-owner location relay. Source presence is **not** a passed hardware test.
-
-The older PIN-based HTTP client now **fails closed**, and unsafe PowerShell
-installer/lid policy instructions have been removed from Android setup.
-The person detector code requires owner-supplied, SHA-256 verified model weights;
-it is **not yet wired into a reliable phone push-alert pipeline**.
-The unproven background legacy Android polling service is disabled at app startup.
-
-See [Desktop app](desktop/README.md), [private relay](services/location-relay/README.md),
-[runbook and verification](docs/BUILD_AND_RELEASE.md) and
-[actual readiness](docs/STATUS.md).
-
-## Development quickstart
-
-### Python development gateway
-
-Requires Python 3.11+ and a developer workstation. This is **not** a one-click consumer installer.
+**Desktop Python** (development): install Python 3.11+, then:
 
 ```bash
-cd desktop/src-python
-python -m venv .venv
-# activate the virtual environment for your platform
-python -m pip install -e '.[test,media]'
-python -m pytest -q
-python -m laptopwatch.cli --state-dir ./local-dev init
-```
-
-Generate an Ed25519 phone/device keypair in a secure client, then approve pairing at the **desktop itself**:
-
-```bash
-python -m laptopwatch.cli --state-dir ./local-dev pair --device-id UUID --public-key-b64url PHONE_PUBLIC_KEY
-python -m laptopwatch.cli --state-dir ./local-dev serve --port 8765
-```
-
-The second command starts a signed HTTPS gateway on localhost. `--listen-lan` is an explicit, development-only remote opt-in that **requires** local pairing first; the connecting client must pin the certificate fingerprint and sign requests. The existing Android app does not yet implement this protocol. Enable real receiver polling only with user consent:
-
-```bash
-python -m laptopwatch.cli --state-dir ./local-dev serve --enable-gpsd
-```
-
-The tracker samples the locally configured `gpsd` receiver about every 30 seconds while awake. No receiver/permission means no fix. The last-seen history is stored in `local-dev/last_seen.db` and evidence in `local-dev/evidence/`. Keep this directory outside version control and protect the disk with OS full-disk encryption.
-
-### Android prototype
-
-Open the `app/` module in Android Studio with compatible SDK/build tools. The repository does not yet have a complete tested Gradle wrapper, device test matrix, release-signing assets or secure phone pairing. Use demo mode only for UI preview. **Do not connect the older HTTP/PIN companion to an untrusted network.**
-
-### Verification
-
-```bash
+python -m pip install -e 'desktop/src-python[test,media,discovery]'
 cd desktop/src-python
 python -m pytest -q
-# Android build, lint and real device tests remain release gates
 ```
 
-Thirteen tests were executed locally for the newly added evidence and tracking modules; they use mocks, not physical devices. Existing security/gateway unit suites and Android build/connected-device gates require a full reproducible run before release. See [test matrix](docs/TEST_MATRIX.md) and [performance evidence](docs/PERFORMANCE.md).
+**Tauri desktop**: Node 22+, Rust/Tauri 2 OS prerequisites, Python,
+PyInstaller and Pillow:
 
-## Key repository directories
+```bash
+python -m pip install pyinstaller pillow
+python desktop/scripts/prepare_sidecar.py
+cd desktop
+npm install
+npm run tauri dev
+```
 
-| Directory | Contents |
+**Android**: Android Studio, JDK 17+, Android SDK 36.1 and Gradle 9.3.1.
+The repository contains distribution properties but lacks the verified
+Gradle wrapper JAR/launchers. Obtain them from the official Gradle
+distribution and verify official checksums before committing. Native
+Android and desktop builds are unverified.
+
+**Optional relay**: Docker Compose and Caddy, owner domain, TLS, device
+public-key enrollment, opt-in GNSS/push and provider credentials. Do not
+upload secrets or test personally identifying data to Git.
+
+Full [build/run/install/acceptance guide](docs/BUILD_AND_RELEASE.md),
+[desktop instructions](desktop/README.md) and
+[optional relay setup](services/location-relay/README.md).
+
+## Repository layout
+
+| Location | Contents |
 |---|---|
-| `app/` | Android Compose UI, legacy client and Room database |
-| `desktop/src-python/laptopwatch/` | Paired HTTPS gateway, OS controller, evidence, tracking, audit and identity |
-| `desktop/src-python/tests/` | Python unit/integration test sources |
-| `docs/images/` | Original hero banner, architecture artwork and app emblem |
-| `docs/SCENARIOS.md` | Café, restroom, theft and offline usage narratives |
-| `docs/LOCATION_AND_RECOVERY.md` | Accurate GNSS, offline queues and sleep-mode capability boundaries |
-| `docs/ARCHITECTURE.md` | Target ADRs and release branching policy |
-| `docs/DEFECTS.md`, `docs/RELEASE_CHECKLIST.md` | Outstanding security/quality gates |
-| `docs/commercial/` | Draft legal/storefront copy, **not** approved policies |
+| `app/` | Android Compose UI, Room, signed HTTPS, WebRTC, optional FCM |
+| `desktop/src-ui/` | React/Vite desktop owner dashboard |
+| `desktop/src-tauri/` | Rust/Tauri shell, tray and restricted native operations |
+| `desktop/src-python/` | Secure Python controller, camera guard, GNSS and tests |
+| `services/location-relay/` | Optional encrypted single-owner metadata relay |
+| `docs/images/` | Existing logo, hero image and architecture artwork |
+| `docs/SCENARIOS.md` | Café/restroom, privacy and theft workflows |
+| `docs/BUILD_AND_RELEASE.md`, `docs/STATUS.md` | Gates and reproducibility |
+| `docs/commercial/` | Draft EULA, privacy, data safety, website and pricing |
 
-## Git workflow and production release
+## Git workflow
 
-Only `perez` (development) and `main` (integration/release). Make coherent commits on `perez`; run milestone builds, tests and security checks; merge via a normal **non-fast-forward PR** to `main` after verification; fast-forward `perez` to the merge commit to keep both branch tips synchronized. Do not create feature branches or silently add GitHub Actions workflows.
+Exactly two active branches: `perez` for development and `main` for
+integration. Commit coherent work to `perez`, verify source, open a normal
+PR and merge to `main`. Fast-forward `perez` to the merge commit so both
+tips are identical. No GitHub Actions or extra branches. A main merge is
+**not** proof of release safety and does not authorize a versioned tag.
 
-Release phases remain: verified audit/security → paired WebRTC/discovery → Tauri desktop → person classifier → signed packages → UX/accessibility → measured soak → legally approved commercial launch. **A green Python unit suite is not a production-ready Android/desktop release.**
+## Legal, security and distribution
 
-## Security, privacy and license
+Only monitor a laptop you own or have permission to control. Give legally
+required notice and obtain recording consent; never record covertly.
+Evidence, audit, precise location and push tokens are personal data. Apply
+data retention, access restrictions, backups and OS disk encryption.
+The desktop identity still uses protected local key files rather than
+fully integrated Windows CNG/macOS Keychain/Linux Secret Service storage.
 
-Only monitor devices you own or are authorized to monitor; give the legally required notice and consent to everyone who may be recorded. Do not operate the camera covertly. Existing legacy default PIN/HTTP behavior is unsuitable for production. Use full-disk encryption and an OS password. No production-grade remote location relay, OS-backed private-key storage, licensing server or published privacy policy exists yet.
-
-[Security threat model](docs/THREAT_MODEL.md) · [Release checklist](docs/RELEASE_CHECKLIST.md) · [Draft privacy policy](docs/commercial/PRIVACY.md) · [Draft EULA](docs/commercial/EULA.md).
-
-**License notice:** The source has no owner-approved `LICENSE` file; do not assume the former README's MIT claim grants redistribution rights. The rights holder must approve a commercial or open-source license before publishing installers.
+**Commercial status:** No approved source `LICENSE`, production signing
+assets, consumer installer, verified checkout, app-store acceptance or
+approved legal policies are provided by these source commits. The rights
+holder must decide licensing, supported devices, buyer terms and compliance
+before publishing or selling. See [release checklist](docs/RELEASE_CHECKLIST.md),
+[threat model](docs/THREAT_MODEL.md), [draft EULA](docs/commercial/EULA.md)
+and [draft privacy policy](docs/commercial/PRIVACY.md).
