@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 from pathlib import Path
 import sys
 import uuid
@@ -18,6 +19,9 @@ from .controller import NativeController
 from .gateway import GatewayState, create_app
 from .identity import initialize_identity, get_audit_key
 from .pairing import PairingCoordinator
+from .discovery import LaptopWatchAdvertiser
+from .remote_location import SignedLocationSender, RemoteLocationPoller
+from .webrtc import RtcController
 from .security import PairingRegistry, SignedRequestVerifier, unb64url
 
 
@@ -46,6 +50,13 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument('--listen-lan', action='store_true')
     serve.add_argument('--enable-gpsd', action='store_true',
                        help='Opt in to reading a locally configured GNSS receiver via gpsd')
+    serve.add_argument('--relay-url', default=None,
+                       help='Explicit opt-in HTTPS last-seen relay (requires --enable-gpsd)')
+    serve.add_argument('--stun-url', default=None, help='Optional STUN host for WAN ICE')
+    serve.add_argument('--turn-url', default=None, help='Optional owner-hosted TURN URL')
+    serve.add_argument('--turn-username', default=None)
+    serve.add_argument('--turn-password-env', default='LAPTOPWATCH_TURN_PASSWORD',
+                       help='Name of an environment variable holding the TURN credential')
     args = parser.parse_args(argv)
     state_dir = args.state_dir
     if args.command == 'init':
@@ -71,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             uri = pairing.create_qr(host=args.host, port=args.port, laptop_id=laptop_id,
                                     public_key=public, fingerprint_hex=identity['tls_fingerprint_sha256'],
                                     signing_key=desktop_key)
+            (state_dir / 'pairing_host').write_text(args.host, encoding='ascii')
             print(json.dumps({'uri':uri, 'expires_seconds':120}))
             return 0
         if args.command == 'pending':
@@ -113,6 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'serve':
             if not 1 <= args.port <= 65535:
                 parser.error('port out of range')
+            if args.relay_url and not args.enable_gpsd:
+                parser.error('--relay-url requires real GNSS consent via --enable-gpsd')
             host = '0.0.0.0' if args.listen_lan else '127.0.0.1'
             if args.listen_lan:
                 # Public listener requires a physically approved, explicitly paired phone.
@@ -124,6 +138,17 @@ def main(argv: list[str] | None = None) -> int:
             evidence = EvidenceRecorder(state_dir / 'evidence')
             location_store = LastSeenStore(state_dir / 'last_seen.db') if args.enable_gpsd else None
             tracking = TrackingService(location_store, GpsdReceiver()) if location_store is not None else None
+            rtc = None
+            try:
+                import aiortc
+                rtc = RtcController(
+                    stun_url=args.stun_url,
+                    turn_url=args.turn_url,
+                    turn_username=args.turn_username,
+                    turn_password=os.getenv(args.turn_password_env),
+                )
+            except ImportError:
+                print('WebRTC module not installed: still-frame fallback only')
             app = create_app(GatewayState(
                 SignedRequestVerifier(registry),
                 SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir)),
@@ -131,16 +156,49 @@ def main(argv: list[str] | None = None) -> int:
                 evidence=evidence,
                 tracking=tracking,
                 pairing=pairing,
+                rtc=rtc,
             ))
             poller = LocationPoller(tracking) if tracking is not None else None
+            remote_poller = None
+            if args.relay_url:
+                desktop_id_path = state_dir / 'desktop_id'
+                if not desktop_id_path.exists():
+                    parser.error('Generate and approve local laptop pairing before enabling a relay')
+                sender = SignedLocationSender(
+                    args.relay_url,
+                    desktop_id_path.read_text(encoding='ascii').strip(),
+                    get_audit_key(state_dir),
+                )
+                remote_poller = RemoteLocationPoller(tracking, sender)
+            mdns = None
+            if args.listen_lan:
+                host_file = state_dir / 'pairing_host'
+                id_file = state_dir / 'desktop_id'
+                if host_file.exists() and id_file.exists():
+                    mdns = LaptopWatchAdvertiser(
+                        host_file.read_text(encoding='ascii').strip(), args.port,
+                        id_file.read_text(encoding='ascii').strip(),
+                        identity['tls_fingerprint_sha256'],
+                    )
+                    try:
+                        mdns.start()
+                    except (RuntimeError, OSError) as err:
+                        print('mDNS unavailable, use the pairing QR:', str(err))
+                        mdns = None
             if poller is not None:
                 poller.start()
+            if remote_poller is not None:
+                remote_poller.start()
             try:
                 run(app, host=host, port=args.port,
                     ssl_keyfile=str(state_dir / 'tls_key.pem'),
                     ssl_certfile=str(state_dir / 'tls_cert.pem'),
                     access_log=False, proxy_headers=False, server_header=False)
             finally:
+                if remote_poller is not None:
+                    remote_poller.stop()
+                if mdns is not None:
+                    mdns.stop()
                 if poller is not None:
                     poller.stop()
                 evidence.stop_if_recording()

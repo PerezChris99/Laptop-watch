@@ -21,6 +21,7 @@ from .security import AuthenticationError, SignedRequestVerifier
 from .evidence import CaptureUnavailable, EvidenceRecorder
 from .tracking import TrackingService
 from .pairing import PairingCoordinator
+from .webrtc import RtcController, MediaUnavailable
 
 MAX_CONTROL_BODY = 64 * 1024
 
@@ -39,6 +40,7 @@ class GatewayState:
     evidence: EvidenceRecorder | None = None
     tracking: TrackingService | None = None
     pairing: PairingCoordinator | None = None
+    rtc: RtcController | None = None
     armed: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -56,6 +58,13 @@ class ArmRequest(BaseModel):
     armed: bool
 
 
+class RtcOffer(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    sdp: str
+    type: str
+    include_audio: bool = False
+
+
 class PairingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     device_id: str
@@ -71,6 +80,13 @@ def create_app(state: GatewayState) -> FastAPI:
     # concurrent start cannot turn the camera back on after the owner disarms.
     media_lock = asyncio.Lock()
     pairing_limit = __import__('laptopwatch.security', fromlist=['SlidingWindowLimiter']).SlidingWindowLimiter(max_attempts=6, period=60)
+
+    @app.on_event("shutdown")
+    async def shutdown_media():
+        if state.rtc is not None:
+            await state.rtc.close()
+        if state.evidence is not None:
+            await asyncio.to_thread(state.evidence.stop_if_recording)
 
     @app.middleware("http")
     async def secure_request(request: Request, call_next):
@@ -133,7 +149,9 @@ def create_app(state: GatewayState) -> FastAPI:
     @app.get("/api/status")
     async def status(request: Request):
         return {"online": True, "motion_armed": state.get_armed(), "location": None,
-                "subject_identified": None, "media_transport": "NOT_CONFIGURED"}
+                "subject_identified": None,
+                "media_transport": "WEBRTC" if state.rtc is not None else "SNAPSHOT_ONLY",
+                "media_active": bool(state.rtc is not None and state.rtc.active)}
 
     @app.post("/api/config/armed")
     async def arm(request: Request):
@@ -142,12 +160,21 @@ def create_app(state: GatewayState) -> FastAPI:
                 parsed = ArmRequest.model_validate_json(request.state.raw_body)
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid arm payload")
-            if not parsed.armed and state.evidence is not None:
-                try:
-                    await asyncio.to_thread(state.evidence.stop_if_recording)
-                except CaptureUnavailable:
-                    raise HTTPException(status_code=503, detail="Camera could not be released")
-            state.set_armed(parsed.armed)
+            if not parsed.armed:
+                # Disarm is fail-closed even when media cleanup reports a
+                # device error. Avoid leaving capture authorized on failure.
+                state.set_armed(False)
+                if state.rtc is not None:
+                    await state.rtc.close()
+                if state.evidence is not None:
+                    try:
+                        await asyncio.to_thread(state.evidence.stop_if_recording)
+                    except CaptureUnavailable:
+                        state.audit.append("config", request.state.paired_device, result="failure",
+                                           metadata={"armed":"False","cleanup":"failed"})
+                        raise HTTPException(status_code=503, detail="Camera release needs attention")
+            else:
+                state.set_armed(True)
             state.audit.append("config", request.state.paired_device, result="success", metadata={"armed": str(parsed.armed)})
             return {"success": True, "armed": parsed.armed}
 
@@ -183,7 +210,9 @@ def create_app(state: GatewayState) -> FastAPI:
             if not state.get_armed():
                 raise HTTPException(status_code=409, detail="Camera monitoring is disarmed")
             try:
-                if state.evidence is not None:
+                if state.rtc is not None and state.rtc.active:
+                    image = await state.rtc.snapshot_jpeg()
+                elif state.evidence is not None:
                     image = await asyncio.to_thread(state.evidence.snapshot)
                 else:
                     image = await asyncio.to_thread(state.controller.snapshot)
@@ -203,7 +232,13 @@ def create_app(state: GatewayState) -> FastAPI:
             if state.evidence is None:
                 raise HTTPException(status_code=503, detail="Evidence recorder not configured")
             try:
-                result = await asyncio.to_thread(state.evidence.take_photo)
+                if state.rtc is not None and state.rtc.active:
+                    jpeg = await state.rtc.snapshot_jpeg()
+                    if not jpeg:
+                        raise CaptureUnavailable("No current WebRTC video frame")
+                    result = await asyncio.to_thread(state.evidence.store_photo, jpeg)
+                else:
+                    result = await asyncio.to_thread(state.evidence.take_photo)
             except (CaptureUnavailable, OSError):
                 state.audit.append("snapshot", request.state.paired_device, result="failure")
                 raise HTTPException(status_code=503, detail="Unable to capture photo")
@@ -221,6 +256,11 @@ def create_app(state: GatewayState) -> FastAPI:
             if state.evidence is None:
                 raise HTTPException(status_code=503, detail="Evidence recorder not configured")
             try:
+                # A single-owner webcam may not be opened by both WebRTC and
+                # a separate MP4 writer. Recording pauses live media; clients
+                # must reconnect deliberately after the clip finalizes.
+                if state.rtc is not None and state.rtc.active:
+                    await state.rtc.close()
                 session = await asyncio.to_thread(state.evidence.start_recording)
             except (CaptureUnavailable, OSError):
                 state.audit.append("record_start", request.state.paired_device, result="failure")
@@ -245,6 +285,33 @@ def create_app(state: GatewayState) -> FastAPI:
                                metadata={"evidence_id": clip.id})
             return {"success": True, "recording": False, "id": clip.id,
                     "filename": clip.relative_file, "frames": clip.frames, "size_bytes": clip.file_bytes}
+
+    @app.post("/api/webrtc/offer")
+    async def webrtc_offer(request: Request):
+        async with media_lock:
+            if not state.get_armed():
+                raise HTTPException(status_code=409, detail="Camera is disarmed")
+            if state.rtc is None:
+                raise HTTPException(status_code=503, detail="WebRTC transport unavailable")
+            if state.evidence is not None and state.evidence.recording:
+                raise HTTPException(status_code=409, detail="MP4 recording has exclusive camera access")
+            try:
+                info=RtcOffer.model_validate_json(request.state.raw_body)
+                if info.type!="offer":
+                    raise ValueError("Expected an SDP offer")
+                return await state.rtc.offer(request.state.paired_device,
+                                             info.sdp, include_audio=info.include_audio)
+            except (MediaUnavailable, ValueError, OSError) as error:
+                raise HTTPException(status_code=503, detail=str(error))
+
+    @app.post("/api/webrtc/stop")
+    async def webrtc_stop(request: Request):
+        async with media_lock:
+            if request.state.raw_body:
+                raise HTTPException(status_code=400, detail="No body allowed")
+            if state.rtc is not None:
+                await state.rtc.close(request.state.paired_device)
+            return {"success": True}
 
     @app.get("/api/evidence/{kind}/{evidence_id}")
     async def download_evidence(kind: str, evidence_id: str, request: Request):

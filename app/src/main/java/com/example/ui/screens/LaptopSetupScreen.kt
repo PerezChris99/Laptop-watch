@@ -107,6 +107,9 @@ fun LaptopSetupScreen(
     onForgetSecurePairing: () -> Unit = {},
     onSetSecureCameraArmed: (Boolean) -> Unit = {},
     onGetSecureLastSeen: () -> Unit = {},
+    onRediscoverSecureLaptop: () -> Unit = {},
+    onConfigureRemoteRelay: (String) -> Unit = {},
+    onCopyRemoteEnrollment: () -> String = { "" },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -132,6 +135,7 @@ fun LaptopSetupScreen(
     }
 
     var selectedSetupTab by remember { mutableStateOf(3) }
+    var relayDraft by remember { mutableStateOf(uiState.secureRelayUrl) }
     val haptics = rememberAppHaptics()
 
     Column(
@@ -348,11 +352,41 @@ fun LaptopSetupScreen(
                                     else "Arm laptop camera (visible capture)", fontSize = 13.sp)
                             }
                             OutlinedButton(
+                                onClick = onRediscoverSecureLaptop,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Find paired laptop on this Wi-Fi", fontSize = 12.sp)
+                            }
+                            OutlinedButton(
                                 onClick = onGetSecureLastSeen,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("Retrieve last verified laptop location", fontSize = 12.sp)
                             }
+                            Text(
+                                "Optional stolen-device last seen: only works after you deploy and provision a " +
+                                    "separate signed HTTPS location relay. The laptop must have a real location source.",
+                                color = MutedSlate500, fontSize = 11.sp
+                            )
+                            OutlinedTextField(
+                                value = relayDraft,
+                                onValueChange = { relayDraft = it },
+                                label = { Text("Optional HTTPS location relay", fontSize = 12.sp) },
+                                placeholder = { Text("https://relay.yourdomain.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedButton(
+                                onClick = { onConfigureRemoteRelay(relayDraft) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Save location relay (opt in)", fontSize = 12.sp) }
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(onCopyRemoteEnrollment()))
+                                    Toast.makeText(context, "Public pairing key copied", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Copy phone public key for relay enrollment", fontSize = 12.sp) }
                             OutlinedButton(
                                 onClick = onForgetSecurePairing,
                                 modifier = Modifier.fillMaxWidth()
