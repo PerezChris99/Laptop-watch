@@ -32,11 +32,6 @@ class IncidentPushService : FirebaseMessagingService() {
         PushEnrollment.enqueue(applicationContext)
     }
 
-    override fun onRegistered(installationId: String) {
-        super.onRegistered(installationId)
-        PushEnrollment.enqueue(applicationContext)
-    }
-
     override fun onDeletedMessages() {
         super.onDeletedMessages()
         if (!PushEnrollment.optedIn(this)) return
