@@ -95,10 +95,33 @@ short-lived workload identities; if using a service account JSON key, mount it
 read-only using an owner-controlled compose.override.yaml not checked into
 the repository. Do not place that key in this README or any .env file.
 
-The Android owner must explicitly opt into notifications; WorkManager registers
-its token with the signed relay. A push is **only a hint**. On opening the app,
+The Android owner must explicitly opt into notifications. The React Native
+foreground application registers and re-registers rotated FCM tokens with
+the signed relay; no background token-triggered commands are permitted. A push is **only a hint**. On opening the app,
 signed history is queried and verified before it becomes a forensic event.
 
 **Known limitations:** FCM delivery cannot be guaranteed on every offline
 phone/OEM. No relay/FCM service has been deployed or verified using actual
 owner accounts. Real wake/retry tests and owner consent still remain.
+
+
+## Local Python package and test workflow
+
+The relay is installable from its own `pyproject.toml`. The shared
+`laptopwatch.security` module is provided by the separately installed desktop
+package. From the repository root:
+
+```bash
+python -m pip install -e './desktop/src-python[test]'
+python -m pip install -e './services/location-relay[test]'
+python -m pytest -q services/location-relay/tests
+```
+
+The Dockerfile installs this same relay project with its optional `fcm`
+extra so local and container metadata cannot silently drift. For normal
+operation Firebase remains disabled until an owner enables the provider and
+supplies real credentials through the hosting environment; the image never
+bundles a personal service account key.
+
+The package manifest does not replace reviewed, fully resolved dependency
+locks or actual integration tests on the intended deployment platform.

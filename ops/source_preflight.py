@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -173,6 +174,11 @@ def native_contract() -> None:
                 ERRORS.append("React Native JavaScript must stay ECMAScript module")
         except ValueError:
             ERRORS.append("Invalid mobile package manifest")
+    require_file("mobile/android/gradle/wrapper/gradle-wrapper.properties", (
+        "gradle-9.4.1-bin.zip",
+        "distributionSha256Sum=2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb",
+    ))
+    require_file("mobile/android/build.gradle", ("ndkVersion = \"28.2.13676358\"",))
     jar = ROOT / "mobile/android/gradle/wrapper/gradle-wrapper.jar"
     if not jar.is_file() or not zipfile.is_zipfile(jar):
         ERRORS.append("Missing or corrupt official Android Gradle wrapper JAR")
@@ -224,6 +230,25 @@ def design_and_python() -> None:
         ERRORS.append("Python sidecar compilation failed")
     if not compileall.compile_dir(ROOT / "desktop/src-python/tests", quiet=1):
         ERRORS.append("Python test source compilation failed")
+    if not compileall.compile_dir(ROOT / "services/location-relay/laptopwatch_relay", quiet=1):
+        ERRORS.append("Owner relay Python source compilation failed")
+    if not compileall.compile_dir(ROOT / "services/location-relay/tests", quiet=1):
+        ERRORS.append("Owner relay Python test compilation failed")
+    for path in ("desktop/src-python/pyproject.toml", "services/location-relay/pyproject.toml"):
+        value = require_file(path)
+        if value:
+            try:
+                project = tomllib.loads(value)
+                extras = project["project"]["optional-dependencies"]
+                if "test" not in extras:
+                    ERRORS.append(f"Missing test extra for {path}")
+                if path.startswith("services/") and "fcm" not in extras:
+                    ERRORS.append("Relay needs explicit optional FCM dependencies")
+            except (ValueError, KeyError, TypeError):
+                ERRORS.append(f"Invalid Python package metadata: {path}")
+    require_file("services/location-relay/Dockerfile", (
+        "COPY services/location-relay/pyproject.toml", "'.[fcm]'", 
+    ))
 
 
 def main() -> int:
