@@ -1,0 +1,20 @@
+# MAESTRO SOURCE ONLY — cannot run until real RN Android app is installed.
+# Requires PAIRING_QR_URI from a fresh in-person laptop QR and immediate
+# desktop approval. Never use a saved expired QR or fake credentials.
+appId: com.kc.laptopwatch.mobile
+---
+- launchApp
+- tapOn: "I understand and agree"
+- tapOn: "Pair"
+- tapOn: "Paste pairing invitation"
+- inputText: ${PAIRING_QR_URI}
+- tapOn: "Request secure pairing"
+- assertVisible: "Check desktop approval"
+# Manually approve this exact phone in the desktop owner UI now.
+- tapOn: "Check desktop approval"
+- tapOn: "Home"
+- assertVisible: "Immediate actions"
+- tapOn: "Lock laptop"
+- tapOn: "Execute"
+- tapOn: "Sound alarm"
+- tapOn: "Execute"

@@ -12,7 +12,8 @@
     "prebuild": "python ../design/generate.py --check",
     "lint": "eslint . --max-warnings=0",
     "check:js": "tsc --noEmit --project jsconfig.json",
-    "format:check": "prettier --check \"src-ui/src/**/*.{js,jsx,css}\""
+    "format:check": "prettier --check \"src-ui/src/**/*.{js,jsx,css}\"",
+    "test:ui": "vitest run --environment jsdom"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
@@ -32,6 +33,9 @@
     "prettier": "3.6.2",
     "typescript": "5.9.3",
     "@types/react": "19.2.3",
-    "@types/react-dom": "19.2.3"
+    "@types/react-dom": "19.2.3",
+    "vitest": "4.0.16",
+    "@testing-library/react": "16.3.0",
+    "jsdom": "26.1.0"
   }
 }

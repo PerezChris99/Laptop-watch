@@ -34,3 +34,12 @@ What was NOT executed:
 Full evidence, source-only status and blocked commands are in:
 docs/DEFECTS.md, docs/PARITY.md, docs/RELEASE_RUNBOOK.md,
 docs/DECISIONS.md and docs/RELEASE_CHECKLIST.md.
+
+Additional engineering warnings:
+- The new locally verified audit-history subcommand and desktop screens are
+  not yet validated by Python pytest, Rust cargo or React/Vitest build.
+- Maestro YAML flows are reviewable input for later device testing, not
+  passing automated acceptance evidence.
+- Desktop live UI currently does not implement a self-rendering media stream.
+- Foreground React Native connection, complete native certificate pinning
+  registration, SQLCipher and consent-scanned QR camera remain unavailable.

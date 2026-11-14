@@ -155,3 +155,23 @@ interop, Android signed-network tests or native app build results.
 - Direct app ownership and signing are NOT substitutes for device approval;
   the Android RN migration is not a releasable replacement for Kotlin yet.
 - Phase 7 is incomplete; do not publish, market as verified or delete Kotlin.
+
+## Follow-on verified-history and desktop UI changes — 2026-11-14
+
+The next engineering checkpoint adds Tauri IPC for **last-seen-only**
+SQLite reading and locally verified signed audit history, a Python tamper
+regression test, desktop navigation screens and source-only Vitest +
+Maestro flows. The security-sensitive code and tests were reviewed as
+GitHub text; no full checkout build, pytest run or native UI/hardware
+test was executed. **All phases remain BLOCKED.**
+
+| Requirement | Status | Exact human action to unblock |
+|---|---|---|
+| Signed audit UI | BLOCKED | On a trusted checkout execute `cd desktop/src-python && pytest -q tests/test_cli_audit.py`, `cd desktop/src-tauri && cargo test --locked`; manually tamper an audit copy and verify Tauri never shows unverified entries |
+| Last-seen view | BLOCKED | Run desktop Tauri build and cross-process SQLite fixture tests; confirm coordinates are only real gpsd history and always LAST SEEN |
+| Desktop UI tests | BLOCKED | `cd desktop && npm ci && npm run test:ui && npm run lint && npm run check:js && npm run build`; provide reviewed lockfile, supported npm registry, component screenshots and WCAG AA/keyboard check |
+| Mobile Maestro | BLOCKED | Generate/build RN native Android, install on emulator plus physical device and execute `maestro test mobile/e2e/01-pair-and-controls.yaml` with a real fresh signed QR and actual owner approval; then media flow with webcam/permission consent |
+| Signing/notarization | BLOCKED | Owner obtain certificates and accounts and execute commands in `docs/SIGNING_AND_NOTARIZATION.md`; inspect exact signed binaries on devices |
+| Performance / soak | BLOCKED | Owner run 24-hour device soak, CPU/RSS/installer-size/cold-start and action/stream latency measurements on named hardware; attach raw logs and actual numbers |
+
+A merged PR does **not** turn any of these BLOCKED rows into DELIVERED.

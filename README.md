@@ -209,6 +209,6 @@ fully integrated Windows CNG/macOS Keychain/Linux Secret Service storage.
 assets, consumer installer, verified checkout, app-store acceptance or
 approved legal policies are provided by these source commits. The rights
 holder must decide licensing, supported devices, buyer terms and compliance
-before publishing or selling. See [release checklist](docs/RELEASE_CHECKLIST.md),
+before publishing or selling. See [release checklist](docs/RELEASE_CHECKLIST.md) and [signing/notarization runbook](docs/SIGNING_AND_NOTARIZATION.md),
 [threat model](docs/THREAT_MODEL.md), [draft EULA](docs/commercial/EULA.md)
 and [draft privacy policy](docs/commercial/PRIVACY.md).

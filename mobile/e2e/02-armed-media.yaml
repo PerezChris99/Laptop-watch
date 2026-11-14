@@ -1,0 +1,18 @@
+# MAESTRO SOURCE ONLY — requires verified approved pairing and real camera.
+# The laptop webcam must be lawful to record and physically available.
+appId: com.kc.laptopwatch.mobile
+---
+- launchApp
+- tapOn: "I understand and agree"
+- tapOn: "Home"
+- tapOn: "Arm laptop"
+- tapOn: "Confirm"
+- tapOn: "Take photo"
+- tapOn: "Execute"
+- tapOn: "Evidence"
+- assertVisible: "Evidence vault"
+- tapOn: "Live"
+- assertVisible: "Live view"
+- tapOn: "Request live video"
+- assertVisible: "End live session"
+- tapOn: "End live session"

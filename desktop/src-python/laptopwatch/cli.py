@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+from collections import deque
 import os
 from pathlib import Path
 import sys
@@ -12,7 +13,7 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from .audit import SignedAuditLog
+from .audit import SignedAuditLog, AuditIntegrityError
 from .evidence import EvidenceRecorder
 from .tracking import GpsdReceiver, LastSeenStore, TrackingService, LocationPoller
 from .controller import NativeController
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     reject = sub.add_parser('reject', help='reject pairing from local desktop UI')
     reject.add_argument('--request-id', required=True)
     sub.add_parser('devices', help='list paired phone ids')
+    sub.add_parser('audit-history', help='verify signed audit chain and return 100 latest events')
     sub.add_parser('incidents', help='list recent verified person incidents')
     sub.add_parser('clear-incidents', help='delete local incident metadata (not media)')
 
@@ -114,6 +116,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'devices':
             phones = registry._db.execute('SELECT id,revoked FROM paired_devices ORDER BY id').fetchall()
             print(json.dumps([{'id':p[0], 'revoked':bool(p[1])} for p in phones]))
+            return 0
+        if args.command == 'audit-history':
+            # Full chain MUST verify before any event is returned. There is no
+            # anonymous network route; this is a local Tauri IPC command only.
+            audit_path = state_dir / 'audit.jsonl'
+            if not audit_path.exists():
+                print('[]')
+                return 0
+            try:
+                SignedAuditLog.verify(audit_path, get_audit_key(state_dir).public_key())
+            except AuditIntegrityError:
+                print('Audit history integrity failure', file=sys.stderr)
+                return 3
+            recent = deque(maxlen=100)
+            with audit_path.open('rb') as stream:
+                for raw in stream:
+                    event = json.loads(raw)['event']
+                    recent.append({
+                        'action':event['action'], 'device':event['device'],
+                        'result':event['result'], 'timestamp_ms':event['timestamp_ms']
+                    })
+            print(json.dumps(list(recent), separators=(',', ':')))
             return 0
         if args.command in ('incidents', 'clear-incidents'):
             store = IncidentStore(state_dir / 'incidents.db')

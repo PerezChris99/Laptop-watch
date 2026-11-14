@@ -91,3 +91,38 @@ Release boundaries:
 - Android 15+ limits `dataSync` foreground service time to six hours per 24 hours in the background. Rework continuous monitoring and notifications; do not rename foreground service type just to evade platform policy: https://developer.android.com/develop/background-work/services/fgs/timeout
 - Client-only zero-cloud marketing must be reevaluated if relay, signaling, payments, licensing, push, or analytics providers are deployed. Data flow statements must match actual deployments.
 - Current Android `minSdk=24` disagrees with README Android 8+ claim. Choose an explicitly tested minimum, not only a badge.
+
+## Overhaul checkpoints — 2026-11-14 (not production accepted)
+
+The desktop uses a Rust Tauri IPC owner UI, an independently signed HTTPS
+Python gateway, and a Python sidecar. A new Rust process supervisor includes
+single-instance and five-crash/60-second backoff logic, with a generation
+fence to prevent stale monitors clearing a replacement process. The design
+is **uncompiled/unverified** until cargo/native device tests pass.
+
+**Owner channel deviation:** The current owner dashboard still uses Tauri
+IPC and local authorized CLI calls. It does NOT yet implement the proposed
+per-launch bearer-token loopback HTTP channel and separately pinned signed
+loopback health endpoint. This security boundary is a P0 stop-ship gate;
+never add an anonymous localhost control route to satisfy a design checklist.
+
+**Signed audit UI:** Local history is served via Tauri IPC calling
+`laptopwatch audit-history`, which verifies the whole Ed25519 chained log
+before returning at most 100 redacted metadata events. No unauthenticated
+REST audit history endpoint is exposed.
+
+**GNSS UI:** Desktop read-only SQLite snapshots show LAST SEEN, not LIVE.
+Even if a previous GNSS fix exists, OS sleep or power-off means no guarantee
+that the laptop is in the same location.
+
+**RN mobile:** JavaScript-only React Native source defines exact LW1
+signed controls, pairing, an OS-native pinning bridge, Keychain adapter,
+app-private SQLite cache schema, receiver-only WebRTC, and consent-first
+screens. The native Android/iOS projects, secure storage validation,
+pinning registration, foreground connection service, real QR camera scan and
+hardware acceptance are **not implemented/verified**. Kotlin `app/`
+remains the parity reference.
+
+**Do not distribute** the checkpoint as a production laptop security
+system, market it as always-on during OS sleep, or describe native
+security/recovery as externally verified. See `docs/DEFECTS.md`.
