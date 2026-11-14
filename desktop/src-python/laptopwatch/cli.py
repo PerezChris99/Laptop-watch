@@ -11,6 +11,8 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from .audit import SignedAuditLog
+from .evidence import EvidenceRecorder
+from .tracking import GpsdReceiver, LastSeenStore, TrackingService, LocationPoller
 from .controller import NativeController
 from .gateway import GatewayState, create_app
 from .identity import initialize_identity, get_audit_key
@@ -30,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser('serve', help='HTTPS signed-control gateway')
     serve.add_argument('--port', type=int, default=8765)
     serve.add_argument('--listen-lan', action='store_true')
+    serve.add_argument('--enable-gpsd', action='store_true',
+                       help='Opt in to reading a locally configured GNSS receiver via gpsd')
     args = parser.parse_args(argv)
     state_dir = args.state_dir
     if args.command == 'init':
@@ -71,12 +75,30 @@ def main(argv: list[str] | None = None) -> int:
                 print('LAN access enabled: only signed requests accepted. Pin TLS fingerprint on phone.')
             print('TLS certificate SHA-256 fingerprint:', identity['tls_fingerprint_sha256'])
             from uvicorn import run
-            app = create_app(GatewayState(SignedRequestVerifier(registry),
-                   SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir)), NativeController()))
-            run(app, host=host, port=args.port,
-                ssl_keyfile=str(state_dir / 'tls_key.pem'),
-                ssl_certfile=str(state_dir / 'tls_cert.pem'),
-                access_log=False, proxy_headers=False, server_header=False)
+            evidence = EvidenceRecorder(state_dir / 'evidence')
+            location_store = LastSeenStore(state_dir / 'last_seen.db') if args.enable_gpsd else None
+            tracking = TrackingService(location_store, GpsdReceiver()) if location_store is not None else None
+            app = create_app(GatewayState(
+                SignedRequestVerifier(registry),
+                SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir)),
+                NativeController(),
+                evidence=evidence,
+                tracking=tracking,
+            ))
+            poller = LocationPoller(tracking) if tracking is not None else None
+            if poller is not None:
+                poller.start()
+            try:
+                run(app, host=host, port=args.port,
+                    ssl_keyfile=str(state_dir / 'tls_key.pem'),
+                    ssl_certfile=str(state_dir / 'tls_cert.pem'),
+                    access_log=False, proxy_headers=False, server_header=False)
+            finally:
+                if poller is not None:
+                    poller.stop()
+                evidence.stop_if_recording()
+                if location_store is not None:
+                    location_store.close()
             return 0
     finally:
         registry.close()
