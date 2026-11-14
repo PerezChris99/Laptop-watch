@@ -2,10 +2,16 @@ import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RTCView } from 'react-native-webrtc';
+import Video from 'react-native-video';
+import { downloadEvidence } from './net/evidence.js';
+import { QrScanner } from './pairing/QrScanner.jsx';
+import { askNotificationPermission } from './permissions/access.js';
+import { startForegroundConnection, stopForegroundConnection } from './background/bridge.js';
+import { checkNotifications, RESULTS } from 'react-native-permissions';
 import { startLiveView } from './media/live.js';
 import { locationStatus } from './location/labels.js';
-import { cacheLastSeen, cacheEvidence } from './storage/db.js';
-import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { cacheLastSeen, cacheEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
+import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, Image } from 'react-native';
 import { tokens } from './design/tokens.js';
 import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, DestructiveButton, ConsentNotice, Toast, EmptyState, LastSeenBadge, EvidenceThumb } from './components/Paper.jsx';
 import { loadIdentity, saveIdentity, clearIdentity } from './storage/identity.js';
@@ -26,7 +32,6 @@ const styles = StyleSheet.create({
   tabText: { color: c.blueDeep, fontSize: 13, fontWeight: '600' },
   content: { padding: 18, paddingBottom: 42 },
   body: { color: c.inkMuted, fontSize: 14, lineHeight: 23, marginBottom: 9 },
-  field: { backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline, borderRadius: 10, padding: 13, fontSize: 14, color: c.ink, marginBottom: 12, minHeight: 50 },
   label: { color: c.ink, fontSize: 13, fontWeight: '700', marginBottom: 6 },
   metric: { color: c.ink, fontSize: 18, fontWeight: '600' },
 });
@@ -35,6 +40,13 @@ function readableError(error) { return error?.message || 'Request failed safely'
 
 export default function App() {
   const [consented, setConsented] = useState(false);
+  const [consentReady, setConsentReady] = useState(false);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [backgroundOptIn, setBackgroundOptIn] = useState(false);
+  const [backgroundActive, setBackgroundActive] = useState(false);
+  const foregroundStarted = useRef(false);
+  const [audioListen, setAudioListen] = useState(false);
+  const [recordingRequested, setRecordingRequested] = useState(false);
   const [tab, setTab] = useState('Home');
   const [paired, setPaired] = useState(null);
   const [qr, setQr] = useState('');
@@ -43,6 +55,8 @@ export default function App() {
   const [location, setLocation] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [evidence, setEvidence] = useState([]);
+  const [localMedia, setLocalMedia] = useState({});
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [liveStream, setLiveStream] = useState(null);
   const liveSession = useRef(null);
   const [lastFixFresh, setLastFixFresh] = useState(false);
@@ -56,10 +70,20 @@ export default function App() {
   useEffect(() => {
     mounted.current = true;
     loadIdentity().then(setPaired).catch(() => setError('Secure pairing storage could not be read'));
+    Promise.all([getPreference('owner_consent_v1'), getPreference('background_opt_in')])
+      .then(([consent, fgs]) => { if (mounted.current) { setConsented(consent === '1'); setBackgroundOptIn(fgs === '1'); setConsentReady(true); } })
+      .catch(() => { if (mounted.current) { setConsentReady(true); setError('Private consent storage unavailable. Controls remain disabled.'); } });
     try { pinnedTransport(); setTransportAvailable(true); }
     catch (_) { setTransportAvailable(false); }
     return () => { mounted.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (!paired?.desktopId) { setLocation(null); return; }
+    loadLastSeen(paired.desktopId).then((cached) => {
+      if (cached) { setLocation(cached); setLastFixFresh(false); }
+    }).catch(() => {});
+  }, [paired?.desktopId]);
 
   // Live media is an explicit foreground-only action. Leaving the screen or
   // putting the app in the background terminates the receiver immediately.
@@ -81,6 +105,39 @@ export default function App() {
     });
     return () => subscription.remove();
   }, []);
+
+  // Native foreground polling is an explicit owner opt-in and has no command
+  // outbox. It survives a hidden JS screen only while the native service can
+  // authenticate the paired armed desktop. Native stop on remote disarm.
+  useEffect(() => {
+    let alive = true;
+    const sync = async () => {
+      if (!backgroundOptIn || !paired?.approved || (status && !status.motion_armed)) {
+        if (foregroundStarted.current) {
+          foregroundStarted.current = false;
+          await stopForegroundConnection().catch(() => {});
+          if (alive) setBackgroundActive(false);
+        }
+        return;
+      }
+      if (!status?.motion_armed || !connected || foregroundStarted.current) return;
+      try {
+        const permission = await checkNotifications();
+        const granted = permission.status === RESULTS.GRANTED || permission.status === RESULTS.LIMITED;
+        if (!granted || !alive) return;
+        await startForegroundConnection({
+          ownerOptedIn: true, pairedApproved: true, armed: true, notificationsGranted: true,
+        }, paired);
+        if (!alive) { await stopForegroundConnection(); return; }
+        foregroundStarted.current = true;
+        setBackgroundActive(true);
+      } catch (_) {
+        if (alive) setError('Native background connection unavailable; app still works while open.');
+      }
+    };
+    sync();
+    return () => { alive = false; };
+  }, [backgroundOptIn, paired, status?.motion_armed, connected]);
 
   const client = useCallback(() => {
     if (!paired?.approved) throw new Error('Phone must be approved on the laptop');
@@ -169,6 +226,8 @@ export default function App() {
         // Re-read signed status so a stale UI never authorizes an offline command.
         await client().status();
         await client().action(operation);
+        if (operation === 'recordStart') setRecordingRequested(true);
+        if (operation === 'recordStop') setRecordingRequested(false);
         setNotice(label + ' accepted by the desktop gateway.');
         refresh();
       }) },
@@ -179,9 +238,9 @@ export default function App() {
     if (liveSession.current || !connected || !status?.motion_armed) {
       throw new Error('Arm an online laptop before requesting its camera');
     }
-    const session = await startLiveView(client(), setLiveStream);
+    const session = await startLiveView(client(), setLiveStream, { includeAudio: audioListen });
     liveSession.current = session;
-    setNotice('Encrypted live receiver requested. Microphone is disabled.');
+    setNotice(audioListen ? 'Encrypted live receiver requested with explicit laptop audio permission.' : 'Encrypted live receiver requested. Audio is disabled.');
   });
 
   const stopLive = () => perform(async () => {
@@ -200,6 +259,13 @@ export default function App() {
         { text: 'Confirm', onPress: () => perform(async () => {
           await client().status();
           await client().arm(next);
+          if (!next) {
+            setRecordingRequested(false);
+            if (liveSession.current) { await liveSession.current.stop(); liveSession.current = null; setLiveStream(null); }
+            foregroundStarted.current = false;
+            await stopForegroundConnection().catch(() => {});
+            setBackgroundActive(false);
+          }
           await refresh();
         }) },
       ]);
@@ -213,9 +279,9 @@ export default function App() {
         <Text style={styles.body}>Desktop ID: {paired.desktopId}</Text>
         {!paired.approved && <SecondaryButton title="Check desktop approval" onPress={approveNow} disabled={busy || !transportAvailable} />}
       </> : <>
-        <Text style={styles.label}>QR invitation (temporary text entry until camera scanner is integrated)</Text>
-        <TextInput style={styles.field} value={qr} onChangeText={setQr} multiline autoCapitalize="none"
-          placeholder="laptopwatch://pair?…" accessibilityLabel="Paste pairing invitation" />
+        <SecondaryButton title={scannerVisible ? 'Close QR scanner' : 'Scan laptop QR'} onPress={() => setScannerVisible(!scannerVisible)} disabled={busy || !transportAvailable} />
+        {scannerVisible ? <QrScanner onAccepted={(value) => { setQr(value); setScannerVisible(false); }} /> : null}
+        {qr ? <Text style={styles.body}>Signed invitation scanned. Complete pairing before it expires.</Text> : null}
         <PrimaryButton title="Request secure pairing" onPress={pairNow} disabled={!transportAvailable || busy || qr.length < 40} />
       </>}
     </PaperCard>;
@@ -244,23 +310,58 @@ export default function App() {
       {!liveStream && <EmptyState message="No verified live stream. Only a deliberate request can open the armed laptop camera." />}
       {liveStream ? <RTCView streamURL={liveStream.toURL()} style={{ height: 240, backgroundColor: c.ink }} objectFit="contain" /> : null}
       {!liveSession.current ?
-        <PrimaryButton title="Request live video" disabled={!connected || !status?.motion_armed || busy} onPress={startLive} /> :
+        <PrimaryButton title={audioListen ? 'Request live video + consented laptop audio' : 'Request silent live video'}
+          disabled={!connected || !status?.motion_armed || busy} onPress={startLive} /> :
         <DestructiveButton title="End live session" disabled={busy} onPress={stopLive} />}
+      <SecondaryButton title={audioListen ? 'Disable laptop microphone audio' : 'Enable optional laptop audio'}
+        disabled={busy || !!liveSession.current}
+        onPress={() => {
+          if (audioListen) { setAudioListen(false); setPreference('mic_listen_opt_in', '0').catch(() => {}); return; }
+          Alert.alert('Enable listening?', 'This accesses the laptop microphone. Confirm all affected people were informed and you are legally permitted to listen. Your phone microphone remains disabled.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'I have permission', onPress: () => {
+              setPreference('mic_listen_opt_in', '1').then(() => setAudioListen(true))
+                .catch(() => setError('Could not store microphone listening consent'));
+            } },
+          ]);
+        }} />
       <SecondaryButton title="Take a still photo" disabled={!connected || !status?.motion_armed || busy}
         onPress={() => confirm('Photo', 'photo')} />
-      <ConsentNotice>Microphone disabled. Intercom must not activate until there is a verified, separate permission and consent flow.</ConsentNotice>
+      <ConsentNotice>Phone microphone is off. Laptop audio is opt-in and may record bystanders; stop the stream or disarm immediately if consent changes.</ConsentNotice>
     </PaperCard>;
 
     if (tab === 'Evidence') return <PaperCard><SectionHeader title="Evidence vault" subtitle="Signed inventory from the paired laptop; no synthetic media." />
       {!connected ? <EmptyState message="Laptop offline; vault inventory cannot be refreshed." /> :
         evidence.length === 0 ? <EmptyState message="No complete, authenticated evidence items returned." /> :
         evidence.map((item) => <View key={item.kind + '-' + item.id}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 10, borderBottomWidth: 1, borderColor: c.hairline }}>
-          <EvidenceThumb kind={item.kind} />
-          <View><Text style={styles.metric}>{item.kind === 'photo' ? 'Photo' : 'Video'}</Text>
-            <Text style={styles.body}>{item.size_bytes} bytes · {new Date(item.modified_at_ms).toLocaleString()}</Text></View>
+          style={{ paddingVertical: 10, borderBottomWidth: 1, borderColor: c.hairline }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+            <EvidenceThumb kind={item.kind} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metric}>{item.kind === 'photo' ? 'Photo' : 'Video'}</Text>
+              <Text style={styles.body}>{item.size_bytes} bytes · {new Date(item.modified_at_ms).toLocaleString()}</Text>
+            </View>
+          </View>
+          <SecondaryButton title={localMedia[item.id] ? 'View private copy' : 'Download signed private copy'}
+            disabled={busy || !connected}
+            onPress={() => perform(async () => {
+              let file = localMedia[item.id];
+              if (!file) {
+                file = await downloadEvidence(client(), item);
+                setLocalMedia((old) => ({ ...old, [item.id]: file }));
+              }
+              setSelectedMedia(file);
+            })} />
         </View>)}
-      <ConsentNotice>Export, preview, secure app-private downloading and deletion still require device and privacy acceptance tests.</ConsentNotice>
+      {selectedMedia && <View style={{ paddingVertical: 14 }}>
+        <Text style={styles.metric}>Private {selectedMedia.kind} preview</Text>
+        {selectedMedia.kind === 'photo' ?
+          <Image source={{ uri: selectedMedia.uri }} resizeMode="contain" style={{ width: '100%', height: 260 }} /> :
+          <Video source={{ uri: selectedMedia.uri }} style={{ width: '100%', height: 240 }}
+            controls paused resizeMode="contain" />}
+        <SecondaryButton title="Close preview" onPress={() => setSelectedMedia(null)} />
+      </View>}
+      <ConsentNotice>Files remain in app-private storage. Sharing is disabled until export permission, redaction and owner policy are separately verified.</ConsentNotice>
     </PaperCard>;
 
     if (tab === 'Alerts') return <PaperCard><SectionHeader title="Verified person alerts" />
@@ -282,16 +383,38 @@ export default function App() {
       </PaperCard>;
     }
 
-    return <PaperCard><SectionHeader title="Settings & readiness" subtitle="Secure defaults — without a verified transport, control remains unavailable." />
+    return <PaperCard><SectionHeader title="Settings & privacy" subtitle="Your device, your consent and your security settings." />
       <Text style={styles.body}>Native TLS pinning: {transportAvailable ? 'Bridge present, device testing pending' : 'Not installed'}</Text>
-      <Text style={styles.body}>Cloud push: not configured. Background service: not integrated. WebRTC: not integrated.</Text>
+      <Text style={styles.body}>Push: not configured. Native background connection: {backgroundActive ? 'requested and active in process' : 'off'}.</Text>
+      <SecondaryButton title={backgroundOptIn ? 'Turn off background paired connection' : 'Enable optional armed background connection'}
+        disabled={busy || !paired?.approved}
+        onPress={() => {
+          if (backgroundOptIn) {
+            perform(async () => {
+              await setPreference('background_opt_in', '0'); setBackgroundOptIn(false);
+              foregroundStarted.current = false; await stopForegroundConnection(); setBackgroundActive(false);
+            });
+            return;
+          }
+          Alert.alert('Keep a signed connection while armed?', 'Android will show an ongoing notification and use battery. It cannot protect a sleeping or powered-off laptop. No camera or mic is started by this permission.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Enable', onPress: () => perform(async () => {
+              if (!await askNotificationPermission()) throw new Error('Notification permission denied; background disabled');
+              await setPreference('background_opt_in', '1'); setBackgroundOptIn(true);
+            }) },
+          ]);
+        }} />
       <Text style={styles.body}>No analytics. No covert recording. No automatic audio capture.</Text>
       <DestructiveButton title="Forget this paired phone" disabled={!paired || busy}
         onPress={() => Alert.alert('Revoke this local pairing?', 'This removes local credentials. Revoke the device on the desktop too.', [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Forget locally', style: 'destructive', onPress: () => perform(async () => {
+            foregroundStarted.current = false; await stopForegroundConnection().catch(() => {});
+            setBackgroundOptIn(false); setBackgroundActive(false);
+            await setPreference('background_opt_in', '0');
+            if (paired?.desktopId) await deleteDesktopCache(paired.desktopId);
             await clearIdentity(); setPaired(null); setStatus(null); setConnected(false);
-            setLocation(null); setLastFixFresh(false); setAlerts([]); setEvidence([]);
+            setLocation(null); setLastFixFresh(false); setAlerts([]); setEvidence([]); setLocalMedia({}); setSelectedMedia(null);
             if (liveSession.current) { await liveSession.current.stop(); liveSession.current = null; }
             setLiveStream(null); afterId.current = 0;
           }) },
@@ -299,12 +422,20 @@ export default function App() {
     </PaperCard>;
   };
 
+  if (!consentReady) return <SafeAreaView style={styles.root}><View style={styles.content}>
+    <ActivityIndicator color={c.blue} accessibilityLabel="Opening protected consent settings" />
+  </View></SafeAreaView>;
+
   if (!consented) return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.kicker}>LAPTOPWATCH · PERSONAL SECURITY</Text>
     <SectionHeader title="Protection with permission." subtitle="Visible, consent-based monitoring of a device you own and control." />
     <ConsentNotice>Photographs and video can capture other people. Inform everyone affected and comply with local privacy law. Microphone recording is off by default. No hidden camera activity or offline action queue.</ConsentNotice>
     <PaperCard><Text style={styles.body}>Pair your phone in person. Every remote action must be signed and accepted by the awake laptop. The owner can stop monitoring and revoke access.</Text>
-      <PrimaryButton title="I understand and agree" onPress={() => setConsented(true)} />
+      <PrimaryButton title="I understand and agree" onPress={() => {
+        setPreference('owner_consent_v1', '1').then(() => setConsented(true))
+          .catch(() => setError('Could not securely record consent; controls remain disabled'));
+      }} />
+      <Toast message={error} error />
     </PaperCard>
   </ScrollView></SafeAreaView>;
 

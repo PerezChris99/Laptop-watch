@@ -13,9 +13,10 @@ import { RTCPeerConnection, RTCSessionDescription } from 'react-native-webrtc';
  *
  * @param {import('../net/SignedClient.js').SignedClient} client
  * @param {(stream:object|null)=>void} onStream
+ * @param {{includeAudio?:boolean}} options
  * @returns {Promise<LiveSession>}
  */
-export async function startLiveView(client, onStream) {
+export async function startLiveView(client, onStream, options = {}) {
   const status = await client.status();
   if (!status.online || !status.motion_armed) {
     throw new Error('The verified laptop is not armed or online');
@@ -25,6 +26,11 @@ export async function startLiveView(client, onStream) {
   let stopped = false;
   try {
     peer.addTransceiver('video', { direction: 'recvonly' });
+    if (options.includeAudio === true) {
+      // Receive audio from the laptop only, after explicit phone consent.
+      // This does NOT transmit phone mic and does not open local devices.
+      peer.addTransceiver('audio', { direction: 'recvonly' });
+    }
     peer.ontrack = (event) => {
       const media = event.streams?.[0];
       if (!stopped && event.track?.kind === 'video' && media) {
@@ -58,7 +64,7 @@ export async function startLiveView(client, onStream) {
       throw new Error('No usable WebRTC video offer');
     }
     const answer = await client.json('POST', '/api/webrtc/offer', {
-      sdp: current.sdp, type: 'offer', include_audio: false,
+      sdp: current.sdp, type: 'offer', include_audio: options.includeAudio === true,
     });
     if (answer.type !== 'answer' || typeof answer.sdp !== 'string' ||
         answer.media_encryption !== 'DTLS-SRTP') {

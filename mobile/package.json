@@ -11,8 +11,10 @@
     "check:js": "tsc --noEmit --project jsconfig.json",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "test": "npm run test:protocol",
-    "format:check": "prettier --check \"src/**/*.{js,jsx}\""
+    "test": "npm run test:protocol && npm run test:ui",
+    "format:check": "prettier --check \"src/**/*.{js,jsx}\"",
+    "start": "react-native start",
+    "test:ui": "jest --config jest.config.cjs --runInBand"
   },
   "dependencies": {
     "@noble/ed25519": "2.3.0",
@@ -25,7 +27,11 @@
     "react-native-keychain": "11.0.0",
     "react-native-url-polyfill": "2.0.0",
     "@op-engineering/op-sqlite": "18.2.5",
-    "react-native-webrtc": "155.0.1"
+    "react-native-webrtc": "155.0.1",
+    "react-native-camera-kit": "18.0.1",
+    "react-native-permissions": "5.6.3",
+    "react-native-video": "6.19.3",
+    "react-native-safe-area-context": "5.6.2"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
@@ -38,6 +44,17 @@
     "eslint-plugin-security": "4.2.1",
     "jest": "30.2.0",
     "prettier": "3.6.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@babel/core": "7.26.9",
+    "@babel/runtime": "7.26.9",
+    "@react-native-community/cli": "20.2.0",
+    "@react-native-community/cli-platform-android": "20.2.0",
+    "@react-native-community/cli-platform-ios": "20.2.0",
+    "@react-native/jest-preset": "0.88.1",
+    "react-test-renderer": "19.3.0",
+    "@types/react": "19.2.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }
