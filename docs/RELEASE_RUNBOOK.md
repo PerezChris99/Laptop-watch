@@ -1,8 +1,8 @@
 # LaptopWatch — separate verified-build and hardware acceptance runbook
 
-**As of 14 November 2026:** owner requested source overhaul first and
-separate native builds, external services, physical tests, security review and
-release acceptance later. The commands below are **not recorded as passed**.
+**As of 14 November 2026:** owner authorized removing the former Kotlin
+controller while still requiring a separate native build, external service,
+physical-device, security-review and release acceptance phase. The commands below are **not recorded as passed**.
 A GitHub merge or source syntax check is NOT evidence of installed app parity.
 
 ## 0. Clean checkout, source-policy checks
@@ -149,8 +149,10 @@ flows, not proven acceptance tests; expand and run them on real hardware.
   `docs/SIGNING_AND_NOTARIZATION.md`.
 - Owner must supply legal/privacy/EULA/license, domain/relay/Firebase and
   signing accounts, store compliance and support procedures.
-- Obtain owner **separate explicit approval** to remove Kotlin `app/`
-  *only after* a green, log-backed physical parity matrix.
+- Owner has **explicitly authorized and executed** retirement of the Kotlin
+  `app/` before native acceptance. Historical source is available in Git.
+  This authorization **does not waive** logged physical feature parity,
+  signing, security or commercial release gates.
 
 Current authoring did **not** execute these build, native, security or
 hardware commands. Log real successes and failures in `docs/DEFECTS.md`.

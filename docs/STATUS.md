@@ -1,46 +1,60 @@
-# LaptopWatch — implementation and release status
+# LaptopWatch — authoritative implementation status
 
-**Checkpoint: November 14, 2026.** Code milestone only; NOT production ready.
-Latest source is developed on perez then integrated into main. A merge is
-not the same as a verified consumer release.
+**Updated:** 14 November 2026  
+**Repository state:** owner-authorized source migration to React Native completed
+as a version-control decision; **release is STOP-SHIP**.
 
-| Workstream | Present in source | Outstanding acceptance / non-code gate |
+This is a source inventory, not a test certificate. Latest code-level
+overhaul changes include PR #19 (authenticated desktop health response)
+and PR #20 (legacy Kotlin app/build retirement). See Git history and
+[retirement record](KOTLIN_RETIREMENT.md).
+
+| Surface | Tracked implementation | Required independent verification |
 |---|---|---|
-| Android | Compose/Room, QR-pinned TLS, phone-specific Ed25519/AES-GCM, signed photos/MP4, WebRTC media, optional FCM/WorkManager | Android build, real phone pairing/recording/push tests, permissions, OEM battery profiles |
-| Desktop | React/Tauri 2 Rust owner UI, controlled Python sidecar, tray, device/incident/evidence screens | Rust/npm builds, OS installers, signing/notarization and reboots |
-| Detection | Owner-armed verified person detector adapter with SHA256-pinned external ONNX weights, bounded auto-photo/MP4 | Licensed weights, seven+ scene false-positive evaluation, camera resource/thermal tests |
-| Recovery | Opt-in real GNSS/gpsd, durable last-seen and signed retry queue, owner relay encryption AES-256-GCM | True GNSS hardware, public DNS/TLS deployment, backups, outage/resume field tests |
-| Alerting | Signed incident metadata uploader, owner-only authenticated relay, encrypted FCM tokens, phone opt-in and generic push hints | Live Firebase project/ADC, actual FCM/device delivery and recovery |
-| Security | Paired signed controls, replay denial, TLS fingerprint, audit chain, no runnable legacy PIN/HTTP | Desktop OS-native secret protection, independent penetration review, retention/deletion |
-| Commercial | Source-level packaging recipes and draft policies/pricing | Signed installers, buyer-approved license, merchant, support and store acceptance |
+| Android phone | RN JavaScript UX; Kotlin pinned HTTP, camera QR, evidence, mDNS, consented connectedDevice FGS; optional owner-gated FCM | Gradle build/test/lint, Android 8–current devices, policy and real Wi-Fi |
+| iOS phone | RN JavaScript UX; Swift pinned URLSession, private evidence, Keychain, consent and signed public-CA relay | Xcode/CocoaPods, physical iOS permission/network/media tests, signing |
+| Desktop UI | React/Vite, Tauri/Rust tray, autostart opt-in, single instance, bounded restarts, challenge-proven health | Rust + JS builds, signed installers, Windows/macOS/Linux lifecycle and soak |
+| Desktop engine | Python FastAPI signed pairing/commands, camera, incident model gate, audit, evidence and GNSS | Complete pytest, webcam/MP4/WebRTC/audio, adversarial network and OS |
+| Relay/FCM | Owner-provisionable encrypted HTTPS metadata relay; Android FCM registration + rotation | DNS/HTTPS, identity/FCM credentials, delivery, backups, Doze/outage |
+| Persistence | SQLite nonce/replay/history; Keychain phone seeds + SQLCipher mobile cache | Key-loss/reinstall, migration, retention, deletion, backup and tamper tests |
+| Legal/commercial | Draft website/policy/EULA and technical runbooks | Rights review, approved product licensing, privacy, merchant, stores, support |
 
-### Technical boundaries
+## What was removed
 
-Current location adapter uses **real gpsd/GNSS hardware**, not universal
-Windows/macOS geolocation. Stored fixes are historical even when recently
-observed. User-space cameras/GNSS cannot run through deep sleep or power off.
-A disconnected laptop cannot guarantee future ping or capture. Universal
-offline power-independent recovery needs independently powered hardware.
+The owner expressly authorized deleting the deprecated Kotlin Compose
+`app/` with old root Gradle build and the obsolete duplicate adapter.
+**The maintained mobile source is now `mobile/android` + `mobile/ios` + `mobile/src`.**
+The old project is still in Git history, not an installable companion app.
+Its synthetic biometrics, virtual unlock, fake geographic data and old PIN/HTTP
+implementation are not present as real security features in the replacement.
+This is not an assertion of verified Kotlin feature parity.
 
-Person detection is disabled without externally sourced hash-pinned model
-weights. FCM is optional and best-effort; notifications are non-forensic
-hints. Signed history must confirm events. Internet WebRTC needs signaling,
-TURN/ICE and actual network handoff tests. Desktop long-term signing keys
-are stored in restricted files, not fully OS-backed hardware keystores.
+## STOP-SHIP: concrete unexecuted checks
 
-### Unverified stop-ship conditions
+- [ ] Fully materialized clean checkout; exact reviewed mobile/desktop npm,
+      Cargo, Pod and transitive dependency locks and supply-chain audits.
+- [ ] Executed `python ops/source_preflight.py`, full Python + relay pytest,
+      protocol/JS tests, Jest, lint, JS check and desktop Vitest on that commit.
+- [ ] Cargo build/test and packaged Tauri sidecar on Windows/macOS/Linux.
+- [ ] Gradle build/unit/instrumentation tests and Android OEM/Doze/FGS testing.
+- [ ] macOS Xcode/CocoaPods build; real iOS Keychain/local-network/media UX.
+- [ ] Correct cert pin, wrong-key, replay, clock skew, key revocation,
+      non-owner API attempts, real phone pairing and all signed controls.
+- [ ] Physical camera/MP4/WebRTC/optional mic, ICE/TURN, network handoff and
+      24-hour thermal, battery and process stability benchmarks.
+- [ ] Genuine GNSS receiver, opt-in relay DNS/TLS/backups, real Firebase FCM
+      and permitted model weights with measured false-positive accuracy.
+- [ ] Desktop OS-native secret protection and independent privacy/security
+      assessment, approved signing/updater and recovery strategy.
+- [ ] Owner-approved licensing/legal terms, privacy, disclosure, payment,
+      stores and customer support with final distribution sign-off.
 
-- [ ] Complete Python/relay test suites verified on the exact integrated commit
-- [ ] Android Gradle 9.3.1 wrapper binary/scripts checked in, Android build/lint/tests pass
-- [ ] Node/Cargo lockfiles and Tauri Windows/Mac/Linux builds verified
-- [ ] Android-phone ↔ laptop QR, camera, recorder, WebRTC, audio and revocation tests
-- [ ] Verified person model, false-positive benchmarks, 24-hour heat/power soak
-- [ ] Real Firebase/FCM Android notification, reconnect and key lifecycle tests
-- [ ] Real GNSS device, encrypted relay, signed receipts, offline/wake restore tests
-- [ ] OS desktop keychain, storage quotas, encryption and deletion security review
-- [ ] Signed/verified/notarized installers and documented update/rollback process
-- [ ] Legal/privacy approval, commercial license/merchant, stores/customer support
+The current runner cannot clone GitHub (DNS resolution failure) and lacks
+Cargo, Android SDK, Xcode, installed native dependencies and physical devices.
+GitHub repository operations do not supply a full test environment. No tests
+or performance measurements are invented as passing. The stop-ship checklist
+remains binding regardless of the source retirement approval.
 
-These are engineering or external release gates, not checkmarks from a
-source commit. No versioned production release has been certified. See
-BUILD_AND_RELEASE.md, RELEASE_CHECKLIST.md and SCENARIOS.md.
+See [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md),
+[PARITY.md](PARITY.md), [DEFECTS.md](DEFECTS.md) and
+[THREAT_MODEL.md](THREAT_MODEL.md).

@@ -1,3 +1,5 @@
+> **Canonical mobile paths updated 14 November 2026:** `mobile/android` and `mobile/ios` are the React Native build roots. The previous root `app/`, root Gradle files and `mobile/android-native/` were explicitly retired by the owner. Historical commands targeting those paths are no longer applicable. Builds/device/signing remain unverified; see [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md).
+
 # LaptopWatch — reproducible build and acceptance runbook
 
 **Status: development source only.** Last verified focused test run on the

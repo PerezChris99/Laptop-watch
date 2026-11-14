@@ -1,6 +1,13 @@
 # LaptopWatch — architecture decision records
 
-**Baseline:** 2026-09-20 `7a0c23d`. **Target product:** Android controller + Tauri desktop application + Python engine; opt-in WAN relay. These ADRs govern implementation, not evidence of completed features.
+**Historical baseline:** 2026-09-20 `7a0c23d`. **Current canonical product:**
+React Native JavaScript Android+iOS controllers with Kotlin/Swift native OS
+bridges, Tauri/Rust desktop, Python engine and opt-in WAN relay. The Kotlin
+Compose `app/` and root Gradle builds were retired with owner approval on
+14 November 2026; historical dated checkpoints below document previous plans,
+not current presence or a successful build. See `docs/KOTLIN_RETIREMENT.md`.
+
+These ADRs govern architecture, not evidence of complete native verification.
 
 ## System context
 
@@ -120,8 +127,9 @@ signed controls, pairing, an OS-native pinning bridge, Keychain adapter,
 app-private SQLite cache schema, receiver-only WebRTC, and consent-first
 screens. The native Android/iOS projects, secure storage validation,
 pinning registration, foreground connection service, real QR camera scan and
-hardware acceptance are **not implemented/verified**. Kotlin `app/`
-remains the parity reference.
+hardware acceptance are **not verified**. The Android/iOS source projects
+and native adapters are now tracked, and old Kotlin Compose `app/` is
+available only in Git history after explicit owner-authorized retirement.
 
 **Do not distribute** the checkpoint as a production laptop security
 system, market it as always-on during OS sleep, or describe native

@@ -1,3 +1,5 @@
+> **Current implementation note (14 November 2026):** retired Kotlin Compose app and its embedded PIN/HTTP paths are no longer tracked. The threat surface is now React Native JavaScript plus Android Kotlin/iOS Swift native adapters, signed Python HTTPS, Tauri/Rust owner IPC and optional HTTPS relay. Prior Kotlin-specific findings remain historical only; explicit release security assessment remains required.
+
 # LaptopWatch — security threat model (v0.1 baseline)
 
 **This is a model, not a penetration-test report.** Current PIN and TLS implementation are insecure and must not be publicly exposed.
