@@ -694,7 +694,7 @@ export default function App() {
                 throw new Error('Remote push revocation failed. Reconnect to your owner relay and disable push before forgetting this device.');
               }
             }
-            await setPreference('push_opt_in','0');
+            await setPreference('push_opt_in','0'); setPushEnrolled(false);
             foregroundStarted.current = false; await stopForegroundConnection().catch(() => {});
             setBackgroundOptIn(false); setBackgroundActive(false);
             await setPreference('background_opt_in', '0');

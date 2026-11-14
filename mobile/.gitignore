@@ -24,3 +24,7 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+
+# Local-only owner Firebase app configuration; prevent accidental staging.
+**/google-services.json
+**/GoogleService-Info.plist
