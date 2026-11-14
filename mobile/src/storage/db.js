@@ -114,6 +114,16 @@ export async function setPreference(key, value) {
   );
 }
 
+/** Remove local incident cache only after the signed laptop accepted clear.
+ * @param {string} desktopId
+ * @returns {Promise<void>}
+ */
+export async function clearCachedAlerts(desktopId) {
+  if (!/^[a-f0-9-]{36}$/i.test(desktopId)) throw new Error('Invalid desktop ID');
+  const db = await database();
+  await db.execute('DELETE FROM alerts WHERE desktop_id = ?', [desktopId]);
+}
+
 /** @param {string} desktopId @returns {Promise<void>} */
 export async function deleteDesktopCache(desktopId) {
   const db = await database();

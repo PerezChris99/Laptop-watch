@@ -71,3 +71,17 @@ export async function deleteEvidenceLocal(item) {
   }
   await native.deleteLocal(item.kind, item.id);
 }
+
+/** Purge all private downloads on explicit local unpair; never merely clear
+ * their SQLite references. Fail closed if the native purge is unavailable.
+ * @returns {Promise<void>}
+ */
+export async function purgePrivateEvidence() {
+  const native = Platform.OS === 'ios'
+    ? NativeModules.LaptopWatchPinnedTransport
+    : NativeModules.LaptopWatchEvidenceManagement;
+  if (!native || typeof native.deleteAllLocal !== 'function') {
+    throw new Error('Private media purge unavailable; local pairing retained');
+  }
+  await native.deleteAllLocal();
+}

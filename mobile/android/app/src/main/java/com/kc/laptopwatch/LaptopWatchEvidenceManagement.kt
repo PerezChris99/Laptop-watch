@@ -53,6 +53,29 @@ class LaptopWatchEvidenceManagement(private val app: ReactApplicationContext)
         }
     }
 
+    /** Explicit unpair purge, restricted to locally downloaded evidence. */
+    @ReactMethod
+    fun deleteAllLocal(promise: Promise) {
+        worker.execute {
+            try {
+                val directory = File(app.filesDir, "evidence")
+                if (directory.exists()) {
+                    require(directory.isDirectory && !Files.isSymbolicLink(directory.toPath()))
+                    val items = directory.listFiles() ?: error("Cannot inspect private evidence")
+                    val pattern = Regex("photo-[a-f0-9]{32}[.]jpg|video-[a-f0-9]{32}[.]mp4")
+                    require(items.all {
+                        it.isFile && !Files.isSymbolicLink(it.toPath()) && pattern.matches(it.name)
+                    }) { "Unexpected private entry; refusing destructive purge" }
+                    items.forEach { require(it.delete()) { "Cannot delete private evidence" } }
+                    require(directory.delete()) { "Cannot delete private directory" }
+                }
+                promise.resolve(true)
+            } catch (_: Exception) {
+                promise.reject("EVIDENCE_PURGE_FAILED", "Private evidence was not fully purged")
+            }
+        }
+    }
+
     @ReactMethod
     fun exportLocal(kind: String, id: String, promise: Promise) {
         app.runOnUiQueueThread {
@@ -80,7 +103,7 @@ class LaptopWatchEvidenceManagement(private val app: ReactApplicationContext)
         app.runOnUiQueueThread {
             try {
                 require(format in setOf("csv", "text") && content.length <= 131_072 &&
-                        content.none { it == '\\u0000' })
+                        content.none { it == '\u0000' })
                 check(pending == null) { "An export is already in progress" }
                 val activity = app.currentActivity ?: error("Open the app to export a report")
                 pending = promise
