@@ -112,3 +112,29 @@ cargo test --locked supervisor_tests
 These commands have **not been executed on an integrated checkout**.
 Devtools screenshots and mock tests alone cannot prove native WebRTC,
 pinned TLS, Keystore integrity, FCM, GNSS or foreground operation.
+
+## Phase 3 UI, audit and hardware-specific e2e
+
+```bash
+cd desktop
+npm ci
+npm run test:ui
+npm run lint
+npm run check:js
+npm run build
+cd src-tauri
+cargo test --locked
+cd ../src-python
+python -m pytest -q tests/test_cli_audit.py
+cd ../../../mobile
+npm ci
+npm run test:protocol
+npm run lint
+npm run check:js
+# Only after official native Android build, pairing and real QR:
+# maestro test e2e/01-pair-and-controls.yaml
+# maestro test e2e/02-armed-media.yaml
+```
+
+**None of these commands are recorded as passing in the repository checkout.**
+`docs/SIGNING_AND_NOTARIZATION.md` has additional owner-run release steps.

@@ -18,7 +18,7 @@ is not installable until official native project generation and device testing.
 | Person detection/incident alerts | Kotlin source | Signed query and display source | Installed verified ONNX model, scene evaluation and device UI tests |
 | FCM alerts | Kotlin opt-in source | **Not implemented** | Authorized Firebase credentials and retry/deep links |
 | GNSS last seen | Kotlin source | Signed read and LAST SEEN display source | Real gpsd receiver, offline replay, device accuracy tests |
-| Background connection | Kotlin foreground service source | **Not implemented** | Native foreground service, Android 15/16 Doze/battery acceptance |
+| Background connection | Kotlin foreground service source | Eligibility/bridge source fails closed; native service not present | Owner must supply a supported Android build host and sign off service permissions; implement/test native FGS and Doze |
 | Retention/app-private SQLite | Room source | Versioned op-sqlite schema/cache untested and unencrypted | Generate native project, run migration/recovery tests, add SQLCipher and app-private export/deletion |
 | Signed release installer | Reference unsigned/dev | **Not implemented** | Native templates, lockfile, Android signing |
 | Commercial/legal | Draft only | Draft only | Owner-approved license/privacy/EULA and independent assessment |
@@ -28,13 +28,22 @@ is not installable until official native project generation and device testing.
 | Phase | Acceptance status | Evidence and exact remaining gate |
 |---|---|---|
 | 0 Baseline | **BLOCKED** | No materialized checkout/registries/Android SDK/Rust; Python pytest, Kotlin Gradle, npm and cargo not executed |
-| 1 Protocol | **PARTIAL** | Python + Node cryptography independently reproduced 3 LW1 signatures, QR and proof; committed pytest and RN noble tests not run in checkout |
-| 2 Desktop | **SOURCE ONLY** | Rust supervisor backoff/epoch fence/single instance source and tests; cargo, startup, logging, signed loopback health, sleep behavior not verified |
-| 3 Desktop UI | **SOURCE ONLY** | Paper/gold/blue tokens and React CSS; Vite, WCAG, screen walkthrough and screenshot tests not executed |
-| 4 RN foundation | **SOURCE ONLY / NOT BUILDABLE** | JS crypto, pairing, native pinned bridge source, Keychain adapter; no native project, approved lockfile or device |
-| 5 Camera/media | **PARTIAL SOURCE ONLY** | Python signed evidence list + tests, JS inventory/action screens; native WebRTC, preview/export and hardware not verified |
-| 6 Background/location | **PARTIAL SOURCE ONLY** | JS LAST SEEN and signed alert query; foreground service, push and device GNSS not verified |
+| 1 Protocol | **BLOCKED** | Python + Node cryptography independently reproduced 3 LW1 signatures, QR and proof; committed pytest and RN noble tests not run in checkout |
+| 2 Desktop | **BLOCKED** | Rust supervisor backoff/epoch fence/single instance source and tests; cargo, startup, logging, signed loopback health, sleep behavior not verified |
+| 3 Desktop UI | **BLOCKED** | Paper/gold/blue tokens and React CSS; Vite, WCAG, screen walkthrough and screenshot tests not executed |
+| 4 RN foundation | **BLOCKED** | JS crypto, pairing, native pinned bridge source, Keychain adapter; no native project, approved lockfile or device |
+| 5 Camera/media | **BLOCKED** | Python signed evidence list + tests, JS inventory/action screens; native WebRTC, preview/export and hardware not verified |
+| 6 Background/location | **BLOCKED** | JS LAST SEEN and signed alert query; foreground service, push and device GNSS not verified |
 | 7 Release | **BLOCKED** | Parity, physical acceptance, audit/SBOM/security scan, signing, license, commercial approval; do not delete `app/` |
 
 **No phase meets DELIVERED acceptance. All phases remain BLOCKED.** Every blocked acceptance item
 must include exact commands and logs in `docs/RELEASE_RUNBOOK.md` before release.
+
+## Owner authorization and verified acceptance requirements
+
+No DELIVERED phase exists as of 2026-11-14. All eight phases are BLOCKED by
+missing clean builds/integrated tests or owner/hardware/third-party actions.
+The Android `app/` reference remains frozen and is not deleted. An actual
+per-feature **green** parity matrix, then explicit owner approval, are required
+before destructive cleanup. Full commands/actions are recorded in
+`docs/DEFECTS.md` and `docs/RELEASE_RUNBOOK.md`.

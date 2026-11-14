@@ -121,6 +121,34 @@ where F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
 }
 
 #[tauri::command]
+fn location_snapshot(app: AppHandle) -> Result<String, String> {
+    // Local owner-only Tauri IPC, not exposed on signed phone HTTPS.
+    let directory = state_dir(&app)?;
+    let rows = snapshot_rows(
+        directory.join("last_seen.db"),
+        "SELECT latitude,longitude,accuracy_m,observed_at_ms,provider
+         FROM fixes ORDER BY observed_at_ms DESC,id DESC LIMIT 1",
+        &[],
+        |r| Ok(json!({
+            "latitude":r.get::<_,f64>(0)?,
+            "longitude":r.get::<_,f64>(1)?,
+            "accuracy_meters":r.get::<_,f64>(2)?,
+            "observed_at_ms":r.get::<_,i64>(3)?,
+            "provider":r.get::<_,String>(4)?,
+            "live":false
+        })),
+    )?;
+    Ok(json!({"last_seen":rows.into_iter().next()}).to_string())
+}
+
+#[tauri::command]
+async fn audit_history(app: AppHandle) -> Result<String, String> {
+    // The Python subcommand validates the ENTIRE Ed25519 hash chain first.
+    // Never display unverified/partially parsed audit entries as trusted.
+    run_cli(&app, "audit-history", vec![]).await
+}
+
+#[tauri::command]
 fn dashboard_snapshot(app: AppHandle) -> Result<String, String> {
     let directory=state_dir(&app)?;
     let now=SystemTime::now().duration_since(UNIX_EPOCH)
@@ -414,6 +442,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             initialize_companion, suggest_lan_ip, create_pair_invitation,
             pending_pairs, paired_devices, dashboard_snapshot, companion_health,
+            location_snapshot, audit_history,
             approve_pending, reject_pending, revoke_device,
             evidence_files, open_evidence_directory, start_companion, stop_companion
         ])

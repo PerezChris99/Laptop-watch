@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { QRCodeSVG } from 'qrcode.react'
+import { tokens } from '../../src/design/tokens.js'
 
 const formatError = (e) => typeof e === 'string' ? e : e?.message || 'Operation failed'
 
@@ -9,8 +10,11 @@ const panels = [
   { id: 'overview', title: 'Overview' },
   { id: 'pair', title: 'Pair a phone' },
   { id: 'devices', title: 'Paired devices' },
+  { id: 'live', title: 'Live view' },
   { id: 'evidence', title: 'Evidence' },
   { id: 'alerts', title: 'Person alerts' },
+  { id: 'location', title: 'Location' },
+  { id: 'audit', title: 'Audit log' },
   { id: 'settings', title: 'Settings' },
 ]
 
@@ -24,6 +28,8 @@ export default function App () {
   const [devices, setDevices] = useState([])
   const [evidence, setEvidence] = useState([])
   const [incidents, setIncidents] = useState([])
+  const [lastSeen, setLastSeen] = useState(null)
+  const [audit, setAudit] = useState([])
   const [autostart, setAutostart] = useState(false)
   const [enableGpsd, setEnableGpsd] = useState(false)
   const [relayUrl, setRelayUrl] = useState(
@@ -80,6 +86,26 @@ export default function App () {
     const id = setInterval(() => { if (active) refresh() }, 6000)
     return () => { active = false; clearInterval(id) }
   }, [refresh])
+
+  useEffect(() => {
+    let active = true
+    if (page === 'location') {
+      invoke('location_snapshot').then(raw => {
+        if (active) setLastSeen(JSON.parse(raw).last_seen || null)
+      }).catch(() => { if (active) setLastSeen(null) })
+    }
+    if (page === 'audit') {
+      invoke('audit_history').then(raw => {
+        if (active) setAudit(JSON.parse(raw))
+      }).catch(() => {
+        if (active) {
+          setAudit([])
+          setError('Audit could not be cryptographically verified. No entries are shown.')
+        }
+      })
+    }
+    return () => { active = false }
+  }, [page])
 
   const startGateway = async () => {
     await invoke('start_companion', {
@@ -179,7 +205,7 @@ export default function App () {
             <label htmlFor="host">Laptop LAN IPv4 (detected; edit if incorrect)</label>
             <input id="host" value={lanIP} onChange={e => setLanIP(e.target.value)} placeholder="192.168.1.25" />
             <button className="primary" disabled={!ready || !!busy || !lanIP} onClick={createInvite}>Create pairing QR and start secure listener</button>
-            {invite && <div className="qrcode"><QRCodeSVG value={invite.uri} size={234} bgColor="#FFFFFF" fgColor="#0B1B3D" marginSize={4} level="M" /><p>Keep this QR visible while the phone requests pairing.</p><small>Expiration: 120 seconds after generation. Rescan if expired.</small></div>}
+            {invite && <div className="qrcode"><QRCodeSVG value={invite.uri} size={234} bgColor="#FFFFFF" fgColor={tokens.colors.blue} marginSize={4} level="M" /><p>Keep this QR visible while the phone requests pairing.</p><small>Expiration: 120 seconds after generation. Rescan if expired.</small></div>}
           </div>
           <h2>Approve a phone</h2>
           {pending.length === 0 ? <p className="empty">No phone awaiting approval. Scan the QR from the Android app.</p> : pending.map(p => <div className="device" key={p.request_id}><div><strong>{p.label}</strong><small>Identity fingerprint: {p.public_key_sha256}</small></div><div className="actions"><button onClick={() => approve(p.request_id)} disabled={!!busy}>Approve</button><button className="secondary" onClick={() => execute('reject', () => invoke('reject_pending',{requestId:p.request_id}).then(refresh))}>Reject</button></div></div>)}
@@ -188,6 +214,45 @@ export default function App () {
           <h1>Trusted phones</h1>
           <p className="lede">Each phone has its own key. Revoking one does not affect your other devices.</p>
           {devices.length === 0 ? <p className="empty">No paired phones. Pair one before enabling remote access.</p> : devices.map(d => <div className="device" key={d.id}><div><strong>{d.id}</strong><small>{d.revoked ? 'Revoked' : 'Paired and authorized'}</small></div>{!d.revoked && <button className="danger" disabled={!!busy} onClick={() => revoke(d.id)}>Revoke</button>}</div>)}
+        </>}
+        {page === 'live' && <>
+          <h1>Live video — paired phone</h1>
+          <p className="lede">LaptopWatch provides encrypted WebRTC when the laptop is armed, the phone is paired and you explicitly initiate a live session on Android.</p>
+          <div className="panel">
+            <h3>Live media is not activated from this dashboard</h3>
+            <p>Use the paired Android Live view to request the owner-authorized webcam. Desktop camera activity must not begin automatically, and recording or microphone access requires its own consent.</p>
+            <span className="muted">No live frame displayed here. Desktop-native WebRTC receiver and hardware validation remain blocked.</span>
+          </div>
+        </>}
+        {page === 'location' && <>
+          <h1>Last-known laptop location</h1>
+          <p className="lede">Read-only history from a real configured GNSS receiver. This screen never invents a GPS fix or shows a cached point as LIVE.</p>
+          <div className="panel">
+            <span className="status">LAST SEEN · NOT LIVE</span>
+            {lastSeen ? <>
+              <h2>{lastSeen.latitude.toFixed(6)}, {lastSeen.longitude.toFixed(6)}</h2>
+              <p>Accuracy ±{lastSeen.accuracy_meters.toFixed(1)} meters · {new Date(lastSeen.observed_at_ms).toLocaleString()} · {lastSeen.provider}</p>
+              <p className="muted">The laptop may have moved or lost power since this fix. Use an owner-approved receiver and relay.</p>
+            </> : <p className="empty">No verified GNSS history. Configure a real gpsd receiver in Settings if lawful and needed.</p>}
+          </div>
+          <button onClick={() => execute('location', async () => {
+            const raw = await invoke('location_snapshot')
+            setLastSeen(JSON.parse(raw).last_seen || null)
+          })}>Refresh local GNSS history</button>
+        </>}
+        {page === 'audit' && <>
+          <h1>Verified action history</h1>
+          <p className="lede">The Python gateway verifies the Ed25519 hash chain before returning up to 100 recent entries. Tampered records are withheld.</p>
+          {audit.length === 0 ? <p className="empty">No verified audit events available.</p> :
+            <ul className="files">{audit.slice().reverse().map((event, i) => <li key={i}>
+              <div><strong>{event.action} · {event.result}</strong>
+                <small>{new Date(event.timestamp_ms).toLocaleString()} · {event.device}</small></div>
+            </li>)}</ul>}
+          <button disabled={!ready || !!busy} onClick={() => execute('audit', async () => {
+            const verified = await invoke('audit_history')
+            setAudit(JSON.parse(verified))
+          })}>Verify and refresh audit log</button>
+          <p className="muted">Signed local history is not an independent external timestamp or forensic chain-of-custody guarantee.</p>
         </>}
         {page === 'evidence' && <>
           <h1>Local evidence</h1>
@@ -223,7 +288,7 @@ export default function App () {
               disabled={!enableGpsd || protecting}
               placeholder="https://relay.yourdomain.com"
               onChange={e => setRelayUrl(e.target.value)}
-              style={{ width:'100%',padding:10,border:'1px solid #ccd7e1',borderRadius:6,marginTop:8 }} />
+              style={{ width:'100%',padding:10,border:'1px solid var(--color-hairline)',borderRadius:'var(--radius-control)',marginTop:8 }} />
             <p>Tracking settings apply only when you next start the desktop gateway. Disable the service to stop sampling and uploading. No data is sent until a real receiver, explicit opt-in and trusted, reachable relay exist.</p>
           </div>
           <div className="panel">

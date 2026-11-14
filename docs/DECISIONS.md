@@ -83,3 +83,20 @@
   this checkpoint: confidentiality of cached alerts/GNSS is an explicit gap.
 - Internet absence, OS sleep/hibernate, and native battery restrictions
   can prevent an immediate action. No claim of uninterrupted protection.
+
+## Decision 009 — Verified local audit and truthful desktop location
+
+- Tauri IPC `audit_history` delegates to the Python
+  `audit-history` CLI, which Ed25519-verifies the entire audit chain before
+  emitting at most 100 sanitized events. Tampering leads to a generic
+  integrity error, no event data, and non-zero exit. Source tests exist;
+  native execution is still BLOCKED.
+- Tauri IPC `location_snapshot` reads only the latest previously stored
+  gpsd fix from a private local database. It is ALWAYS labeled LAST SEEN,
+  never LIVE, regardless of cached timestamp.
+- The desktop Live view screen is explicitly informational: it cannot
+  automatically activate the webcam or impersonate a working desktop WebRTC
+  renderer. Full desktop live preview is still BLOCKED.
+- Dependency locks, Vitest, Maestro, legal signing and physical acceptance
+  still require authorized build machines; the code must not be released
+  on the strength of GitHub source inspection alone.
