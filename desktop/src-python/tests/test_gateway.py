@@ -216,3 +216,30 @@ def test_evidence_inventory_requires_auth_and_returns_real_metadata(gateway, tmp
     registry.revoke(identity)
     assert signed(client, identity, key, 'GET', '/api/evidence/list').status_code == 401
 
+
+
+def test_signed_gnss_history_requires_approved_device_and_real_store(gateway, tmp_path):
+    from types import SimpleNamespace
+    from laptopwatch.tracking import LastSeenStore, LocationFix
+
+    client, identity, key, ctrl, registry, state = gateway
+    assert client.get('/api/location/history').status_code == 401
+    assert signed(client, identity, key, 'GET', '/api/location/history').status_code == 503
+
+    store = LastSeenStore(tmp_path / 'gnss-history.db')
+    try:
+        now = int(time.time() * 1000)
+        store.add(LocationFix(latitude=0.2, longitude=32.5, accuracy_m=8.0,
+                              observed_at_ms=now, provider='gpsd-gnss'), now_ms=now)
+        state.tracking = SimpleNamespace(store=store)
+        response = signed(client, identity, key, 'GET', '/api/location/history')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['is_live_fix'] is False
+        assert len(data['fixes']) == 1
+        assert data['fixes'][0]['is_live_fix'] is False
+        assert data['fixes'][0]['provider'] == 'gpsd-gnss'
+        registry.revoke(identity)
+        assert signed(client, identity, key, 'GET', '/api/location/history').status_code == 401
+    finally:
+        store.close()

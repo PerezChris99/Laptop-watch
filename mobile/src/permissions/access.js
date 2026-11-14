@@ -31,3 +31,21 @@ export async function askMicrophonePermission() {
     buttonNegative: 'Keep microphone off',
   })) === RESULTS.GRANTED;
 }
+
+/** Android 13+ nearby Wi-Fi discovery is only requested when the owner taps
+ * "Find paired laptop". We never scan nearby devices in the background.
+ * @returns {Promise<boolean>}
+ */
+export async function askNearbyPermission() {
+  if (Platform.OS !== 'android' || Number(Platform.Version) < 33) return true;
+  const permission = PERMISSIONS.ANDROID.NEARBY_WIFI_DEVICES;
+  if (!permission) return false;
+  const existing = await check(permission);
+  if (existing === RESULTS.GRANTED) return true;
+  return (await request(permission, {
+    title: 'Find your paired laptop',
+    message: 'Allow discovery of the laptop on the same Wi-Fi. Signed certificate verification is still required.',
+    buttonPositive: 'Find laptop',
+    buttonNegative: 'Not now',
+  })) === RESULTS.GRANTED;
+}

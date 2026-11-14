@@ -56,5 +56,9 @@
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "op-sqlite": {
+    "sqlcipher": true,
+    "performanceMode": true
   }
 }

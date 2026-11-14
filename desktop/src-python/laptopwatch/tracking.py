@@ -138,6 +138,23 @@ class LastSeenStore:
                 "is_live_fix": False,
                 "provider": provider}
 
+    def recent(self, limit: int = 100) -> list[dict]:
+        """Bounded, read-only real GNSS history. Never call stored fixes LIVE."""
+        limit = max(1, min(int(limit), 100))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id,latitude,longitude,accuracy_m,observed_at_ms,provider "
+                "FROM fixes ORDER BY observed_at_ms DESC,id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"event_id": row[0], "latitude": row[1],
+             "longitude": row[2], "accuracy_meters": row[3],
+             "observed_at_ms": row[4], "provider": row[5],
+             "is_live_fix": False}
+            for row in rows
+        ]
+
     def pending(self, limit: int = 100) -> list[tuple[int, LocationFix]]:
         with self._lock:
             rows = self._db.execute(

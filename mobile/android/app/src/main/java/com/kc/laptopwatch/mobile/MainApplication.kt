@@ -11,6 +11,7 @@ import com.kc.laptopwatch.LaptopWatchForegroundPackage
 import com.kc.laptopwatch.LaptopWatchEvidencePackage
 import com.kc.laptopwatch.LaptopWatchRelayPackage
 import com.kc.laptopwatch.LaptopWatchEvidenceManagementPackage
+import com.kc.laptopwatch.LaptopWatchDiscoveryPackage
 
 class MainApplication : Application(), ReactApplication {
     override val reactHost: ReactHost by lazy {
@@ -22,6 +23,7 @@ class MainApplication : Application(), ReactApplication {
                 add(LaptopWatchEvidencePackage())
                 add(LaptopWatchRelayPackage())
                 add(LaptopWatchEvidenceManagementPackage())
+                add(LaptopWatchDiscoveryPackage())
             },
         )
     }

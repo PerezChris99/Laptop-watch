@@ -7,13 +7,15 @@ import { downloadEvidence, exportEvidenceLocal, deleteEvidenceLocal } from './ne
 import { signedRelayJson, normalizedRelayUrl } from './net/signedRelay.js';
 import { pushAvailable, registerPush, unregisterPush, pushEnrollmentStatus, pushStatusMessage } from './notifications/push.js';
 import { QrScanner } from './pairing/QrScanner.jsx';
-import { askNotificationPermission } from './permissions/access.js';
+import { rediscoverPairedLaptop } from './discovery/findPaired.js';
+import { exportIncidents } from './reports/export.js';
+import { askNotificationPermission, askNearbyPermission, askMicrophonePermission } from './permissions/access.js';
 import { startForegroundConnection, stopForegroundConnection } from './background/bridge.js';
 import { checkNotifications, RESULTS } from 'react-native-permissions';
 import { startLiveView } from './media/live.js';
 import { locationStatus } from './location/labels.js';
 import { cacheLastSeen, cacheEvidence, cacheAlerts, loadAlerts, recordPrivateEvidence, forgetPrivateEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
-import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Image } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Image, Platform } from 'react-native';
 import { tokens } from './design/tokens.js';
 import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, DestructiveButton, ConsentNotice, Toast, EmptyState, LastSeenBadge, EvidenceThumb } from './components/Paper.jsx';
 import { loadIdentity, saveIdentity, clearIdentity } from './storage/identity.js';
@@ -48,6 +50,7 @@ export default function App() {
   const [backgroundActive, setBackgroundActive] = useState(false);
   const foregroundStarted = useRef(false);
   const [audioListen, setAudioListen] = useState(false);
+  const [talkbackEnabled, setTalkbackEnabled] = useState(false);
   const [recordingRequested, setRecordingRequested] = useState(false);
   const [warningText, setWarningText] = useState('');
   const [relayInput, setRelayInput] = useState('');
@@ -64,6 +67,7 @@ export default function App() {
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
   const [location, setLocation] = useState(null);
+  const [locationHistory, setLocationHistory] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [evidence, setEvidence] = useState([]);
   const [localMedia, setLocalMedia] = useState({});
@@ -266,6 +270,20 @@ export default function App() {
     return () => { current = false; };
   }, [tab, connected, client]);
 
+  useEffect(() => {
+    if (tab !== 'Location' || !connected) return;
+    let current = true;
+    client().locationHistory().then((response) => {
+      if (current && Array.isArray(response.fixes)) {
+        setLocationHistory(response.fixes.filter((fix) =>
+          Number.isFinite(fix.latitude) && Number.isFinite(fix.longitude) &&
+          Number.isFinite(fix.accuracy_meters) &&
+          Number.isSafeInteger(fix.observed_at_ms)).slice(0,100));
+      }
+    }).catch(() => { if (current) setLocationHistory([]); });
+    return () => { current = false; };
+  }, [tab, connected, client]);
+
   const perform = async (work) => {
     if (busy) return;
     setError(''); setNotice(''); setBusy(true);
@@ -309,9 +327,14 @@ export default function App() {
     if (liveSession.current || !connected || !status?.motion_armed) {
       throw new Error('Arm an online laptop before requesting its camera');
     }
-    const session = await startLiveView(client(), setLiveStream, { includeAudio: audioListen });
+    if (talkbackEnabled && !await askMicrophonePermission()) {
+      throw new Error('Phone microphone permission is required for two-way intercom');
+    }
+    const session = await startLiveView(client(), setLiveStream, {
+      includeAudio: audioListen || talkbackEnabled, talkback: talkbackEnabled,
+    });
     liveSession.current = session;
-    setNotice(audioListen ? 'Encrypted live receiver requested with explicit laptop audio permission.' : 'Encrypted live receiver requested. Audio is disabled.');
+    setNotice(talkbackEnabled ? 'Encrypted video and permission-gated two-way audio requested.' : audioListen ? 'Encrypted video with explicit laptop audio listening requested.' : 'Encrypted silent video requested.');
   });
 
   const stopLive = () => perform(async () => {
@@ -346,9 +369,19 @@ export default function App() {
     if (tab === 'Pair') return <PaperCard><SectionHeader title="Pair your laptop" subtitle="Scan the owner-displayed QR in person. Only an approved device can control the laptop." />
       {!transportAvailable && <ConsentNotice>Native certificate pinning has not been installed. Pairing is disabled; unpinned networking is never used.</ConsentNotice>}
       {paired ? <>
-        <StatusPill state={paired.approved ? 'Online' : 'Not configured'} />
+        <StatusPill state={paired.approved ? (connected ? 'Online' : 'Offline') : 'Not configured'} />
         <Text style={styles.body}>Desktop ID: {paired.desktopId}</Text>
         {!paired.approved && <SecondaryButton title="Check desktop approval" onPress={approveNow} disabled={busy || !transportAvailable} />}
+        {paired.approved && <SecondaryButton title="Find paired laptop on this Wi-Fi"
+          disabled={busy || Platform.OS !== 'android'}
+          onPress={() => perform(async () => {
+            if (!await askNearbyPermission()) throw new Error('Nearby Wi-Fi permission denied');
+            const updated = await rediscoverPairedLaptop(paired);
+            await saveIdentity(updated);
+            setPaired(updated);
+            setNotice('Paired laptop located. Existing certificate and signed identity verified.');
+            refresh();
+          })} />}
       </> : <>
         <SecondaryButton title={scannerVisible ? 'Close QR scanner' : 'Scan laptop QR'} onPress={() => setScannerVisible(!scannerVisible)} disabled={busy || !transportAvailable} />
         {scannerVisible ? <QrScanner onAccepted={(value) => { setQr(value); setScannerVisible(false); }} /> : null}
@@ -398,6 +431,15 @@ export default function App() {
         <PrimaryButton title={audioListen ? 'Request live video + consented laptop audio' : 'Request silent live video'}
           disabled={!connected || !status?.motion_armed || busy} onPress={startLive} /> :
         <DestructiveButton title="End live session" disabled={busy} onPress={stopLive} />}
+      <SecondaryButton title={talkbackEnabled ? 'Disable two-way intercom' : 'Enable two-way intercom'}
+        disabled={busy || !!liveSession.current || !connected}
+        onPress={() => {
+          if (talkbackEnabled) { setTalkbackEnabled(false); return; }
+          Alert.alert('Authorize two-way intercom?', 'The phone microphone will transmit to your laptop only during the visible live session. You must have consent from affected people. Stop live view to end it.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'I have permission', onPress: () => setTalkbackEnabled(true) },
+          ]);
+        }} />
       <SecondaryButton title={audioListen ? 'Disable laptop microphone audio' : 'Enable optional laptop audio'}
         disabled={busy || !!liveSession.current}
         onPress={() => {
@@ -412,7 +454,7 @@ export default function App() {
         }} />
       <SecondaryButton title="Take a still photo" disabled={!connected || !status?.motion_armed || busy}
         onPress={() => confirm('Photo', 'photo')} />
-      <ConsentNotice>Phone microphone is off. Laptop audio is opt-in and may record bystanders; stop the stream or disarm immediately if consent changes.</ConsentNotice>
+      <ConsentNotice>Both microphones are off by default. Listening or two-way intercom requires explicit consent. Leaving Live or backgrounding the app tears down the media and handset microphone.</ConsentNotice>
     </PaperCard>;
 
     if (tab === 'Evidence') return <PaperCard><SectionHeader title="Evidence vault" subtitle="Signed inventory from the paired laptop; no synthetic media." />
@@ -478,6 +520,21 @@ export default function App() {
           <Text style={styles.metric}>Person verification event #{item.id}</Text>
           <Text style={styles.body}>Confidence: {Number(item.confidence || 0).toFixed(2)}</Text>
         </View>)}
+      <SecondaryButton title="Export signed incident metadata as CSV"
+        disabled={busy || alerts.length === 0}
+        onPress={() => Alert.alert('Export incident report?', 'Only event metadata is included. Use a secure destination and do not share private information without permission.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Choose destination', onPress: () => perform(async () => {
+            await exportIncidents(alerts.slice(-100), 'csv');
+            setNotice('Owner-controlled incident report export completed.');
+          }) },
+        ])} />
+      <SecondaryButton title="Export incident summary as text"
+        disabled={busy || alerts.length === 0}
+        onPress={() => perform(async () => {
+          await exportIncidents(alerts.slice(-100), 'text');
+          setNotice('Incident report shared only through the selected system action.');
+        })} />
       <DestructiveButton title="Clear laptop incidents" disabled={!connected || busy || alerts.length === 0}
         onPress={() => Alert.alert('Clear incident metadata?', 'This clears the laptop incident list. Stored photographs and recordings are not deleted.', [
           { text: 'Cancel', style: 'cancel' },
@@ -500,12 +557,19 @@ export default function App() {
             if (!Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude) ||
                 !Number.isFinite(fix.accuracy_meters) ||
                 !Number.isSafeInteger(fix.observed_at_ms)) throw new Error('Invalid GNSS response');
-            setLocation(fix); setLastFixFresh(false);
-            setLocationSource('direct laptop on-demand fix');
+            setLocation(fix); setLastFixFresh(fix.is_live_fix === true);
+            setLocationSource('direct laptop on-demand GNSS fix');
             await cacheLastSeen(paired.desktopId, fix);
           })} />
         {location ? <Text style={styles.body}>Latitude {location.latitude} · Longitude {location.longitude} · ±{location.accuracy_meters} m</Text> : null}
         <Text style={styles.body}>A real GNSS receiver is required. Cached results are always LAST SEEN and are never a promise of live tracking.</Text>
+        <SectionHeader title="Real GNSS history" subtitle="Only hardware-reported locations; most recent first, up to 100." />
+        {locationHistory.length === 0 ? <Text style={styles.body}>No verified historical fixes loaded.</Text> :
+          locationHistory.map((fix) => <View key={String(fix.event_id)}
+            style={{ paddingVertical: 10, borderBottomWidth: 1, borderColor: c.hairline }}>
+            <Text style={styles.metric}>LAST SEEN · {new Date(fix.observed_at_ms).toLocaleString()}</Text>
+            <Text style={styles.body}>{fix.latitude.toFixed(5)}, {fix.longitude.toFixed(5)} · ±{fix.accuracy_meters} m</Text>
+          </View>)}
       </PaperCard>;
     }
 
@@ -619,7 +683,8 @@ export default function App() {
             await setPreference('background_opt_in', '0');
             if (paired?.desktopId) await deleteDesktopCache(paired.desktopId);
             await clearIdentity(); setPaired(null); setStatus(null); setConnected(false);
-            setLocation(null); setLastFixFresh(false); setAlerts([]); setEvidence([]); setLocalMedia({}); setSelectedMedia(null);
+            setLocation(null); setLocationHistory([]); setLastFixFresh(false); setAlerts([]); setEvidence([]); setLocalMedia({}); setSelectedMedia(null);
+            setAudioListen(false); setTalkbackEnabled(false);
             if (liveSession.current) { await liveSession.current.stop(); liveSession.current = null; }
             setLiveStream(null); afterId.current = 0;
           }) },

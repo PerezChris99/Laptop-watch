@@ -10,7 +10,7 @@ const ROUTES = new Set([
   'GET /api/evidence/list',
   'POST /api/camera/record/start', 'POST /api/camera/record/stop',
   'POST /api/webrtc/offer', 'POST /api/webrtc/stop',
-  'GET /api/location/last-seen', 'POST /api/location/refresh',
+  'GET /api/location/last-seen', 'GET /api/location/history', 'POST /api/location/refresh',
   'POST /api/incidents/query', 'POST /api/incidents/clear',
   'POST /api/config/person-monitor',
 ]);
@@ -158,6 +158,9 @@ export class SignedClient {
 
   /** @returns {Promise<object>} */
   async lastSeen() { return this.json('GET', '/api/location/last-seen'); }
+
+  /** @returns {Promise<object>} */
+  async locationHistory() { return this.json('GET', '/api/location/history'); }
 
   /** @param {number} afterId @returns {Promise<object>} */
   async incidents(afterId = 0) {
