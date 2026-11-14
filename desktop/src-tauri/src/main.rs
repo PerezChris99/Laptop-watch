@@ -12,6 +12,9 @@ use serde_json::json;
 use rusqlite::{Connection, OpenFlags};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::Write;
+use rand::RngCore;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Default)]
 struct CompanionState(
@@ -21,6 +24,7 @@ struct CompanionState(
     Mutex<Option<String>>,
     AtomicBool,
     AtomicU64, // process generation prevents stale termination from clearing a new child
+    Mutex<Option<String>>, // per-launch health secret; never persisted or logged
 );
 
 /// Rolling five-restart budget with 1/2/4/8/16-second backoff.
@@ -40,13 +44,36 @@ struct CompanionHealth {
     last_error: Option<String>,
 }
 
+/// Only 127.0.0.1:8766; no proxy, no IPC-originated arbitrary host/port.
+/// Authenticate health with the secret given directly to the launched process.
+async fn authenticated_health_probe(secret: &str) -> bool {
+    let future = async {
+        let mut socket = tokio::net::TcpStream::connect("127.0.0.1:8766").await?;
+        let message = format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:8766\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n", secret);
+        socket.write_all(message.as_bytes()).await?;
+        let mut response = [0u8; 4096];
+        let count = socket.read(&mut response).await?;
+        Ok::<bool, std::io::Error>(count > 20 &&
+            response[..count].starts_with(b"HTTP/1.1 200 "))
+    };
+    matches!(tokio::time::timeout(Duration::from_secs(2), future).await, Ok(Ok(true)))
+}
+
 #[tauri::command]
-fn companion_health(state: State<'_, CompanionState>) -> Result<CompanionHealth, String> {
-    let running = state.0.lock().map_err(|_| "Process state unavailable")?.is_some();
+async fn companion_health(state: State<'_, CompanionState>) -> Result<CompanionHealth, String> {
+    let spawned = state.0.lock().map_err(|_| "Process state unavailable")?.is_some();
+    let secret = state.6.lock().map_err(|_| "Health secret unavailable")?.clone();
     let restarts = state.2.lock().map_err(|_| "Restart state unavailable")?
         .iter().filter(|time| time.elapsed() < Duration::from_secs(60)).count();
-    let last_error = state.3.lock().map_err(|_| "Error state unavailable")?.clone();
-    Ok(CompanionHealth { running, restart_count_60s: restarts, last_error })
+    let prior_error = state.3.lock().map_err(|_| "Error state unavailable")?.clone();
+    let alive = match secret.as_ref() {
+        Some(token) if spawned => authenticated_health_probe(token).await,
+        _ => false,
+    };
+    let error = if spawned && !alive {
+        prior_error.or_else(|| Some("Companion process exists, but the authenticated gateway health listener is unavailable.".into()))
+    } else { prior_error };
+    Ok(CompanionHealth { running: alive, restart_count_60s: restarts, last_error: error })
 }
 
 
@@ -54,6 +81,41 @@ fn companion_health(state: State<'_, CompanionState>) -> Result<CompanionHealth,
 struct EvidenceFile {
     name: String,
     size: u64,
+}
+
+/// Fixed, allowlisted diagnostic events, never user-controlled stdout,
+/// private keys, QR codes, signed requests, phone IDs, location or media.
+/// Rotation uses 3 x 256 KiB files. Logging errors do not affect controls.
+fn diagnostic(app: &AppHandle, event: &'static str) {
+    if !matches!(event,
+        "gateway_started" | "gateway_exited" | "gateway_restart" |
+        "gateway_restart_failed" | "gateway_restart_cap" |
+        "gateway_stopped" | "owner_quit") { return; }
+    let Ok(dir) = state_dir(app) else { return; };
+    let logs = dir.join("logs");
+    if fs::create_dir_all(&logs).is_err() { return; }
+    let path = logs.join("companion.log");
+    if fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
+        let _ = fs::remove_file(logs.join("companion.log.3"));
+        for i in (1..=2).rev() {
+            let _ = fs::rename(
+                logs.join(format!("companion.log.{i}")),
+                logs.join(format!("companion.log.{}", i + 1)),
+            );
+        }
+        let _ = fs::rename(&path, logs.join("companion.log.1"));
+    }
+    let mut options = fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    if let Ok(mut file) = options.open(&path) {
+        let when = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs()).unwrap_or_default();
+        let _ = writeln!(file, "{{\"time\":{when},\"event\":\"{event}\"}}");
+    }
 }
 
 fn state_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -75,8 +137,9 @@ async fn run_cli(app: &AppHandle, subcommand: &str, extra: Vec<String>) -> Resul
         .map_err(|e| e.to_string())?
         .args(args).output().await.map_err(|e| e.to_string())?;
     if output.status.code() != Some(0) {
-        let message = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Companion {}: {}", subcommand, message.trim()));
+        // Never pass arbitrary sidecar stderr (which can contain QR/PII)
+        // into the owner UI, logs or telemetry.
+        return Err(format!("Companion {} returned a nonzero status", subcommand));
     }
     String::from_utf8(output.stdout).map_err(|e| e.to_string())
 }
@@ -323,9 +386,20 @@ fn start_companion(
         }
         args.extend(["--incident-relay-url".into(),relay.into()]);
     }
+    // The secret is independent of all phone keys and passed only via the
+    // child environment. Never print, persist or expose it through IPC.
+    let mut raw_secret = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut raw_secret);
+    let secret: String = raw_secret.iter().map(|byte| format!("{byte:02x}")).collect();
+    {
+        let mut stored = state.6.lock().map_err(|_| "Health secret unavailable")?;
+        *stored = Some(secret.clone());
+    }
     let (mut rx, process) = app.shell().sidecar("laptopwatch-sidecar")
         .map_err(|e| e.to_string())?
-        .args(args.clone()).spawn().map_err(|e| e.to_string())?;
+        .args(args.clone())
+        .env("LAPTOPWATCH_OWNER_BEARER", secret)
+        .spawn().map_err(|e| e.to_string())?;
     {
         let mut config = state.1.lock().map_err(|_| "Process configuration unavailable")?;
         *config = Some(args);
@@ -335,6 +409,7 @@ fn start_companion(
     let generation = state.5.fetch_add(1, Ordering::SeqCst) + 1;
     state.4.store(false, Ordering::SeqCst);
     *child = Some(process);
+    diagnostic(&app, "gateway_started");
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
@@ -345,6 +420,7 @@ fn start_companion(
             }
             let state = handle.state::<CompanionState>();
             if state.5.load(Ordering::SeqCst) != generation { break; }
+            diagnostic(&handle, "gateway_exited");
             if let Ok(mut running) = state.0.lock() { running.take(); }
             if state.4.load(Ordering::SeqCst) { break; }
             let wait = match state.2.lock() {
@@ -352,6 +428,7 @@ fn start_companion(
                 Err(_) => { break; }
             };
             let Some(wait) = wait else {
+                diagnostic(&handle, "gateway_restart_cap");
                 if let Ok(mut error) = state.3.lock() {
                     *error = Some("Gateway restarted more than five times in 60 seconds. Manual restart required.".into());
                 }
@@ -365,15 +442,23 @@ fn start_companion(
                 Err(_) => None,
             };
             let Some(configuration) = configuration else { break; };
+            let secret = match state.6.lock() {
+                Ok(stored) => stored.clone(),
+                Err(_) => None,
+            };
+            let Some(secret) = secret else { break; };
             match handle.shell().sidecar("laptopwatch-sidecar")
-                .and_then(|cmd| cmd.args(configuration).spawn()) {
+                .and_then(|cmd| cmd.args(configuration)
+                    .env("LAPTOPWATCH_OWNER_BEARER", secret).spawn()) {
                 Ok((next_receiver, next_child)) => {
+                    diagnostic(&handle, "gateway_restart");
                     if let Ok(mut running) = state.0.lock() {
                         *running = Some(next_child);
                     } else { break; }
                     rx = next_receiver;
                 }
                 Err(_) => {
+                    diagnostic(&handle, "gateway_restart_failed");
                     if let Ok(mut error) = state.3.lock() {
                         *error = Some("Gateway restart failed. Check installed sidecar and logs.".into());
                     }
@@ -386,10 +471,12 @@ fn start_companion(
 }
 
 #[tauri::command]
-fn stop_companion(state: State<'_, CompanionState>) -> Result<(), String> {
+fn stop_companion(app: AppHandle, state: State<'_, CompanionState>) -> Result<(), String> {
+    diagnostic(&app, "gateway_stopped");
     state.4.store(true, Ordering::SeqCst);
     state.5.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut config) = state.1.lock() { *config = None; }
+    if let Ok(mut secret) = state.6.lock() { *secret = None; }
     let mut child = state.0.lock().map_err(|_| "Internal process lock failed")?;
     if let Some(process) = child.take() {
         process.kill().map_err(|e| e.to_string())?;
@@ -422,8 +509,10 @@ fn main() {
                         }
                     }
                     "quit" => {
+                        diagnostic(app, "owner_quit");
                         app.state::<CompanionState>().4.store(true, Ordering::SeqCst);
                         app.state::<CompanionState>().5.fetch_add(1, Ordering::SeqCst);
+                        if let Ok(mut secret) = app.state::<CompanionState>().6.lock() { *secret = None; }
                         if let Ok(mut holder) = app.state::<CompanionState>().0.lock() {
                             if let Some(child) = holder.take() { let _ = child.kill(); }
                         }
@@ -452,6 +541,7 @@ fn main() {
             if let RunEvent::Exit = event {
                 app.state::<CompanionState>().4.store(true, Ordering::SeqCst);
                 app.state::<CompanionState>().5.fetch_add(1, Ordering::SeqCst);
+                if let Ok(mut secret) = app.state::<CompanionState>().6.lock() { *secret = None; }
                 if let Ok(mut holder) = app.state::<CompanionState>().0.lock() {
                     if let Some(child) = holder.take() { let _ = child.kill(); }
                 }

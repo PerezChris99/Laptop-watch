@@ -1,0 +1,56 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// Standard React Native 0.88 autolinking. Native security modules are added
+// explicitly in MainApplication, never registered through remote JS.
+react {
+    autolinkLibrariesWithApp()
+}
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+    namespace "com.kc.laptopwatch.mobile"
+
+    defaultConfig {
+        applicationId "com.kc.laptopwatch.mobile"
+        minSdkVersion 26
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "0.1.0"
+        manifestPlaceholders = [usesCleartextTraffic: "false"]
+    }
+    buildTypes {
+        debug {
+            // React Native Metro debug bundler only. The paired HTTPS adapter
+            // ALWAYS requires the QR certificate pin, even in debug builds.
+            manifestPlaceholders = [usesCleartextTraffic: "true"]
+        }
+        release {
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            // No debug-signing fallback in release. Owner supplies release key.
+        }
+    }
+    packagingOptions {
+        resources {
+            excludes += ["META-INF/DEPENDENCIES", "META-INF/INDEX.LIST"]
+        }
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Pure Java Ed25519 for Android 8+ foreground signed status polling.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation("io.github.react-native-community:jsc-android:2026004.+")
+    }
+}

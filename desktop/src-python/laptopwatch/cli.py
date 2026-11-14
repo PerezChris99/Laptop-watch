@@ -6,6 +6,9 @@ import base64
 import json
 from collections import deque
 import os
+import re
+import threading
+import time
 from pathlib import Path
 import sys
 import uuid
@@ -18,6 +21,7 @@ from .evidence import EvidenceRecorder
 from .tracking import GpsdReceiver, LastSeenStore, TrackingService, LocationPoller
 from .controller import NativeController
 from .gateway import GatewayState, create_app
+from .owner_health import create_owner_health_app
 from .identity import initialize_identity, get_audit_key
 from .pairing import PairingCoordinator
 from .discovery import LaptopWatchAdvertiser
@@ -55,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser('serve', help='HTTPS signed-control gateway')
     serve.add_argument('--port', type=int, default=8765)
     serve.add_argument('--listen-lan', action='store_true')
+    serve.add_argument('--owner-health-port', type=int, default=8766,
+                       help='Restricted 127.0.0.1-only ephemeral bearer health endpoint')
     serve.add_argument('--enable-gpsd', action='store_true',
                        help='Opt in to reading a locally configured GNSS receiver via gpsd')
     serve.add_argument('--relay-url', default=None,
@@ -172,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == 'serve':
             if not 1 <= args.port <= 65535:
                 parser.error('port out of range')
+            if not 1024 <= args.owner_health_port <= 65535 or args.owner_health_port == args.port:
+                parser.error('owner health port must be distinct from signed control port')
             if args.relay_url and not args.enable_gpsd:
                 parser.error('--relay-url requires real GNSS consent via --enable-gpsd')
             if args.incident_relay_url and args.person_model is None:
@@ -272,12 +280,39 @@ def main(argv: list[str] | None = None) -> int:
                 remote_poller.start()
             if incident_poller is not None:
                 incident_poller.start()
+            owner_server = None
+            owner_thread = None
+            owner_bearer = os.environ.get('LAPTOPWATCH_OWNER_BEARER')
+            if owner_bearer is not None:
+                if re.fullmatch(r'[a-f0-9]{64}', owner_bearer) is None:
+                    parser.error('Invalid owner health token')
+                import uvicorn
+                owner_app = create_owner_health_app(owner_bearer)
+                owner_server = uvicorn.Server(uvicorn.Config(
+                    owner_app, host='127.0.0.1', port=args.owner_health_port,
+                    log_level='error', access_log=False, server_header=False,
+                    proxy_headers=False, lifespan='off',
+                ))
+                owner_thread = threading.Thread(
+                    target=owner_server.run, name='LaptopWatch-Health', daemon=True)
+                owner_thread.start()
+                deadline = time.monotonic() + 3
+                while not owner_server.started and owner_thread.is_alive() and time.monotonic() < deadline:
+                    time.sleep(0.025)
+                if not owner_server.started:
+                    owner_server.should_exit = True
+                    owner_thread.join(timeout=1)
+                    parser.error('Owner health listener failed to bind; gateway denied')
             try:
                 run(app, host=host, port=args.port,
                     ssl_keyfile=str(state_dir / 'tls_key.pem'),
                     ssl_certfile=str(state_dir / 'tls_cert.pem'),
                     access_log=False, proxy_headers=False, server_header=False)
             finally:
+                if owner_server is not None:
+                    owner_server.should_exit = True
+                    if owner_thread is not None:
+                        owner_thread.join(timeout=2)
                 if incident_poller is not None:
                     incident_poller.stop()
                 if incident_cursor is not None:

@@ -70,6 +70,41 @@ export async function loadLastSeen(desktopId) {
   return result.rows[0] || null;
 }
 
+const PREFERENCE_KEYS = new Set(['owner_consent_v1', 'background_opt_in', 'mic_listen_opt_in']);
+
+/** @param {string} key @returns {Promise<string|null>} */
+export async function getPreference(key) {
+  if (!PREFERENCE_KEYS.has(key)) throw new Error('Unsupported preference');
+  const db = await database();
+  const result = await db.execute('SELECT value FROM settings WHERE key = ? LIMIT 1', [key]);
+  return result.rows[0]?.value ?? null;
+}
+
+/** @param {string} key @param {string} value @returns {Promise<void>} */
+export async function setPreference(key, value) {
+  if (!PREFERENCE_KEYS.has(key) || !['0', '1'].includes(value)) {
+    throw new Error('Unsupported preference value');
+  }
+  const db = await database();
+  await db.execute(
+    'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    [key, value],
+  );
+}
+
+/** @param {string} desktopId @returns {Promise<void>} */
+export async function deleteDesktopCache(desktopId) {
+  const db = await database();
+  await db.transaction(async (tx) => {
+    await tx.execute('DELETE FROM pairings WHERE desktop_id = ?', [desktopId]);
+    await tx.execute('DELETE FROM location_cache WHERE desktop_id = ?', [desktopId]);
+    await tx.execute('DELETE FROM alerts WHERE desktop_id = ?', [desktopId]);
+    // Evidence entries have no desktop_id in v1. Clear on local unpair to
+    // prevent accidental cross-owner evidence inventory mixing.
+    await tx.execute('DELETE FROM evidence_index');
+  });
+}
+
 /** @returns {Promise<void>} */
 export async function closeDatabase() {
   if (connection) {
