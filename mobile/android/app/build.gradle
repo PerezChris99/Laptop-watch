@@ -20,6 +20,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.1.0"
+        // Explicit compile-time OFF until owner supplies Firebase & relay identity.
+        buildConfigField "boolean", "LAPTOPWATCH_FCM_ENABLED", "false"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     buildTypes {
@@ -36,6 +38,7 @@ android {
             // No debug-signing fallback in release. Owner supplies release key.
         }
     }
+    buildFeatures { buildConfig true }
     packagingOptions {
         resources {
             excludes += ["META-INF/DEPENDENCIES", "META-INF/INDEX.LIST"]
@@ -46,6 +49,7 @@ android {
 dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.firebase:firebase-messaging:24.1.3")
     // Pure Java Ed25519 for Android 8+ foreground signed status polling.
     implementation("org.bouncycastle:bcprov-jdk18on:1.80")
     if (hermesEnabled.toBoolean()) {

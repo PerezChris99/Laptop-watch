@@ -38,3 +38,36 @@ export async function downloadEvidence(client, item) {
   }
   return result;
 }
+
+/** App-private evidence is only exportable through a native, explicit owner
+ * document picker/share sheet. It is never uploaded automatically.
+ * @param {{kind:string,id:string}} item
+ * @returns {Promise<void>}
+ */
+export async function exportEvidenceLocal(item) {
+  if (!item || !['photo','video'].includes(item.kind) ||
+      !/^[a-f0-9]{32}$/.test(item.id)) throw new Error('Invalid local evidence');
+  const native = Platform.OS === 'ios'
+    ? NativeModules.LaptopWatchPinnedTransport
+    : NativeModules.LaptopWatchEvidenceManagement;
+  if (!native || typeof native.exportLocal !== 'function') {
+    throw new Error('User-controlled native evidence export unavailable');
+  }
+  await native.exportLocal(item.kind, item.id);
+}
+
+/** Deletes only the phone's private copy; desktop evidence is unaffected.
+ * @param {{kind:string,id:string}} item
+ * @returns {Promise<void>}
+ */
+export async function deleteEvidenceLocal(item) {
+  if (!item || !['photo','video'].includes(item.kind) ||
+      !/^[a-f0-9]{32}$/.test(item.id)) throw new Error('Invalid local evidence');
+  const native = Platform.OS === 'ios'
+    ? NativeModules.LaptopWatchPinnedTransport
+    : NativeModules.LaptopWatchEvidenceManagement;
+  if (!native || typeof native.deleteLocal !== 'function') {
+    throw new Error('Private native evidence deletion unavailable');
+  }
+  await native.deleteLocal(item.kind, item.id);
+}

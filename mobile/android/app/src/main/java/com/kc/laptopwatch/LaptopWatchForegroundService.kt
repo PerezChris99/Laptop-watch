@@ -16,6 +16,7 @@ import okhttp3.Request
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.CertificateException
@@ -96,8 +97,8 @@ class LaptopWatchForegroundService : Service() {
     }
 
     private fun monitor(session: Session) {
-        val client = pinnedClient(session)
         try {
+            val client = pinnedClient(session)
             while (active.get()) {
                 try {
                     val nonceBytes = ByteArray(16)
@@ -129,11 +130,19 @@ class LaptopWatchForegroundService : Service() {
                             return
                         }
                         if (response.isSuccessful) {
-                            val body = response.body?.byteStream()?.use {
-                                val bytes = ByteArray(4097)
-                                val count = it.read(bytes)
-                                if (count < 1 || count > 4096) null
-                                else String(bytes, 0, count, Charsets.UTF_8)
+                            val body = response.body?.byteStream()?.use { input ->
+                                val output = ByteArrayOutputStream(1024)
+                                val buffer = ByteArray(1024)
+                                while (true) {
+                                    val n = input.read(buffer)
+                                    if (n < 0) break
+                                    if (output.size() + n > 4096) {
+                                        throw IllegalStateException("Signed status exceeded response limit")
+                                    }
+                                    output.write(buffer, 0, n)
+                                }
+                                if (output.size() == 0) null
+                                else output.toString(Charsets.UTF_8.name())
                             }
                             val payload = body?.let { JSONObject(it) }
                             if (payload?.optBoolean("motion_armed", false) == false) {
