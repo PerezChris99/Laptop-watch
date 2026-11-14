@@ -1,0 +1,37 @@
+# Deploy one service instance per laptop owner. Change DNS and confirm legal
+# disclosure/consent before accepting any real location coordinates.
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: services/location-relay/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - relay_data:/srv/laptopwatch
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: ["private"]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - RELAY_DOMAIN=${RELAY_DOMAIN:?Set a real public domain and DNS record}
+    networks: ["private"]
+networks:
+  private:
+volumes:
+  relay_data:
+  caddy_data:
+  caddy_config:
