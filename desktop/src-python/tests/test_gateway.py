@@ -124,3 +124,77 @@ def test_invalid_arm_payload_rejected(gateway):
     client, identity, key, ctrl, reg, state = gateway
     assert signed(client, identity, key, 'POST', '/api/config/armed', b'{"armed":"true"}').status_code == 400
     assert not state.get_armed()
+
+
+def test_signed_photo_mp4_download_and_disarm(gateway, tmp_path):
+    """Gateway is safe by default; a paired identity may capture only after arming."""
+    from laptopwatch.evidence import VideoResult
+    client, identity, key, ctrl, reg, state = gateway
+
+    class FakeEvidence:
+        max_duration_seconds = 180.0
+        def __init__(self):
+            self.directory = tmp_path
+            self.recording = False
+
+        def snapshot(self):
+            return b'\\xff\\xd8\\xff\\xd9'
+
+        def take_photo(self):
+            evidence_id = 'a' * 32
+            filename = f'photo-{evidence_id}.jpg'
+            (self.directory / filename).write_bytes(self.snapshot())
+            return {'id': evidence_id, 'kind': 'photo', 'filename': filename, 'size_bytes': 4}
+
+        def start_recording(self):
+            self.recording = True
+            return 'b' * 32
+
+        def stop_recording(self):
+            assert self.recording
+            self.recording = False
+            filename = 'video-' + 'b' * 32 + '.mp4'
+            (self.directory / filename).write_bytes(b'test-video')
+            return VideoResult('b' * 32, 3, 10, filename)
+
+        def stop_if_recording(self):
+            self.recording = False
+
+    fake = FakeEvidence()
+    state.evidence = fake
+    assert signed(client, identity, key, 'POST', '/api/camera/photo').status_code == 409
+    assert signed(client, identity, key, 'POST', '/api/camera/record/start').status_code == 409
+    assert signed(client, identity, key, 'POST', '/api/config/armed', b'{"armed":true}').status_code == 200
+    photo = signed(client, identity, key, 'POST', '/api/camera/photo')
+    assert photo.status_code == 200
+    assert photo.json()['kind'] == 'photo'
+    img = signed(client, identity, key, 'GET', '/api/evidence/photo/' + 'a' * 32)
+    assert img.status_code == 200
+    assert img.content == b'\\xff\\xd8\\xff\\xd9'
+    assert signed(client, identity, key, 'POST', '/api/camera/record/start').status_code == 200
+    clip = signed(client, identity, key, 'POST', '/api/camera/record/stop')
+    assert clip.status_code == 200
+    assert clip.json()['frames'] == 3
+    mp4 = signed(client, identity, key, 'GET', '/api/evidence/video/' + 'b' * 32)
+    assert mp4.status_code == 200 and mp4.content == b'test-video'
+    assert signed(client, identity, key, 'POST', '/api/config/armed', b'{"armed":false}').status_code == 200
+    assert signed(client, identity, key, 'POST', '/api/camera/photo').status_code == 409
+
+
+def test_location_returns_only_a_stored_real_fix(gateway, tmp_path):
+    from laptopwatch.tracking import LocationFix, LastSeenStore, TrackingService
+    client, identity, key, ctrl, reg, state = gateway
+    assert signed(client, identity, key, 'GET', '/api/location/last-seen').status_code == 503
+
+    now_ms = int(time.time() * 1000)
+    store = LastSeenStore(tmp_path / 'lastseen.db')
+    try:
+        state.tracking = TrackingService(store, receiver=None)
+        assert signed(client, identity, key, 'GET', '/api/location/last-seen').status_code == 404
+        store.add(LocationFix(0.3476, 32.5825, 17.5, now_ms), now_ms=now_ms)
+        response = signed(client, identity, key, 'GET', '/api/location/last-seen')
+        assert response.status_code == 200
+        assert response.json()['accuracy_meters'] == 17.5
+        assert response.json()['provider'] == 'gpsd-gnss'
+    finally:
+        store.close()

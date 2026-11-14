@@ -52,6 +52,7 @@ class EvidenceRecorder:
         self._failure: str | None = None
         self._last_result: VideoResult | None = None
         self.max_duration_seconds = min(max(1.0, float(max_duration_seconds)), 300.0)
+        self.max_file_bytes = 128 * 1024 * 1024  # bound individual evidence clips
 
     @property
     def recording(self) -> bool:
@@ -164,6 +165,10 @@ class EvidenceRecorder:
                     self._writer.write(frame)
                     self._last_frame = frame.copy()
                     self._frames += 1
+                    if self._frames % 60 == 0 and self._file and self._file.exists():
+                        if self._file.stat().st_size >= self.max_file_bytes:
+                            self._failure = "Recording stopped at the 128 MiB clip limit"
+                            break
         except Exception:
             self._failure = "Camera encoder failed"
         finally:

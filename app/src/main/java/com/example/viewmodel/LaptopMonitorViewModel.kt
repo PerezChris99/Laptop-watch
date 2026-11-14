@@ -103,6 +103,10 @@ data class MonitorUiState(
 )
 
 class LaptopMonitorViewModel(application: Application) : AndroidViewModel(application) {
+    // Geofence anchors must come from a verified owner's position, never a
+    // hard-coded coordinate or the laptop's first post-theft observation.
+    // Not persisted until an authenticated, consented anchor schema exists.
+    private var geofenceAnchor: Pair<Double, Double>? = null
     private val database = AppDatabase.getInstance(application)
     private val repository = LaptopRepository(
         laptopDao = database.laptopDao(),
@@ -1109,13 +1113,27 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 checkGeofenceBreach(loc.latitude, loc.longitude)
             } else {
                 val err = result.exceptionOrNull()?.message ?: "GPS hardware unavailable"
+                // Old demo records were written to Room as GPS_HARDWARE.
+                // Never use legacy unverified records as stolen-device evidence.
+                val prior = repository.getLatestLocationDirect()?.takeIf {
+                    it.provider == "gpsd-gnss" &&
+                    it.accuracyMeters > 0f &&
+                    it.latitude in -90.0..90.0 &&
+                    it.longitude in -180.0..180.0
+                }
                 _uiState.value = _uiState.value.copy(
-                    toastFeedback = "No verified laptop location: $err",
-                    hasLocationCoordinates = false,
+                    toastFeedback = if (prior != null) "Offline; showing the last verified GNSS fix" else "No verified laptop location: $err",
+                    currentLatitude = prior?.latitude ?: 0.0,
+                    currentLongitude = prior?.longitude ?: 0.0,
+                    hasLocationCoordinates = prior != null,
                     isLocationDemo = false,
                     isLocationTrackingActive = false,
-                    locationAddress = "No verified laptop location available",
-                    gpsAccuracyMeters = 0.0f
+                    locationAddress = prior?.let {
+                        "Last seen ${java.util.Date(it.timestamp)} (reported ±${it.accuracyMeters}m); device offline"
+                    } ?: "No verified laptop location available",
+                    gpsProvider = prior?.provider ?: "UNAVAILABLE",
+                    lastGpsFixTime = prior?.timestamp ?: 0L,
+                    gpsAccuracyMeters = prior?.accuracyMeters ?: 0.0f
                 )
                 recordDiagnostic(
                     tag = "GPS",
@@ -1127,9 +1145,9 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun checkGeofenceBreach(currentLat: Double, currentLng: Double) {
-        if (!_uiState.value.isGeofenceArmed) return
-        val anchorLat = 40.712890
-        val anchorLng = -74.006080
+        if (!_uiState.value.isGeofenceArmed || !_uiState.value.isLocationTrackingActive || _uiState.value.isLocationDemo) return
+        val anchor = geofenceAnchor ?: return
+        val (anchorLat, anchorLng) = anchor
         val latDist = (currentLat - anchorLat) * 111139.0
         val lngDist = (currentLng - anchorLng) * 111139.0 * Math.cos(Math.toRadians(anchorLat))
         val distanceMeters = Math.sqrt(latDist * latDist + lngDist * lngDist)
@@ -1168,9 +1186,18 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
 
     fun toggleGeofence() {
         val newState = !_uiState.value.isGeofenceArmed
-        _uiState.value = _uiState.value.copy(
+        val state = _uiState.value
+        if (newState && (!state.hasLocationCoordinates || state.isLocationDemo || !state.isLocationTrackingActive || state.gpsAccuracyMeters <= 0f)) {
+            _uiState.value = state.copy(
+                toastFeedback = "A verified live laptop location is required before arming a geofence"
+            )
+            return
+        }
+        geofenceAnchor = if (newState) state.currentLatitude to state.currentLongitude else null
+        _uiState.value = state.copy(
             isGeofenceArmed = newState,
-            toastFeedback = if (newState) "🛡️ GPS Geofence boundary ARMED" else "Geofence boundary disarmed"
+            isOutsideGeofence = false,
+            toastFeedback = if (newState) "Geofence anchored to current verified position" else "Geofence boundary disarmed"
         )
     }
 
