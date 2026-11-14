@@ -16,3 +16,7 @@
 local.properties
 .env
 debug.keystore
+
+# Local, never-certified gate results (contains local platform metadata)
+verification-results*.json
+ops/results/

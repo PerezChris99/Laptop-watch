@@ -252,6 +252,9 @@ def design_and_python() -> None:
 
 
 def main() -> int:
+    require_file("ops/verify_release.py", (
+        "release_approved", "release:real-world-acceptance", "BLOCKED",
+    ))
     scan_sources()
     native_contract()
     design_and_python()
