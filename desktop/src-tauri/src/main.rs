@@ -44,17 +44,68 @@ struct CompanionHealth {
     last_error: Option<String>,
 }
 
-/// Only 127.0.0.1:8766; no proxy, no IPC-originated arbitrary host/port.
-/// Authenticate health with the secret given directly to the launched process.
+/// HMAC-SHA256 with existing SHA-256 dependency; the per-launch bearer is
+/// the MAC key. Nothing secret is ever returned in the response.
+fn owner_health_hmac(key: &[u8], challenge: &[u8]) -> String {
+    let mut block = [0u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let mut inner = [0x36u8; 64];
+    let mut outer = [0x5cu8; 64];
+    for i in 0..64 {
+        inner[i] ^= block[i];
+        outer[i] ^= block[i];
+    }
+    let mut sha = Sha256::new();
+    sha.update(inner);
+    sha.update(challenge);
+    let inner_digest = sha.finalize();
+    let mut sha = Sha256::new();
+    sha.update(outer);
+    sha.update(inner_digest);
+    sha.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn equal_hex_constant_time(actual: &str, expected: &str) -> bool {
+    if actual.len() != expected.len() { return false; }
+    let mut difference = 0u8;
+    for (a, b) in actual.bytes().zip(expected.bytes()) { difference |= a ^ b; }
+    difference == 0
+}
+
+/// Only 127.0.0.1:8766. A plain HTTP 200 cannot spoof sidecar health:
+/// the response must prove knowledge of the inherited per-launch secret.
 async fn authenticated_health_probe(secret: &str) -> bool {
     let future = async {
+        let mut nonce = [0u8; 16];
+        rand::rngs::OsRng.fill_bytes(&mut nonce);
+        let challenge: String = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
         let mut socket = tokio::net::TcpStream::connect("127.0.0.1:8766").await?;
-        let message = format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:8766\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n", secret);
+        let message = format!(
+            "GET /health HTTP/1.1\r\nHost: 127.0.0.1:8766\r\nAuthorization: Bearer {secret}\r\nX-LaptopWatch-Challenge: {challenge}\r\nConnection: close\r\n\r\n"
+        );
         socket.write_all(message.as_bytes()).await?;
-        let mut response = [0u8; 4096];
-        let count = socket.read(&mut response).await?;
-        Ok::<bool, std::io::Error>(count > 20 &&
-            response[..count].starts_with(b"HTTP/1.1 200 "))
+        let mut response = Vec::with_capacity(1024);
+        let mut chunk = [0u8; 1024];
+        while response.len() <= 8192 {
+            let count = socket.read(&mut chunk).await?;
+            if count == 0 { break; }
+            response.extend_from_slice(&chunk[..count]);
+            if response.windows(4).any(|slice| slice == b"\r\n\r\n") { break; }
+        }
+        if response.len() > 8192 || !response.starts_with(b"HTTP/1.1 200 ") {
+            return Ok::<bool, std::io::Error>(false);
+        }
+        let headers = String::from_utf8_lossy(&response);
+        let proof = headers.split("\r\n")
+            .filter_map(|line| line.split_once(':'))
+            .find(|(key, _)| key.eq_ignore_ascii_case("X-LaptopWatch-Health-Proof"))
+            .map(|(_, value)| value.trim());
+        let expected = owner_health_hmac(secret.as_bytes(), challenge.as_bytes());
+        Ok::<bool, std::io::Error>(proof.is_some_and(|p| equal_hex_constant_time(p, &expected)))
     };
     matches!(tokio::time::timeout(Duration::from_secs(2), future).await, Ok(Ok(true)))
 }
@@ -552,6 +603,16 @@ fn main() {
 #[cfg(test)]
 mod supervisor_tests {
     use super::*;
+
+    #[test]
+    fn health_mac_matches_standard_sha256_hmac_vector() {
+        assert_eq!(
+            owner_health_hmac(b"key", b"The quick brown fox jumps over the lazy dog"),
+            "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+        );
+        assert!(!equal_hex_constant_time("abc", "abd"));
+        assert!(!equal_hex_constant_time("abcd", "abc"));
+    }
 
     #[test]
     fn crash_budget_allows_only_five_restarts_per_minute() {
