@@ -50,8 +50,11 @@ class LaptopWatchFcmService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        // Never log/persist this bearer token. Registration must occur only
-        // after explicit owner opt-in with the configured signed relay.
-        // Deferred external Firebase/relay provisioning remains BLOCKED.
+        // Store only a rotation flag, never a bearer token. The visible,
+        // owner-opted-in JS app signs re-enrollment on its next foreground.
+        if (BuildConfig.LAPTOPWATCH_FCM_ENABLED && token.isNotBlank()) {
+            getSharedPreferences("laptopwatch-fcm", Context.MODE_PRIVATE).edit()
+                .putBoolean("token_sync_pending", true).apply()
+        }
     }
 }

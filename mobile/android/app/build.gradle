@@ -2,6 +2,16 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// Owner-controlled opt-in. Default builds contain no configured Firebase app.
+def laptopwatchFcmEnabled = providers.gradleProperty("laptopwatchFcmEnabled")
+    .map { it.toBoolean() }.getOrElse(false)
+if (laptopwatchFcmEnabled) {
+    if (!file("google-services.json").isFile()) {
+        throw new GradleException("FCM opt-in requires owner-provisioned android/app/google-services.json")
+    }
+    apply plugin: "com.google.gms.google-services"
+}
+
 // Standard React Native 0.88 autolinking. Native security modules are added
 // explicitly in MainApplication, never registered through remote JS.
 react {
@@ -20,8 +30,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.1.0"
-        // Explicit compile-time OFF until owner supplies Firebase & relay identity.
-        buildConfigField "boolean", "LAPTOPWATCH_FCM_ENABLED", "false"
+        // Disabled by default. Cannot enable without an owner Firebase config.
+        buildConfigField "boolean", "LAPTOPWATCH_FCM_ENABLED", laptopwatchFcmEnabled.toString()
         manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     buildTypes {

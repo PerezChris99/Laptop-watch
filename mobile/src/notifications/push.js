@@ -23,7 +23,14 @@ export async function registerPush(paired, relayUrl) {
   const token = await NativeModules.LaptopWatchPush.getToken();
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096 ||
       /[^!-~]/.test(token)) throw new Error('Invalid native Firebase token');
-  return signedRelayJson(paired, trusted, 'POST', '/api/push/register', { token });
+  const result = await signedRelayJson(paired, trusted, 'POST', '/api/push/register', { token });
+  // Clear only after the signed relay accepted the latest token. No raw
+  // bearer token is persisted in JavaScript settings or native preferences.
+  const native = NativeModules.LaptopWatchPush;
+  if (native && typeof native.acknowledgeTokenSync === 'function') {
+    await native.acknowledgeTokenSync();
+  }
+  return result;
 }
 
 /** @param {object} paired @param {string} relayUrl @returns {Promise<void>} */
@@ -43,4 +50,19 @@ export async function pushEnrollmentStatus(paired, relayUrl) {
 /** @returns {string} */
 export function pushStatusMessage() {
   return 'FCM is optional. Without a configured Firebase project and owner-signed relay, use foreground authenticated incident checks.';
+}
+
+/** Reconcile an FCM token rotation only while the owner-approved app is
+ * foregrounded and already opted in to the signed relay.
+ * @param {object} paired
+ * @param {string} relayUrl
+ * @returns {Promise<boolean>}
+ */
+export async function reconcilePushOnForeground(paired, relayUrl) {
+  if (!paired?.approved || !relayUrl || !await pushAvailable()) return false;
+  const native = NativeModules.LaptopWatchPush;
+  if (!native || typeof native.needsTokenSync !== 'function') return false;
+  if (await native.needsTokenSync() !== true) return false;
+  await registerPush(paired, relayUrl);
+  return true;
 }

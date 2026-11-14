@@ -5,7 +5,7 @@ import { RTCView } from 'react-native-webrtc';
 import Video from 'react-native-video';
 import { downloadEvidence, exportEvidenceLocal, deleteEvidenceLocal, purgePrivateEvidence } from './net/evidence.js';
 import { signedRelayJson, normalizedRelayUrl } from './net/signedRelay.js';
-import { pushAvailable, registerPush, unregisterPush, pushEnrollmentStatus, pushStatusMessage } from './notifications/push.js';
+import { pushAvailable, registerPush, unregisterPush, reconcilePushOnForeground, pushEnrollmentStatus, pushStatusMessage } from './notifications/push.js';
 import { QrScanner } from './pairing/QrScanner.jsx';
 import { rediscoverPairedLaptop } from './discovery/findPaired.js';
 import { exportIncidents } from './reports/export.js';
@@ -110,6 +110,22 @@ export default function App() {
     catch (_) { setTransportAvailable(false); }
     return () => { mounted.current = false; };
   }, []);
+
+  // Rotated tokens require an existing owner opt-in and foreground signing.
+  useEffect(() => {
+    if (!paired?.approved || !pushEnrolled || !pushEnabled || !relayUrl) return;
+    const reconcile = () => {
+      if (AppState.currentState !== 'active') return;
+      reconcilePushOnForeground(paired, relayUrl).catch(() => {
+        // Native pending flag persists for the next foreground retry.
+      });
+    };
+    reconcile();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') reconcile();
+    });
+    return () => subscription.remove();
+  }, [paired, pushEnrolled, pushEnabled, relayUrl]);
 
   useEffect(() => {
     if (!paired?.desktopId) { setLocation(null); return; }
