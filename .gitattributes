@@ -1,0 +1,16 @@
+# Keep GitHub Linguist language detection explicit for LaptopWatch's source.
+# These classifications describe actual languages; do not conceal native code.
+*.js linguist-language=JavaScript
+*.jsx linguist-language=JavaScript
+*.cjs linguist-language=JavaScript
+*.mjs linguist-language=JavaScript
+*.py linguist-language=Python
+*.rs linguist-language=Rust
+*.kt linguist-language=Kotlin
+*.kts linguist-language=Kotlin
+*.swift linguist-language=Swift
+*.css linguist-language=CSS
+
+# Bundled Gradle launchers are generated build tooling, not product source.
+mobile/android/gradlew linguist-generated
+mobile/android/gradlew.bat linguist-generated
