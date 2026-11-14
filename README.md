@@ -159,6 +159,22 @@ iOS requires macOS, Xcode and CocoaPods. Do not use `npm ci` until a reviewed
 lockfile has actually been created and committed. Credentials, signing
 identities, real hardware and live provider services are not included.
 
+### Strict local verification launcher
+
+The included standard-library runner reports **PASS**, **FAIL** or
+**BLOCKED** without inventing output. Run it on a machine with the actual
+checkout and compatible toolchains:
+
+```bash
+python ops/verify_release.py --mode source
+python ops/verify_release.py --mode full --json verification-results.json
+```
+
+The full mode requires real reviewed dependency locks, Android SDK, Rust,
+Xcode on macOS and still marks physical/security/commercial sign-off as
+BLOCKED pending actual evidence. A source-only green result is never
+production approval. This repository does not include GitHub Actions.
+
 **Authoritative commands and stop-ship checklist:**
 [build and release runbook](docs/RELEASE_RUNBOOK.md) ·
 [release checklist](docs/RELEASE_CHECKLIST.md) ·

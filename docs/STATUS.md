@@ -29,6 +29,13 @@ Its synthetic biometrics, virtual unlock, fake geographic data and old PIN/HTTP
 implementation are not present as real security features in the replacement.
 This is not an assertion of verified Kotlin feature parity.
 
+## Executable local verification
+
+Use `python ops/verify_release.py --mode full --json verification-results.json`
+on a real checkout to obtain an explicit FAIL/BLOCKED/PASS ledger.
+The runner cannot sign installers, provision Firebase/GNSS/relay, perform
+independent penetration tests, or certify physical-device behavior.
+
 ## STOP-SHIP: concrete unexecuted checks
 
 - [ ] Fully materialized clean checkout; exact reviewed mobile/desktop npm,

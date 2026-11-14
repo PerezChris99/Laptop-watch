@@ -5,6 +5,20 @@ controller while still requiring a separate native build, external service,
 physical-device, security-review and release acceptance phase. The commands below are **not recorded as passed**.
 A GitHub merge or source syntax check is NOT evidence of installed app parity.
 
+## One-command conservative verification report
+
+After a trusted checkout, `python ops/verify_release.py --mode full
+--json verification-results.json` executes every locally supported
+source/Python/Node/Rust/Android/iOS gate in order and reports missing
+locks, SDKs and OS support as **BLOCKED**, not PASS. It intentionally
+returns nonzero until all required gates including the manual real-world
+release acceptance are completed. `--mode source` runs only the quick
+offline source checks; a green source result is **not a release verdict**.
+
+The runner's optional JSON report contains command statuses, not raw
+process logs or customer secrets. Carry out physical and legal acceptance
+with separately signed, reviewed evidence.
+
 ## 0. Clean checkout, source-policy checks
 
 ```bash
