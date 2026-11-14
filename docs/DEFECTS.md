@@ -26,6 +26,17 @@
 | DOC-001 | MEDIUM | `README.md`; `app/build.gradle.kts:20-28` | README Android 8+ badge (API 26), Gradle minSdk 24 (Android 7) | Reconcile supported version and test min SDK on a device | OPEN |
 | DOC-002 | MEDIUM | `README.md` | Claims encrypted channel and complete two-way intercom, but code does not establish both | Replace marketing claims with implementation status until validated | OPEN |
 
+## Additional findings from 2026-11-14 (source-reviewed, not closed by feature commits)
+
+| ID | Severity | Path / scope | Finding | Acceptance gate | Status |
+|---|---|---|---|---|---|
+| MEDIA-004 | HIGH | `desktop/src-python/laptopwatch/evidence.py`, `gateway.py` | Photo, MP4 recording and download endpoints now exist and use signed requests, but camera/codec hardware behavior and Android integration unverified | Real JPEG/MP4 decode, disk quota, retention, permissions, crash recovery and signed client tests | PARTIAL: 5 mocked media tests passed |
+| LOC-001 | HIGH | `desktop/src-python/laptopwatch/tracking.py` | GNSS adapter implemented using a configured real `gpsd` receiver; no native Windows/macOS location API or device location UX | Reference GPS comparison and OS permissions on actual supported devices | PARTIAL: 8 mocked tracking tests passed |
+| LOC-002 | CRITICAL | Reconnect/backhaul, Android client, infrastructure | Offline queue is LOCAL to laptop; after theft, previous unsynced positions cannot be viewed remotely | End-to-end encrypted signed remote delivery, authenticated durable receipt, owner phone retrieval, reconnect hooks and outage tests | OPEN |
+| LOC-003 | HARDWARE | Sleep/power-off | Python user-mode code cannot guarantee sampling while machine sleeps/powers down | Document OS Find My options and independent battery-backed GNSS tracker for true independence | INHERENT LIMITATION |
+| MEDIA-005 | HIGH | Android ↔ Python security | Android still uses legacy network client; phone cannot control the signed photo/video gateway | Paired phone signing and TLS pinning, UI actions, live device tests | OPEN |
+| QA-002 | HIGH | Build and release | No complete Android SDK/Gradle wrapper verification or all-platform hardware acceptance | Reproducible full test suite, signing and 24h soak evidence | OPEN |
+
 ## Acceptance evidence format
 
 For every fix, record: commit SHA, test ID, exact invocation, date, OS/device, result, and log/screenshot/hardware artifact. A code review or mock response is not runtime proof.

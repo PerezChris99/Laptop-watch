@@ -140,7 +140,7 @@ fun IntruderLogsScreen(
     fun generateTextReport(): String {
         val sb = StringBuilder()
         sb.appendLine("========================================")
-        sb.appendLine("LAPTOP SENTINEL SECURITY LOG AUDIT")
+        sb.appendLine("LAPTOPWATCH SECURITY LOG AUDIT")
         sb.appendLine("Generated: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
         sb.appendLine("Total Incidents & Events: ${logs.size}")
         sb.appendLine("========================================\n")
@@ -150,7 +150,7 @@ fun IntruderLogsScreen(
             sb.appendLine("  Severity: ${item.severity} | Category: ${item.category} | Locked: ${item.wasLocked}")
             sb.appendLine("  Description: ${item.description}")
             if (item.latitude != null && item.longitude != null) {
-                sb.appendLine("  Location: %.7f, %.7f (±%.1fm 1-Meter GPS Accuracy)".format(item.latitude, item.longitude, item.accuracyMeters ?: 1.0f))
+                sb.appendLine("  Location: %.7f, %.7f (±%.1fm source accuracy unverified)".format(item.latitude, item.longitude, item.accuracyMeters ?: 0.0f))
             }
             if (!item.warningIssued.isNullOrBlank()) {
                 sb.appendLine("  Warning Issued: ${item.warningIssued}")
@@ -216,7 +216,7 @@ fun IntruderLogsScreen(
                     color = DeepSlate800
                 )
                 Text(
-                    text = "${logs.size} sequential events • 1-Meter GPS Accuracy",
+                    text = "${logs.size} sequential events • source accuracy unverified",
                     fontSize = 12.sp,
                     color = MutedSlate500
                 )
@@ -464,14 +464,14 @@ fun IntruderLogsScreen(
                             onDelete = { onDeleteLog(item.id) },
                             onShare = {
                                 shareReport(
-                                    "LAPTOP SENTINEL TIMELINE EVENT\nEvent: ${item.eventType}\nTime: ${timeFormat.format(Date(item.timestamp))}\nCoordinates: ${item.latitude ?: 0.0}, ${item.longitude ?: 0.0} (±1m Accuracy)\nDescription: ${item.description}",
+                                    "LAPTOPWATCH TIMELINE EVENT\nEvent: ${item.eventType}\nTime: ${timeFormat.format(Date(item.timestamp))}\nCoordinates: ${item.latitude ?: 0.0}, ${item.longitude ?: 0.0} (accuracy not independently verified)\nDescription: ${item.description}",
                                     "text/plain",
                                     "Security Timeline Event"
                                 )
                             },
                             onCopyLocation = {
                                 if (item.latitude != null && item.longitude != null) {
-                                    val coordStr = "%.7f, %.7f (±%.1fm 1-Meter GPS Accuracy)".format(item.latitude, item.longitude, item.accuracyMeters ?: 1.0f)
+                                    val coordStr = "%.7f, %.7f (±%.1fm source accuracy unverified)".format(item.latitude, item.longitude, item.accuracyMeters ?: 0.0f)
                                     copyToClipboard(coordStr)
                                 }
                             }
@@ -781,7 +781,7 @@ private fun ActivityTimelineNode(
                     lineHeight = 17.sp
                 )
 
-                // 1-Meter GPS Accuracy Tag
+                // source accuracy unverified Tag
                 if (log.latitude != null && log.longitude != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(
@@ -816,7 +816,7 @@ private fun ActivityTimelineNode(
                                         color = DeepSlate800
                                     )
                                     Text(
-                                        text = "±%.1fm 1-Meter GPS Accuracy • ${log.locationName ?: "Desk Workstation"}".format(log.accuracyMeters ?: 1.0f),
+                                        text = "±%.1fm source accuracy unverified • ${log.locationName ?: "Desk Workstation"}".format(log.accuracyMeters ?: 0.0f),
                                         fontSize = 10.sp,
                                         color = SkyBlueDark
                                     )
@@ -837,7 +837,7 @@ private fun ActivityTimelineNode(
                                 }
                                 IconButton(
                                     onClick = {
-                                        val geoUri = Uri.parse("geo:${log.latitude},${log.longitude}?q=${log.latitude},${log.longitude}(1m+GPS+Location)")
+                                        val geoUri = Uri.parse("geo:${log.latitude},${log.longitude}?q=${log.latitude},${log.longitude}(Unverified+Location)")
                                         val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
                                         context.startActivity(Intent.createChooser(mapIntent, "Open Pinpoint in Map"))
                                     },
@@ -1090,7 +1090,7 @@ private fun IntruderLogItemCard(
                 ) {
                     Icon(Icons.Default.GpsFixed, contentDescription = null, tint = SkyBluePrimary, modifier = Modifier.size(13.dp))
                     Text(
-                        text = "Lat: %.7f, Lng: %.7f (±%.1fm 1-Meter GPS Accuracy)".format(log.latitude, log.longitude, log.accuracyMeters ?: 1.0f),
+                        text = "Lat: %.7f, Lng: %.7f (±%.1fm source accuracy unverified)".format(log.latitude, log.longitude, log.accuracyMeters ?: 0.0f),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         color = SkyBlueDark

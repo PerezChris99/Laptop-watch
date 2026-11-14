@@ -66,3 +66,10 @@ Default no third-party cloud evidence storage. Every recording/snapshot requires
 5. Complete adversarial tests with an untrusted LAN client and external security assessment.
 
 The presence of this file does not attest that any threat has been mitigated.
+
+
+## Additional evidence/location controls required (2026-11-14)
+
+The Python gateway now exposes signed JPEG, MP4 and last-seen APIs and stores files in user-specific local state directories. **No release approval is implied.** A signed request is necessary but not sufficient to mitigate abuse, local malware, compromised pairing or involuntary recordings. Before shipping, add hardware-backed key handling, explicit consent UI, local data encryption, configurable retention/deletion, audit events on evidence access, disk usage quotas, media upload limits, and Android/desktop account revocation.
+
+Location history is sensitive: never send it to an arbitrary URL or default telemetry endpoint, and never claim a fix without a real source and timestamp. The offline queue has no deployed remote sink; user-provided relay endpoints must enforce TLS pinning, signed device messages, encrypted storage, authorization and receipt replay protection. The design does not defend against an attacker who wipes the disk or turns the machine fully off.

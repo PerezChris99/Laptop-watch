@@ -1,6 +1,18 @@
 # LaptopWatch — gated release checklist
 
-**Status 2026-11-13: NOT RELEASE READY.** This checklist is an executable policy, not a marketing declaration.
+**Status 2026-11-14: NOT RELEASE READY.** This checklist is an executable policy, not a marketing declaration.
+
+## Current development checkpoint (NOT A RELEASE)
+
+- [x] Secure Python gateway supports signed armed-only JPG photo / bounded MP4 start-stop / authenticated evidence download (source code; hardware tests pending).
+- [x] Local, opt-in `gpsd` GNSS fixes validate accuracy and timestamp; queue preserves unsent last-seen.
+- [x] 13 newly added media/location tests executed with mocks; they passed locally on Python 3.13.
+- [x] Original repository artwork restored in root README; café/restroom and theft recovery workflows documented.
+- [ ] Android uses the new gateway with QR pairing, pinned TLS and WebRTC.
+- [ ] Photographs and MP4s tested for real devices, codecs, camera permissions and recovery after process crash.
+- [ ] A trusted encrypted remote location service deployed and observable by paired phone after laptop theft.
+- [ ] Android, Windows, macOS and Linux build and physical acceptance gates all pass.
+- [ ] Production security audit, signed installer, legal and commercial releases approved.
 
 ## v0.1.0 audit & architecture
 - [x] Source inventory and current architecture documented.

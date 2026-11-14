@@ -28,3 +28,21 @@
 | I2 | fresh installed user | 3-step QR onboarding | no README needed | UNRUN |
 
 Test report must contain build commit, environment, time, log/video evidence and reason for any failure. Do not mark test pass based solely on compilation, design notes or a demo-mode run.
+
+
+## Additional acceptance checks — 2026-11-14
+
+| ID | Test | Present state |
+|---|---|---|
+| PY-EVID-01 | Saves JPEG, releases webcam, fails closed if hardware missing | PASS: local mocked unit tests |
+| PY-EVID-02 | Start/stop local MP4, returns actual bytes/frames, camera released | PASS: local mocked unit tests |
+| PY-EVID-03 | Authenticated photo/video gateway and evidence downloads | Source implemented; gateway integration suite NOT RUN in current environment |
+| PY-GPS-01 | Reject coordinates without genuine accuracy, invalid/stale fixes | PASS: local mocked unit tests |
+| PY-GPS-02 | Fixes persist after restart; stale state reported | PASS: local SQLite unit tests |
+| PY-GPS-03 | Offline queue retains unacknowledged records; retry only marks on delivery | PASS: local mocked unit tests |
+| PY-GPS-04 | Real GNSS hardware and OS permission accuracy compared with reference | NOT RUN |
+| PY-GPS-05 | Paired WAN location relay receives on reconnect and phone displays last delivered record | NOT IMPLEMENTED |
+| AND-CAM-01 | Android Photo/Record/Download signed control and consent | NOT IMPLEMENTED |
+| OS-POWER-01 | Laptop sleep/wake/hibernate/Modern Standby, Find My compatibility | NOT RUN |
+
+**Note:** `PY-EVID-01/02` and `PY-GPS-01/02/03` comprise 13 executed tests in the newly added media/tracking test files; they are not substitutes for actual hardware, full Android builds or pen-testing.

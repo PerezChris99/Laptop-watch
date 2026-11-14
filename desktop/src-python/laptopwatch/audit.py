@@ -55,7 +55,7 @@ class SignedAuditLog:
         return previous
 
     def append(self, action: str, device_id: str, *, result: str, metadata: dict[str, str] | None = None) -> str:
-        if action not in {"lock", "alarm", "record_start", "record_stop", "config", "pair", "unpair", "auth_reject"}:
+        if action not in {"lock", "alarm", "record_start", "record_stop", "snapshot", "config", "pair", "unpair", "auth_reject"}:
             raise ValueError("action not allowlisted")
         if result not in {"success", "failure", "denied"}:
             raise ValueError("invalid result")
