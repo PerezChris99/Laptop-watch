@@ -58,3 +58,26 @@ Do not interpret them as a passing feature-parity matrix.
       encryption, installation, security scans, SBOM and 24-hour soak.
 - [ ] Document **verified** parity and obtain explicit owner approval before
       deleting the frozen Kotlin `app/`.
+
+## Superseding source checkout inventory — after PR #14
+
+- [x] React Native Android project and official Gradle wrapper source
+- [x] React Native iOS Xcode/Podfile source
+- [x] Android pinned TLS/FGS/evidence/relay/FCM/discovery registrations
+- [x] iOS strict pinned LAN + signed public-CA relay + user evidence exports
+- [x] JavaScript signed control/pairing, GNSS history, mDNS verification
+- [x] Explicit WebRTC two-way consent/OS permission and track cleanup source
+- [x] Encrypted OP-SQLite SQLCipher cache with independent OS Keychain key
+- [x] Bounded redacted incident CSV/text and local media export/deletion source
+- [x] Owner-only authenticated loopback health and audit-history source
+- [x] Feature-by-feature migration parity and security-source preflight
+- [ ] **Run** source preflight and all native/installed dependency tests on
+      an accessible checkout; these checks are not recorded as passing.
+- [ ] Create and review real npm/Cargo locks; run integrated tests.
+- [ ] Verify full hardware/OS/native behavior and legal/release gates.
+- [ ] Owner separately approves any deletion of Kotlin `app/`.
+
+Earlier lines suggesting native project scaffolds or registered modules are
+missing describe an older checkpoint and no longer match the source tree.
+Current authoritative record: `docs/PARITY.md`,
+`docs/RELEASE_RUNBOOK.md` and new `Warning.txt`.

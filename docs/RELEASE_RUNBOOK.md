@@ -1,140 +1,156 @@
-# LaptopWatch — reproducible build and device acceptance runbook
+# LaptopWatch — separate verified-build and hardware acceptance runbook
 
-**Execution evidence:** all commands below are **prescribed**, not passed.
-The isolated engineering runner cannot DNS-resolve GitHub/npm and lacks Rust,
-Gradle, Android SDK and physical devices. If a command fails, attach full logs
-and hardware/OS details to `docs/DEFECTS.md`, without secrets.
+**As of 14 November 2026:** owner requested source overhaul first and
+separate native builds, external services, physical tests, security review and
+release acceptance later. The commands below are **not recorded as passed**.
+A GitHub merge or source syntax check is NOT evidence of installed app parity.
 
-## Repository source-policy preflight
+## 0. Clean checkout, source-policy checks
 
 ```bash
+git clone https://github.com/PerezChris99/Laptop-watch.git
+cd Laptop-watch
+git fetch origin
+git checkout main
 python ops/source_preflight.py
 python design/generate.py --check
 ```
 
-Checks JavaScript-only desktop/mobile, generated tokens, Python syntax and
-critical JS syntax; this is **not** a full build or security certification.
+Use this full checkout when a trusted host can resolve and reach GitHub.
+Source preflight checks exact native contracts, real files, client
+JavaScript-only policy, design tokens, Python syntax and installed Node's
+non-JSX JavaScript syntax. It does not compile native code.
 
-## Python + HTTPS relay
+## 1. Python signed HTTPS gateway and relay
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+# macOS/Linux: source .venv/bin/activate
+# Windows: .venv\Scripts\Activate.ps1
 python -m pip install -e './desktop/src-python[test,media,discovery]'
-cd desktop/src-python && python -m pytest -q && cd ../..
+python -m pytest -q desktop/src-python/tests
+python -m pip install -e './services/location-relay[test]'
+python -m pytest -q services/location-relay/tests
 python -m pip install pip-audit
 pip-audit
 ```
 
-On Windows PowerShell use `.venv\\Scripts\\Activate.ps1`.
-Also run `python -m pytest -q services/location-relay/tests` from root with
-matching relay dependencies installed. Capture Python, OS and tool versions.
+Check actual project's optional extras and toolchain versions against its
+pyproject metadata; do not substitute an incompatible package. At minimum
+run the signed gateway, Ed25519 replay, pairing, audit-tamper, owner-health
+and new signed GNSS history tests. Capture complete non-secret output.
 
-## Desktop JavaScript, Rust and Tauri
-
-```bash
-cd desktop
-npm ci
-npm run check:tokens
-npm run build
-npm audit --audit-level=high
-cd src-tauri
-cargo build --locked
-cargo test --locked
-```
-
-**Currently blocked by missing `desktop/package-lock.json`, `Cargo.lock`,
-cargo/toolchains and optional platform SDKs.** Generate the locks on a trusted
-machine after reviewing dependencies; do not fabricate placeholder lockfiles.
-Check Tauri singleton, repeated crashes (five / 60 seconds), autostart with
-explicit owner consent, hide-to-tray, Quit termination, manual stop/rapid
-restart and reboot. Verify no Windows console window in a signed package.
-
-## Kotlin reference — keep until parity
-
-```bash
-./gradlew --version
-./gradlew assembleDebug test lint
-```
-
-Requires genuine `gradlew`, `gradlew.bat`, official wrapper JAR, JDK 17,
-Android SDK and reviewed dependency lockfiles. At baseline these are missing.
-Do not claim FCM configured without a real Firebase project.
-
-## React Native 0.88.1 (JavaScript only)
+## 2. React Native JavaScript mobile
 
 ```bash
 cd mobile
+npm install --package-lock-only
+# REVIEW package-lock.json in the PR, pin transitive packages
 npm ci
 npm run test:protocol
+npm run test:ui
 npm run lint
 npm run check:js
+python ../ops/source_preflight.py
+cd android
+./gradlew --version
+./gradlew assembleDebug test lint
+cd ..
 npm run android
 ```
 
-**Blocked:** official reviewed `android/` and `ios/` projects, generated
-`package-lock.json`, RN native package registration, real device and toolchains
-are absent. Android native OkHttp pinned adapter is source-only. Do not swap
-in unpinned `fetch`. On iOS an equivalent fingerprint-pinning module is
-required before signed LAN controls can be enabled.
+React Native Android/iOS project **source and the official Android 0.88.x
+Gradle wrapper are now present**. Native modules are registered. These
+commands are still unexecuted because this runner lacks a local checkout,
+npm registry dependencies, Android SDK/NDK and devices. Review RN package
+versions, Kotlin/Swift API signatures, Gradle plugins, dynamic dependencies
+and target SDK before interpreting any build as green. Keep Firebase
+compile-time OFF until legitimate owner credentials and relay enrollment.
 
-## Security and distribution
-
-After dependencies and a full checkout: execute `pip-audit`, `npm audit`,
-`cargo audit` (install `cargo-audit`), gitleaks, semgrep and a CycloneDX
-SBOM for each artifact. Attach machine-readable findings, explicit exceptions
-and actual test runs. No GitHub Actions workflow is added.
-
-Device matrix: Android supported API floor through 16, Windows 10/11,
-macOS latest supported, Linux distributions; test QR, certificate mismatch,
-replay/skew/revocation, network interruption, 24-hour soak, WebRTC/Mic off,
-Camera/MP4, GNSS real fix and stale-label truth, push/Doze, backup recovery.
-Collect cold-start, idle RSS/CPU, installer bytes, p95 LAN action/stream
-latency with measurement tool/OS/device, not guessed values.
-
-Only after every acceptance criterion is proven, and the owner explicitly
-authorizes deletion of `app/` and legal/identity actions, can commercial
-release be evaluated. Store submissions, signing and payments need real accounts.
-
-### Mandatory targeted post-build functional tests
+On a macOS Xcode host:
 
 ```bash
 cd mobile
-npm run test:protocol           # includes location and schema tests
-npm run check:js
-npm run lint
-cd ../desktop/src-python
-python -m pytest -q tests/test_protocol_vectors.py tests/test_evidence.py tests/test_gateway.py
-cd ../src-tauri
-cargo test --locked supervisor_tests
+npm ci
+cd ios
+pod install --repo-update
+xcodebuild -list -project LaptopWatchMobile.xcodeproj
+xcodebuild -workspace LaptopWatchMobile.xcworkspace \
+  -scheme LaptopWatchMobile -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' build
 ```
 
-These commands have **not been executed on an integrated checkout**.
-Devtools screenshots and mock tests alone cannot prove native WebRTC,
-pinned TLS, Keystore integrity, FCM, GNSS or foreground operation.
+Validate iOS camera/local-network permission prompts, Keychain, evidence
+exports and native TLS pinning on a real handset; a simulator alone is not
+sufficient. iOS does not claim Android NSD/connectedDevice FGS parity.
 
-## Phase 3 UI, audit and hardware-specific e2e
+## 3. Tauri/Rust desktop UI, supervision and sidecar
 
 ```bash
 cd desktop
+npm install --package-lock-only
+# REVIEW desktop/package-lock.json
 npm ci
+npm run check:tokens
 npm run test:ui
 npm run lint
 npm run check:js
 npm run build
+python scripts/prepare_sidecar.py
 cd src-tauri
+cargo generate-lockfile
+# REVIEW src-tauri/Cargo.lock
+cargo build --locked
 cargo test --locked
-cd ../src-python
-python -m pytest -q tests/test_cli_audit.py
-cd ../../../mobile
-npm ci
-npm run test:protocol
-npm run lint
-npm run check:js
-# Only after official native Android build, pairing and real QR:
-# maestro test e2e/01-pair-and-controls.yaml
-# maestro test e2e/02-armed-media.yaml
 ```
 
-**None of these commands are recorded as passing in the repository checkout.**
-`docs/SIGNING_AND_NOTARIZATION.md` has additional owner-run release steps.
+Test Tauri tray, single-instance, autostart opt-in, running sidecar without
+displayed window, crash backoff (five in 60 seconds), clean stop, restart,
+Windows SmartScreen/firewall and OS shutdown. Probe owner-only loopback
+health with the random per-launch bearer, verify no unauthenticated owner
+control routes, no secret logs, and valid phone signed LAN HTTPS controls.
+
+## 4. Physical feature parity
+
+- Scan a newly signed QR on a real phone and approve on the actual laptop;
+  reject expired QR, replay, unapproved phone, wrong TLS fingerprint and
+  revoked pairing.
+- Execute arm/disarm, lock, alarm, TTS warning, camera still JPEG, MP4,
+  evidence list/pinned download/preview/owner export/local deletion.
+- Negotiate verified encrypted WebRTC, stop/restart, wrong SDP/ICE and
+  interrupted network; test silent default, consented laptop listening
+  and optional duplex mic under permission deny/allow.
+- Supply a licensed, SHA256-verified person detection model and consented
+  scene; measure precision, false alarms and audio/record triggers.
+- Test Android NSD rediscovery after laptop Wi-Fi IP changes and forged mDNS.
+- Supply actual gpsd receiver; test on-demand LIVE (30s), stale LAST SEEN,
+  bounded signed history, offline and owner relay location/incident queries.
+- Configure real Firebase, FCM delivery, app foreground/background,
+  security of signed relay enrollment/revocation, notifications and Android
+  8–current foreground policy; test power off/Doze/reboot/battery.
+- Perform actual 24-hour reliability soak and measure installer bytes,
+  CPU/RSS, start latency, p95 signed action, audio/video latency and recovery
+  using labeled hardware. Do not invent numbers.
+
+Existing reviewable source files `mobile/e2e/` contain starter Maestro
+flows, not proven acceptance tests; expand and run them on real hardware.
+
+## 5. Security, supply chain, commercial signoff
+
+- Lock dependencies and reproduce from a clean separate machine; audit
+  pip/npm/Cargo/Gradle/Pods and create reviewed SBOM.
+- Exercise incorrect TLS cert, signed nonce persistence, forgery/replay,
+  user revocation, OS Keychain encryption loss, SQLCipher migration and
+  incorrect native private evidence export path.
+- Independent privacy/security review; verify signed audit events are
+  integrity checked before display. Confirm all personal data retention,
+  encrypted backup/deletion and no simulated evidence.
+- Complete installer and notarization tasks in
+  `docs/SIGNING_AND_NOTARIZATION.md`.
+- Owner must supply legal/privacy/EULA/license, domain/relay/Firebase and
+  signing accounts, store compliance and support procedures.
+- Obtain owner **separate explicit approval** to remove Kotlin `app/`
+  *only after* a green, log-backed physical parity matrix.
+
+Current authoring did **not** execute these build, native, security or
+hardware commands. Log real successes and failures in `docs/DEFECTS.md`.

@@ -100,3 +100,30 @@
 - Dependency locks, Vitest, Maestro, legal signing and physical acceptance
   still require authorized build machines; the code must not be released
   on the strength of GitHub source inspection alone.
+
+## Decision 010 — Source parity without fabricated evidence (2026-11-14)
+
+- Owner requested all code implemented before a **separate** native
+  build/real-device verification phase. "Source integrated" never means
+  passed hardware tests or approved commercial distribution.
+- Keep Kotlin `app/` as independent reference through all acceptance;
+  deleting it requires proven replacement and separate explicit approval.
+- Exclude simulated legacy subject biometric dossiers, virtual unlock,
+  fake geofence/tamper events and sample coordinates from security proof.
+  Display verified person detector events and real GNSS instead.
+- Use signed `GET /api/location/history` (max 100 real gpsd entries);
+  remote and stored positions are always LAST SEEN. On-demand real
+  receiver fix can be LIVE for at most 30 seconds.
+- Only owner-initiated Android NSD is available; candidate is untrusted
+  until existing TLS fingerprint and fresh Ed25519 status are verified.
+  iOS NSD/FGS parity is not claimed.
+- Camera/mic require lawful owner consent. Duplex audio requires separate
+  phone microphone permission; stop all tracks on leaving live view.
+- React Native SQLCipher uses an independent random device Keychain key;
+  the old plaintext experimental cache cannot silently re-enter the app.
+  Secure cleanup of the old private file is a later native acceptance gate.
+- Android optional FCM remains compile-time OFF without a real owner
+  project. Push hints are not signed incident evidence or remote actions.
+- Source scaffolds and Gradle wrapper have been added; avoid stale
+  documentation asserting those files are missing. Dependency locking,
+  native builds, signing, independent audit and hardware remain blocked.
