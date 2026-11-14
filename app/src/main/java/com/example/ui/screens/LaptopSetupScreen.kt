@@ -115,6 +115,7 @@ fun LaptopSetupScreen(
     onRediscoverSecureLaptop: () -> Unit = {},
     onConfigureRemoteRelay: (String) -> Unit = {},
     onCopyRemoteEnrollment: () -> String = { "" },
+    onRemotePushChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -406,6 +407,21 @@ fun LaptopSetupScreen(
                                 onClick = { onConfigureRemoteRelay(relayDraft) },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Save location relay (opt in)", fontSize = 12.sp) }
+                            OutlinedButton(
+                                onClick = { onRemotePushChanged(!uiState.remotePushEnabled) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (uiState.remotePushEnabled)
+                                    "Disable remote person-event notifications"
+                                    else "Enable opt-in remote person alerts (FCM)",
+                                    fontSize = 12.sp)
+                            }
+                            Text(
+                                "Push is optional. Requires HTTPS relay, enrolled phone key, " +
+                                    "Firebase project, notification permission and running laptop person detector. " +
+                                    "FCM hints must be verified against signed incident history.",
+                                color = MutedSlate500, fontSize = 11.sp
+                            )
                             OutlinedButton(
                                 onClick = {
                                     clipboardManager.setText(AnnotatedString(onCopyRemoteEnrollment()))

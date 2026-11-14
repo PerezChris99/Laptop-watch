@@ -24,6 +24,7 @@ from .remote_location import SignedLocationSender, RemoteLocationPoller
 from .webrtc import RtcController
 from .incidents import IncidentStore, PersonCameraGuard
 from .person_detector import YoloxNanoDetector, MotionPersonGate, DetectorUnavailable
+from .remote_incidents import SignedIncidentSender, RemoteIncidentPoller, IncidentDeliveryCursor
 from .security import PairingRegistry, SignedRequestVerifier, unb64url
 
 
@@ -67,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
                        help='Required checksum for the explicitly installed ONNX model')
     serve.add_argument('--person-confidence', type=float, default=0.60)
     serve.add_argument('--incident-retention-days', type=int, default=30)
+    serve.add_argument('--incident-relay-url', default=None,
+                       help='Opt-in encrypted person-event relay; requires --person-model')
     args = parser.parse_args(argv)
     state_dir = args.state_dir
     if args.command == 'init':
@@ -147,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error('port out of range')
             if args.relay_url and not args.enable_gpsd:
                 parser.error('--relay-url requires real GNSS consent via --enable-gpsd')
+            if args.incident_relay_url and args.person_model is None:
+                parser.error('--incident-relay-url requires a verified person model')
             host = '0.0.0.0' if args.listen_lan else '127.0.0.1'
             if args.listen_lan:
                 # Public listener requires a physically approved, explicitly paired phone.
@@ -156,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             print('TLS certificate SHA-256 fingerprint:', identity['tls_fingerprint_sha256'])
             from uvicorn import run
             evidence = EvidenceRecorder(state_dir / 'evidence')
+            native = NativeController()
             audit = SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir))
             incidents = IncidentStore(state_dir / 'incidents.db',
                                       retention_days=args.incident_retention_days)
@@ -169,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                         confidence=args.person_confidence)
                     guard = PersonCameraGuard(MotionPersonGate(model), incidents, evidence,
                                               audit=audit)
+                    guard.alarm_controller = native
                 except (DetectorUnavailable, ValueError) as exc:
                     parser.error('Person detector unavailable: ' + str(exc))
             location_store = LastSeenStore(state_dir / 'last_seen.db') if args.enable_gpsd else None
@@ -187,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
             app = create_app(GatewayState(
                 SignedRequestVerifier(registry),
                 audit,
-                NativeController(),
+                native,
                 evidence=evidence,
                 tracking=tracking,
                 pairing=pairing,
@@ -195,6 +202,19 @@ def main(argv: list[str] | None = None) -> int:
                 incidents=incidents,
                 guard=guard,
             ))
+            incident_cursor = None
+            incident_poller = None
+            if args.incident_relay_url:
+                desktop_id_file = state_dir / 'desktop_id'
+                if not desktop_id_file.is_file():
+                    parser.error('Pair with a phone before enabling remote incident alerts')
+                incident_cursor = IncidentDeliveryCursor(state_dir / 'incident_delivery.db')
+                incident_sender = SignedIncidentSender(
+                    args.incident_relay_url,
+                    desktop_id_file.read_text(encoding='ascii').strip(),
+                    get_audit_key(state_dir),
+                )
+                incident_poller = RemoteIncidentPoller(incidents, incident_cursor, incident_sender)
             poller = LocationPoller(tracking) if tracking is not None else None
             remote_poller = None
             if args.relay_url:
@@ -226,12 +246,18 @@ def main(argv: list[str] | None = None) -> int:
                 poller.start()
             if remote_poller is not None:
                 remote_poller.start()
+            if incident_poller is not None:
+                incident_poller.start()
             try:
                 run(app, host=host, port=args.port,
                     ssl_keyfile=str(state_dir / 'tls_key.pem'),
                     ssl_certfile=str(state_dir / 'tls_cert.pem'),
                     access_log=False, proxy_headers=False, server_header=False)
             finally:
+                if incident_poller is not None:
+                    incident_poller.stop()
+                if incident_cursor is not None:
+                    incident_cursor.close()
                 if remote_poller is not None:
                     remote_poller.stop()
                 if mdns is not None:

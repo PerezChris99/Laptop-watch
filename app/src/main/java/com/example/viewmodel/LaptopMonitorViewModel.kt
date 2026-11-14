@@ -16,6 +16,8 @@ import com.example.data.SubjectProfileEntity
 import com.example.util.NotificationHelper
 import com.example.security.SecureLaptopGateway
 import com.example.security.LiveVideoSession
+import com.example.service.PushEnrollment
+import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -107,7 +109,8 @@ data class MonitorUiState(
     val secureArmed: Boolean = false,
     val secureEvidenceId: String? = null,
     val secureRelayUrl: String = "",
-    val webRtcStatus: String = "STOPPED"
+    val webRtcStatus: String = "STOPPED",
+    val remotePushEnabled: Boolean = false
 
 )
 
@@ -192,7 +195,8 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         }.getOrDefault("ERROR")
         _uiState.value = _uiState.value.copy(
             securePairingStatus = pairingState,
-            secureRelayUrl = secureGateway.configuredRelayUrl()
+            secureRelayUrl = secureGateway.configuredRelayUrl(),
+            remotePushEnabled = PushEnrollment.optedIn(application)
         )
         if (pairingState == "PAIRED") {
             startSecureIncidentSync()
@@ -314,12 +318,14 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
 
     fun forgetSecurePairing() {
         incidentSyncJob?.cancel()
+        PushEnrollment.setOptIn(getApplication<Application>(), false)
         // User chooses to forget this desktop identity. Revoke the phone
         // from the laptop as well to prevent stale remote authorization.
         secureGateway.forgetDevice()
         _uiState.value = _uiState.value.copy(
             securePairingStatus = "NOT_PAIRED",
             secureArmed = false,
+            remotePushEnabled = false,
             connectionState = ConnectionState.DISCONNECTED,
             toastFeedback = "Phone pairing forgotten. Revoke it on the laptop too."
         )
@@ -342,9 +348,12 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
         val result = runCatching { secureGateway.setRelayUrl(url) }
         _uiState.value = _uiState.value.copy(
             secureRelayUrl = secureGateway.configuredRelayUrl(),
-            toastFeedback = if (result.isSuccess) "Remote location endpoint configured"
+            toastFeedback = if (result.isSuccess) "Remote relay endpoint configured"
             else "Invalid relay URL: " + (result.exceptionOrNull()?.message ?: "Invalid HTTPS endpoint")
         )
+        if (result.isSuccess && PushEnrollment.optedIn(getApplication<Application>())) {
+            PushEnrollment.enqueue(getApplication<Application>())
+        }
     }
 
     fun getRemoteEnrollmentText(): String {
@@ -405,13 +414,18 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
                 if (laptopId != null) {
                     val key = "cursor_" + laptopId
                     val cursor = incidentPreferences.getLong(key, 0L).coerceAtLeast(0L)
-                    val result = secureGateway.incidents(cursor)
-                    val payload = result.getOrNull()
+                    val localResult = secureGateway.incidents(cursor)
+                    val remotely = if (localResult.isFailure &&
+                        secureGateway.configuredRelayUrl().isNotBlank())
+                        secureGateway.remoteIncidents(cursor) else null
+                    val payload = (remotely ?: localResult).getOrNull()
                     val events = payload?.optJSONArray("events")
                     if (events != null) {
                         for (index in 0 until events.length()) {
                             val event = events.optJSONObject(index) ?: continue
-                            val id = event.optLong("id", 0L)
+                            val id = event.optLong("id", event.optLong("event_id", 0L))
+                            if (remotely != null &&
+                                event.optString("desktop_id") != laptopId) continue
                             val whenMs = event.optLong("observed_at_ms", 0L)
                             val confidence = event.optDouble("confidence", -1.0)
                             if (id <= incidentPreferences.getLong(key, 0L)) continue
@@ -468,6 +482,38 @@ class LaptopMonitorViewModel(application: Application) : AndroidViewModel(applic
 
     fun refreshVerifiedIncidents() {
         startSecureIncidentSync()
+    }
+
+    fun setRemotePushEnabled(enabled: Boolean) {
+        val app = getApplication<Application>()
+        if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                app, android.Manifest.permission.POST_NOTIFICATIONS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Allow Android notifications first, then enable remote push")
+            return
+        }
+        if (enabled && (!secureGateway.isApproved() ||
+                secureGateway.configuredRelayUrl().isBlank() ||
+                FirebaseApp.getApps(app).isEmpty())) {
+            _uiState.value = _uiState.value.copy(
+                toastFeedback = "Pair a laptop, configure HTTPS relay and connect Firebase first"
+            )
+            return
+        }
+        if (enabled) {
+            PushEnrollment.setOptIn(app, true)
+            _uiState.value = _uiState.value.copy(remotePushEnabled = true,
+                toastFeedback = "Push registration queued. Delivery requires configured FCM credentials.")
+        } else {
+            PushEnrollment.setOptIn(app, false)
+            _uiState.value = _uiState.value.copy(remotePushEnabled = false,
+                toastFeedback = "Push hints disabled locally. Revoke server token if needed.")
+            viewModelScope.launch {
+                secureGateway.unregisterPushToken()
+            }
+        }
     }
 
     fun switchTab(tab: MonitorTab) {

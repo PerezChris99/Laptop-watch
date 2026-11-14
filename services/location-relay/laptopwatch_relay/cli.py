@@ -9,6 +9,7 @@ import sys
 from laptopwatch.security import PairingRegistry, unb64url
 
 from .app import RelayStore, create_relay
+from .push import FirebaseProvider
 
 
 def main(argv=None):
@@ -41,7 +42,9 @@ def main(argv=None):
                 parser.error("port out of range")
             import uvicorn
             # Only the reverse proxy should expose this container to WAN.
-            uvicorn.run(create_relay(registry,storage),host="0.0.0.0",
+            project_id=os.environ.get("LAPTOPWATCH_FIREBASE_PROJECT_ID","").strip()
+            provider=FirebaseProvider(project_id) if project_id else None
+            uvicorn.run(create_relay(registry,storage,push_provider=provider),host="0.0.0.0",
                         port=args.port, access_log=False,proxy_headers=False)
     finally:
         storage.close()
