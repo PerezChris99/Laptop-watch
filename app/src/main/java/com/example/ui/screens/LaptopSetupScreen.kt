@@ -3,6 +3,12 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.widget.Toast
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import androidx.compose.foundation.background
@@ -113,6 +119,14 @@ fun LaptopSetupScreen(
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Toast.makeText(context, if (granted)
+            "Person incident notifications enabled on this phone"
+            else "Notifications disabled; foreground events remain available in logs",
+            Toast.LENGTH_LONG).show()
+    }
 
     var laptopName by remember { mutableStateOf(config?.laptopName ?: "My Laptop") }
     var ipAddress by remember { mutableStateOf(config?.ipAddress ?: "192.168.1.100") }
@@ -133,7 +147,7 @@ fun LaptopSetupScreen(
         }
     }
 
-    var selectedSetupTab by remember { mutableStateOf(3) }
+    var selectedSetupTab by remember { mutableStateOf(0) }
     var relayDraft by remember { mutableStateOf(uiState.secureRelayUrl) }
     val haptics = rememberAppHaptics()
 
@@ -239,10 +253,9 @@ fun LaptopSetupScreen(
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             val tabs = listOf(
-                "Link & Config" to Icons.Default.Lan,
+                "Secure Pairing" to Icons.Default.QrCodeScanner,
                 "Away & Guard" to Icons.Default.Sensors,
-                "Install info" to Icons.Default.Terminal,
-                "Pair QR" to Icons.Default.QrCodeScanner
+                "Install info" to Icons.Default.Terminal
             )
             tabs.forEachIndexed { index, (label, icon) ->
                 val isSelected = selectedSetupTab == index
@@ -286,7 +299,7 @@ fun LaptopSetupScreen(
                 .weight(1f)
         ) {
             // TAB 3: PINNED QR PAIRING — primary and secure setup path.
-            if (selectedSetupTab == 3) {
+            if (selectedSetupTab == 0) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = WhitePure),
@@ -342,6 +355,20 @@ fun LaptopSetupScreen(
                             enabled = uiState.securePairingStatus != "NOT_PAIRED"
                         ) { Text("Verify laptop approval", fontSize = 13.sp) }
                         if (uiState.securePairingStatus == "PAIRED") {
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(context,
+                                    Manifest.permission.POST_NOTIFICATIONS)
+                                    != PackageManager.PERMISSION_GRANTED) {
+                                OutlinedButton(
+                                    onClick = {
+                                        notificationPermissionLauncher.launch(
+                                            Manifest.permission.POST_NOTIFICATIONS)
+                                    }, modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Allow verified person alerts on this phone",
+                                        fontSize = 12.sp)
+                                }
+                            }
                             OutlinedButton(
                                 onClick = { onSetSecureCameraArmed(!uiState.secureArmed) },
                                 modifier = Modifier.fillMaxWidth()
@@ -399,230 +426,6 @@ fun LaptopSetupScreen(
                                 "The old HTTP/PIN installer is not safe for production.",
                             color = MutedSlate500, fontSize = 11.sp
                         )
-                    }
-                }
-            }
-
-            // TAB 0: LEGACY LINK & CONFIGURATION (DEV ONLY)
-            if (selectedSetupTab == 0) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = WhitePure),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, LightBlue100),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Laptop Name
-                        OutlinedTextField(
-                            value = laptopName,
-                            onValueChange = {
-                                laptopName = it
-                                savedSuccess = false
-                            },
-                            label = { Text("Laptop Name", fontSize = 11.sp) },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 12.sp, color = DeepSlate800),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("laptop_name_input"),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = SkyBluePrimary,
-                                unfocusedBorderColor = LightBlue100
-                            )
-                        )
-
-                        // IP Address & Port (Side by Side)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = ipAddress,
-                                onValueChange = {
-                                    ipAddress = it
-                                    savedSuccess = false
-                                },
-                                label = { Text("Local IP Address", fontSize = 11.sp) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                textStyle = TextStyle(fontSize = 12.sp, color = DeepSlate800, fontFamily = FontFamily.Monospace),
-                                modifier = Modifier
-                                    .weight(2.2f)
-                                    .height(50.dp)
-                                    .testTag("ip_address_input"),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = SkyBluePrimary,
-                                    unfocusedBorderColor = LightBlue100
-                                )
-                            )
-
-                            OutlinedTextField(
-                                value = portText,
-                                onValueChange = {
-                                    portText = it
-                                    savedSuccess = false
-                                },
-                                label = { Text("Port", fontSize = 11.sp) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                textStyle = TextStyle(fontSize = 12.sp, color = DeepSlate800, fontFamily = FontFamily.Monospace),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(50.dp)
-                                    .testTag("port_input"),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = SkyBluePrimary,
-                                    unfocusedBorderColor = LightBlue100
-                                )
-                            )
-                        }
-
-                        // Remote Web URL
-                        OutlinedTextField(
-                            value = remoteWebUrl,
-                            onValueChange = {
-                                remoteWebUrl = it
-                                savedSuccess = false
-                            },
-                            label = { Text("Remote Web Tunnel (ngrok / Cloudflare)", fontSize = 11.sp) },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 12.sp, color = DeepSlate800, fontFamily = FontFamily.Monospace),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("remote_url_input"),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = SkyBluePrimary,
-                                unfocusedBorderColor = LightBlue100
-                            )
-                        )
-
-                        // Mode Selector Chips
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Routing Mode:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MutedSlate500
-                            )
-
-                            listOf(
-                                "LAN" to "LAN Only",
-                                "AUTO" to "Auto-Failover"
-                            ).forEach { (modeKey, modeTitle) ->
-                                val isSelected = connectionMode == modeKey
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) SkyBluePrimary else LightBlue50)
-                                        .border(0.8.dp, if (isSelected) SkyBluePrimary else LightBlue100, RoundedCornerShape(6.dp))
-                                        .clickable {
-                                            haptics.tick()
-                                            connectionMode = modeKey
-                                            savedSuccess = false
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = modeTitle,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) WhitePure else DeepSlate800
-                                    )
-                                }
-                            }
-                        }
-
-                        // Save Configuration Button (Prominent, cleanly visible above fold)
-                        Button(
-                            onClick = {
-                                haptics.click()
-                                val port = portText.toIntOrNull() ?: 5000
-                                onSaveConfig(laptopName, ipAddress, port, pin, remoteWebUrl, connectionMode)
-                                savedSuccess = true
-                                Toast.makeText(context, "Settings saved!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                                .testTag("save_config_button"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (savedSuccess) EmeraldSafe else SkyBluePrimary,
-                                contentColor = WhitePure
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (savedSuccess) Icons.Default.CheckCircle else Icons.Default.Save,
-                                contentDescription = "Save Settings",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (savedSuccess) "Configuration Saved!" else "Save Link Configuration",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        // Demo Mode Toggle Strip
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(LightBlue50)
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "Safe Demo Simulator",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = DeepSlate800
-                                )
-                                Text(
-                                    text = if (uiState.connectionState == ConnectionState.DEMO_MODE) "(ACTIVE)" else "(OFF)",
-                                    fontSize = 10.sp,
-                                    color = if (uiState.connectionState == ConnectionState.DEMO_MODE) AmberWarning else MutedSlate500,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Switch(
-                                checked = uiState.connectionState == ConnectionState.DEMO_MODE,
-                                onCheckedChange = {
-                                    haptics.tick()
-                                    onToggleDemoMode()
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = WhitePure,
-                                    checkedTrackColor = AmberWarning,
-                                    uncheckedThumbColor = WhitePure,
-                                    uncheckedTrackColor = LightBlue100
-                                ),
-                                modifier = Modifier.scale(0.8f)
-                            )
-                        }
                     }
                 }
             }

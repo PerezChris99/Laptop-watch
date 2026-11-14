@@ -22,6 +22,8 @@ from .pairing import PairingCoordinator
 from .discovery import LaptopWatchAdvertiser
 from .remote_location import SignedLocationSender, RemoteLocationPoller
 from .webrtc import RtcController
+from .incidents import IncidentStore, PersonCameraGuard
+from .person_detector import YoloxNanoDetector, MotionPersonGate, DetectorUnavailable
 from .security import PairingRegistry, SignedRequestVerifier, unb64url
 
 
@@ -39,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     reject = sub.add_parser('reject', help='reject pairing from local desktop UI')
     reject.add_argument('--request-id', required=True)
     sub.add_parser('devices', help='list paired phone ids')
+    sub.add_parser('incidents', help='list recent verified person incidents')
+    sub.add_parser('clear-incidents', help='delete local incident metadata (not media)')
 
     pair = sub.add_parser('pair', help='local, physical approval only')
     pair.add_argument('--device-id', required=True)
@@ -57,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument('--turn-username', default=None)
     serve.add_argument('--turn-password-env', default='LAPTOPWATCH_TURN_PASSWORD',
                        help='Name of an environment variable holding the TURN credential')
+    serve.add_argument('--person-model', type=Path, default=None,
+                       help='Optional user-supplied, hash-verified person classifier (ONNX)')
+    serve.add_argument('--person-model-sha256', default=None,
+                       help='Required checksum for the explicitly installed ONNX model')
+    serve.add_argument('--person-confidence', type=float, default=0.60)
+    serve.add_argument('--incident-retention-days', type=int, default=30)
     args = parser.parse_args(argv)
     state_dir = args.state_dir
     if args.command == 'init':
@@ -102,6 +112,16 @@ def main(argv: list[str] | None = None) -> int:
             phones = registry._db.execute('SELECT id,revoked FROM paired_devices ORDER BY id').fetchall()
             print(json.dumps([{'id':p[0], 'revoked':bool(p[1])} for p in phones]))
             return 0
+        if args.command in ('incidents', 'clear-incidents'):
+            store = IncidentStore(state_dir / 'incidents.db')
+            try:
+                if args.command == 'incidents':
+                    print(json.dumps(store.recent(limit=100)))
+                else:
+                    print(json.dumps({'deleted':store.clear()}))
+            finally:
+                store.close()
+            return 0
         if args.command == 'pair':
             try:
                 uuid.UUID(args.device_id)
@@ -136,6 +156,21 @@ def main(argv: list[str] | None = None) -> int:
             print('TLS certificate SHA-256 fingerprint:', identity['tls_fingerprint_sha256'])
             from uvicorn import run
             evidence = EvidenceRecorder(state_dir / 'evidence')
+            audit = SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir))
+            incidents = IncidentStore(state_dir / 'incidents.db',
+                                      retention_days=args.incident_retention_days)
+            guard = None
+            if args.person_model is not None:
+                if args.person_model_sha256 is None:
+                    parser.error('--person-model requires --person-model-sha256')
+                try:
+                    model = YoloxNanoDetector(args.person_model,
+                        required_sha256=args.person_model_sha256,
+                        confidence=args.person_confidence)
+                    guard = PersonCameraGuard(MotionPersonGate(model), incidents, evidence,
+                                              audit=audit)
+                except (DetectorUnavailable, ValueError) as exc:
+                    parser.error('Person detector unavailable: ' + str(exc))
             location_store = LastSeenStore(state_dir / 'last_seen.db') if args.enable_gpsd else None
             tracking = TrackingService(location_store, GpsdReceiver()) if location_store is not None else None
             rtc = None
@@ -151,12 +186,14 @@ def main(argv: list[str] | None = None) -> int:
                 print('WebRTC module not installed: still-frame fallback only')
             app = create_app(GatewayState(
                 SignedRequestVerifier(registry),
-                SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir)),
+                audit,
                 NativeController(),
                 evidence=evidence,
                 tracking=tracking,
                 pairing=pairing,
                 rtc=rtc,
+                incidents=incidents,
+                guard=guard,
             ))
             poller = LocationPoller(tracking) if tracking is not None else None
             remote_poller = None
@@ -201,7 +238,10 @@ def main(argv: list[str] | None = None) -> int:
                     mdns.stop()
                 if poller is not None:
                     poller.stop()
+                if guard is not None:
+                    guard.stop()
                 evidence.stop_if_recording()
+                incidents.close()
                 if location_store is not None:
                     location_store.close()
             return 0

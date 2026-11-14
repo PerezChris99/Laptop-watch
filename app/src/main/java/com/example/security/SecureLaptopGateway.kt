@@ -241,6 +241,19 @@ class SecureLaptopGateway(context: Context) {
     suspend fun status() = json("GET", "/api/status")
     suspend fun lastSeen() = json("GET", "/api/location/last-seen")
     suspend fun refreshLocation() = json("POST", "/api/location/refresh")
+    /** Fetch only verified person events since the phone's durable cursor.
+     * This is authenticated foreground sync, not a replacement for FCM push. */
+    suspend fun incidents(afterId: Long, limit: Int = 100): Result<JSONObject> {
+        require(afterId >= 0 && limit in 1..100)
+        return json("POST", "/api/incidents/query",
+            JSONObject().put("after_id", afterId).put("limit", limit))
+    }
+
+    suspend fun clearIncidents(): Result<JSONObject> =
+        json("POST", "/api/incidents/clear")
+
+    fun pairedDesktopId(): String? = store.load()?.takeIf { it.approved }?.desktopId
+
 
     suspend fun download(kind: String, id: String): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
