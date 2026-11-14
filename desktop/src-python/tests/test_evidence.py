@@ -97,3 +97,24 @@ def test_duplicate_recording_rejected(tmp_path):
     with pytest.raises(CaptureUnavailable):r.start_recording()
     r.stop_if_recording()
     assert not r.recording
+
+def test_bounded_local_evidence_inventory_excludes_unrelated_and_symlinks(tmp_path):
+    """Metadata list is bounded and never returns a path outside the vault."""
+    from laptopwatch.evidence import EvidenceRecorder
+    from uuid import uuid4
+
+    vault = EvidenceRecorder(tmp_path)
+    photo = vault.store_photo(b'\\xff\\xd8safe-jpeg\\xff\\xd9')
+    for _ in range(104):
+        (tmp_path / ('photo-' + uuid4().hex + '.jpg')).write_bytes(b'\\xff\\xd8x\\xff\\xd9')
+    (tmp_path / 'private.txt').write_text('do not disclose', encoding='utf-8')
+    try:
+        (tmp_path / ('photo-' + 'e' * 32 + '.jpg')).symlink_to(tmp_path / 'private.txt')
+    except (OSError, NotImplementedError):
+        pass  # Windows without Developer Mode or symlink privileges.
+    page = vault.list_evidence()
+    assert len(page) == 100
+    assert all(entry['kind'] == 'photo' and len(entry['id']) == 32 for entry in page)
+    assert all(entry['size_bytes'] > 0 for entry in page)
+    assert 'e' * 32 not in [entry['id'] for entry in page]
+

@@ -33,3 +33,28 @@
 
 Merge to main as an engineering checkpoint only. No production semver release
 or statement of 100% security unless all gates are independently evidenced.
+
+## Current migration checkpoint — 2026-11-14
+
+All phases remain **BLOCKED**, not DELIVERED, because the new Rust/React
+Native changes lack fresh-checkout native builds, full lint/checkJs and
+hardware acceptance. Earlier checked source capabilities refer to the
+**Kotlin/Python reference**, not a verified React Native distribution.
+Do not interpret them as a passing feature-parity matrix.
+
+- [ ] Confirm full checkout is available through network or a local mounted ZIP.
+- [ ] Review and commit genuine `desktop/package-lock.json`,
+      `mobile/package-lock.json`, `desktop/src-tauri/Cargo.lock`,
+      reproducible Python resolution and official pinned Gradle wrapper.
+- [ ] Execute all component build, lint, `checkJs`, unit and E2E tests;
+      attach real logs rather than guessing.
+- [ ] Verify Rust supervisor on OS, five restart cap, tray, autostart consent,
+      graceful Quit, signed health and independent owner admin channel.
+- [ ] Integrate RN Android/iOS scaffolds, pinned module, native Keychain,
+      camera QR scanner, foreground service and optional push behind flag.
+- [ ] Validate WebRTC/video/mic opt-in, real camera, evidence lifecycle,
+      person alerts, GNSS last-seen and offline action denial on hardware.
+- [ ] Approve commercial/legal/OS key management, release signing, storage
+      encryption, installation, security scans, SBOM and 24-hour soak.
+- [ ] Document **verified** parity and obtain explicit owner approval before
+      deleting the frozen Kotlin `app/`.

@@ -44,13 +44,16 @@ export default function App () {
   }
   const refresh = useCallback(async () => {
     try {
-      const [snapshot, files] = await Promise.all([
+      const [snapshot, files, health] = await Promise.all([
         invoke('dashboard_snapshot'),
         invoke('evidence_files'),
+        invoke('companion_health'),
       ])
       const state = JSON.parse(snapshot)
       setPending(state.pending); setDevices(state.devices)
       setIncidents(state.incidents); setEvidence(files)
+      setProtecting(health.running)
+      if (health.last_error) setError(health.last_error)
     } catch (e) { /* transient startup or sidecar process state; never fake data */ }
   }, [])
 
@@ -60,7 +63,18 @@ export default function App () {
       if (!active) return
       setReady(true)
       try { setLanIP(await invoke('suggest_lan_ip')) } catch (_) {}
-      try { setAutostart(await isEnabled()) } catch (_) {}
+      try {
+        const enabled = await isEnabled()
+        setAutostart(enabled)
+        if (enabled) {
+          const snapshot = JSON.parse(await invoke('dashboard_snapshot'))
+          const health = await invoke('companion_health')
+          if (!health.running && snapshot.devices?.some(d => !d.revoked)) {
+            try { await startGateway() }
+            catch (err) { setError('Auto-launch could not start the signed gateway: ' + formatError(err)) }
+          }
+        }
+      } catch (_) { /* no automatic launch without explicit prior OS autostart opt-in */ }
       refresh()
     }).catch(e => { if (active) setError(formatError(e)) })
     const id = setInterval(() => { if (active) refresh() }, 6000)

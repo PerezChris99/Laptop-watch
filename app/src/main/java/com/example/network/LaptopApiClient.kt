@@ -6,15 +6,15 @@ import java.io.File
 
 data class LaptopStatusResponse(
     val online: Boolean,
-    val hostname: String = "Laptop",
-    val battery: String = "100%",
+    val hostname: String = "Unavailable",
+    val battery: String = "Unknown",
     val isLocked: Boolean = false,
-    val cameraActive: Boolean = true,
+    val cameraActive: Boolean = false,
     val motionDetected: Boolean = false,
     val motionIntensity: Int = 0,
     val lastMotionTime: Long = 0L,
-    val threatLevel: String = "SECURE",
-    val message: String = "Connected",
+    val threatLevel: String = "UNKNOWN",
+    val message: String = "Not connected",
     // GPS Hardware Telemetry
     val latitude: Double? = null,
     val longitude: Double? = null,

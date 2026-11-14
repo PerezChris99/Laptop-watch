@@ -163,7 +163,9 @@ Full [build/run/install/acceptance guide](docs/BUILD_AND_RELEASE.md),
 
 | Location | Contents |
 |---|---|
-| `app/` | Android Compose UI, Room, signed HTTPS, WebRTC, optional FCM |
+| `app/` | Frozen Kotlin Compose Android reference; retained pending verified RN parity and owner approval |
+| `mobile/` | JavaScript React Native migration, pinned networking source and signed controls; **native build blocked** |
+| `design/`, `shared/` | Shared paper/gold design tokens and exact Ed25519 vectors |
 | `desktop/src-ui/` | React/Vite desktop owner dashboard |
 | `desktop/src-tauri/` | Rust/Tauri shell, tray and restricted native operations |
 | `desktop/src-python/` | Secure Python controller, camera guard, GNSS and tests |
@@ -172,6 +174,19 @@ Full [build/run/install/acceptance guide](docs/BUILD_AND_RELEASE.md),
 | `docs/SCENARIOS.md` | Café/restroom, privacy and theft workflows |
 | `docs/BUILD_AND_RELEASE.md`, `docs/STATUS.md` | Gates and reproducibility |
 | `docs/commercial/` | Draft EULA, privacy, data safety, website and pricing |
+
+## Overhaul checkpoint — release blocked
+
+The 2026-11-14 JavaScript mobile migration and Rust supervised desktop code
+remain **BLOCKED** under the owner's strict acceptance definition. Native
+builds and integrated test suites have not been executed because this runner
+lacks a mountable Git checkout, package registries, Rust/Gradle/Android
+toolchains and devices. Only deterministic Ed25519 fixture checks and
+generated-design-token equality passed.
+
+See [defect and required human actions](docs/DEFECTS.md),
+[Android parity](docs/PARITY.md), [frozen protocol](docs/PROTOCOL.md)
+and [release commands](docs/RELEASE_RUNBOOK.md).
 
 ## Git workflow
 

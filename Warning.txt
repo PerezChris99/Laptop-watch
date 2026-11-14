@@ -1,0 +1,36 @@
+LaptopWatch release warnings — 2026-11-14 (new engineering record)
+=================================================================
+This file was newly generated as a release warning ledger. The original
+Warning.txt demanded by the old master prompt was absent at baseline.
+The owner explicitly instructed continuing without that original file.
+
+NOT PRODUCTION-READY. NOT VERIFIED ON PHYSICAL DEVICES. NOT SALE-READY.
+
+Stop ship:
+[ ] Phase 0 clean Python/Gradle/Rust/npm/React Native build/test matrix green.
+[ ] Official Gradle wrapper, npm/Cargo dependency locks reviewed and committed.
+[ ] React Native Android and iOS native projects generated; pinned transport
+    registered, tested, and verified against a hostile certificate.
+[ ] Real QR scan, approval, revocation, replay/skew and signed actions tested.
+[ ] Hardware camera/MP4/WebRTC, mic opt-in, alert accuracy tested.
+[ ] Background foreground-service, FCM, battery and GNSS tests proven.
+[ ] Tauri supervisor crash/restart/quit, updater, installer tests proven.
+[ ] OS-backed private key storage and recovery tested on target platforms.
+[ ] 24h soak, accessibility, performance, dependency scans and SBOM.
+[ ] Owner-approved LICENSE/privacy/EULA, release signing/store/commerce.
+[ ] Owner explicitly approves deletion of Kotlin app/ after full mobile parity.
+
+What was executed in the isolated workspace:
+- Python cryptography Ed25519 deterministic golden signatures verified.
+- Node 22 crypto verified matching signatures, QR and proof and tamper rejection.
+- Shared design token generator and --check executed on a local isolated copy.
+- GitHub source blob round-trip inspections performed after editing files.
+
+What was NOT executed:
+- Current repository full pytest, npm install/build/lint/checkJs,
+  cargo build/test, Gradle wrapper tests, RN native/physical device tests,
+  installer/package size or OS-level benchmark measurements.
+
+Full evidence, source-only status and blocked commands are in:
+docs/DEFECTS.md, docs/PARITY.md, docs/RELEASE_RUNBOOK.md,
+docs/DECISIONS.md and docs/RELEASE_CHECKLIST.md.

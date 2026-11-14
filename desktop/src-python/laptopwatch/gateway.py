@@ -429,6 +429,14 @@ def create_app(state: GatewayState) -> FastAPI:
             resume_person_monitor()
             return {"success": True}
 
+    @app.get("/api/evidence/list")
+    async def evidence_inventory(request: Request):
+        """Signed, bounded metadata listing for the owner's phone vault."""
+        if state.evidence is None:
+            raise HTTPException(status_code=503, detail="Evidence store not configured")
+        records = await asyncio.to_thread(state.evidence.list_evidence, limit=100)
+        return {"items": records, "limit": 100}
+
     @app.get("/api/evidence/{kind}/{evidence_id}")
     async def download_evidence(kind: str, evidence_id: str, request: Request):
         if state.evidence is None:

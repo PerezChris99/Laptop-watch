@@ -198,3 +198,21 @@ def test_location_returns_only_a_stored_real_fix(gateway, tmp_path):
         assert response.json()['provider'] == 'gpsd-gnss'
     finally:
         store.close()
+
+def test_evidence_inventory_requires_auth_and_returns_real_metadata(gateway, tmp_path):
+    from laptopwatch.evidence import EvidenceRecorder
+    client, identity, key, ctrl, registry, state = gateway
+    assert client.get('/api/evidence/list').status_code == 401
+    state.evidence = EvidenceRecorder(tmp_path)
+    photo = state.evidence.store_photo(b'\\xff\\xd8valid\\xff\\xd9')
+    response = signed(client, identity, key, 'GET', '/api/evidence/list')
+    assert response.status_code == 200
+    assert response.json()['limit'] == 100
+    items = response.json()['items']
+    assert len(items) == 1
+    assert items[0]['kind'] == 'photo'
+    assert items[0]['id'] == photo['id']
+    assert items[0]['size_bytes'] == photo['size_bytes']
+    registry.revoke(identity)
+    assert signed(client, identity, key, 'GET', '/api/evidence/list').status_code == 401
+

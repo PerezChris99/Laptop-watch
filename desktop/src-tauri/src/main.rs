@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{fs, path::PathBuf, sync::{Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}};
+use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -12,7 +14,41 @@ use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Default)]
-struct CompanionState(Mutex<Option<CommandChild>>);
+struct CompanionState(
+    Mutex<Option<CommandChild>>,
+    Mutex<Option<Vec<String>>>,
+    Mutex<VecDeque<Instant>>,
+    Mutex<Option<String>>,
+    AtomicBool,
+    AtomicU64, // process generation prevents stale termination from clearing a new child
+);
+
+/// Rolling five-restart budget with 1/2/4/8/16-second backoff.
+fn restart_delay(history: &mut VecDeque<Instant>, now: Instant) -> Option<Duration> {
+    while history.front().is_some_and(|time| now.duration_since(*time) >= Duration::from_secs(60)) {
+        history.pop_front();
+    }
+    history.push_back(now);
+    if history.len() > 5 { None }
+    else { Some(Duration::from_secs(1u64 << (history.len() - 1))) }
+}
+
+#[derive(Serialize)]
+struct CompanionHealth {
+    running: bool,
+    restart_count_60s: usize,
+    last_error: Option<String>,
+}
+
+#[tauri::command]
+fn companion_health(state: State<'_, CompanionState>) -> Result<CompanionHealth, String> {
+    let running = state.0.lock().map_err(|_| "Process state unavailable")?.is_some();
+    let restarts = state.2.lock().map_err(|_| "Restart state unavailable")?
+        .iter().filter(|time| time.elapsed() < Duration::from_secs(60)).count();
+    let last_error = state.3.lock().map_err(|_| "Error state unavailable")?.clone();
+    Ok(CompanionHealth { running, restart_count_60s: restarts, last_error })
+}
+
 
 #[derive(Serialize)]
 struct EvidenceFile {
@@ -261,16 +297,60 @@ fn start_companion(
     }
     let (mut rx, process) = app.shell().sidecar("laptopwatch-sidecar")
         .map_err(|e| e.to_string())?
-        .args(args).spawn().map_err(|e| e.to_string())?;
+        .args(args.clone()).spawn().map_err(|e| e.to_string())?;
+    {
+        let mut config = state.1.lock().map_err(|_| "Process configuration unavailable")?;
+        *config = Some(args);
+    }
+    if let Ok(mut history) = state.2.lock() { history.clear(); }
+    if let Ok(mut last_error) = state.3.lock() { *last_error = None; }
+    let generation = state.5.fetch_add(1, Ordering::SeqCst) + 1;
+    state.4.store(false, Ordering::SeqCst);
     *child = Some(process);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            if let CommandEvent::Terminated(_) = event {
-                if let Ok(mut running) = handle.state::<CompanionState>().0.lock() {
-                    running.take();
+        loop {
+            // The receiver closes when its process ends. Do not parse or log
+            // stdout/stderr: backend logs may contain owner private data.
+            while let Some(event) = rx.recv().await {
+                if let CommandEvent::Terminated(_) = event { break; }
+            }
+            let state = handle.state::<CompanionState>();
+            if state.5.load(Ordering::SeqCst) != generation { break; }
+            if let Ok(mut running) = state.0.lock() { running.take(); }
+            if state.4.load(Ordering::SeqCst) { break; }
+            let wait = match state.2.lock() {
+                Ok(mut history) => restart_delay(&mut history, Instant::now()),
+                Err(_) => { break; }
+            };
+            let Some(wait) = wait else {
+                if let Ok(mut error) = state.3.lock() {
+                    *error = Some("Gateway restarted more than five times in 60 seconds. Manual restart required.".into());
                 }
                 break;
+            }
+            tokio::time::sleep(wait).await;
+            if state.4.load(Ordering::SeqCst) ||
+                state.5.load(Ordering::SeqCst) != generation { break; }
+            let configuration = match state.1.lock() {
+                Ok(config) => config.clone(),
+                Err(_) => None,
+            };
+            let Some(configuration) = configuration else { break; };
+            match handle.shell().sidecar("laptopwatch-sidecar")
+                .and_then(|cmd| cmd.args(configuration).spawn()) {
+                Ok((next_receiver, next_child)) => {
+                    if let Ok(mut running) = state.0.lock() {
+                        *running = Some(next_child);
+                    } else { break; }
+                    rx = next_receiver;
+                }
+                Err(_) => {
+                    if let Ok(mut error) = state.3.lock() {
+                        *error = Some("Gateway restart failed. Check installed sidecar and logs.".into());
+                    }
+                    break;
+                }
             }
         }
     });
@@ -279,6 +359,9 @@ fn start_companion(
 
 #[tauri::command]
 fn stop_companion(state: State<'_, CompanionState>) -> Result<(), String> {
+    state.4.store(true, Ordering::SeqCst);
+    state.5.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut config) = state.1.lock() { *config = None; }
     let mut child = state.0.lock().map_err(|_| "Internal process lock failed")?;
     if let Some(process) = child.take() {
         process.kill().map_err(|e| e.to_string())?;
@@ -288,6 +371,12 @@ fn stop_companion(state: State<'_, CompanionState>) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .manage(CompanionState::default())
@@ -305,6 +394,8 @@ fn main() {
                         }
                     }
                     "quit" => {
+                        app.state::<CompanionState>().4.store(true, Ordering::SeqCst);
+                        app.state::<CompanionState>().5.fetch_add(1, Ordering::SeqCst);
                         if let Ok(mut holder) = app.state::<CompanionState>().0.lock() {
                             if let Some(child) = holder.take() { let _ = child.kill(); }
                         }
@@ -322,7 +413,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             initialize_companion, suggest_lan_ip, create_pair_invitation,
-            pending_pairs, paired_devices, dashboard_snapshot,
+            pending_pairs, paired_devices, dashboard_snapshot, companion_health,
             approve_pending, reject_pending, revoke_device,
             evidence_files, open_evidence_directory, start_companion, stop_companion
         ])
@@ -330,9 +421,34 @@ fn main() {
         .expect("LaptopWatch desktop initialization failed")
         .run(|app, event| {
             if let RunEvent::Exit = event {
+                app.state::<CompanionState>().4.store(true, Ordering::SeqCst);
+                app.state::<CompanionState>().5.fetch_add(1, Ordering::SeqCst);
                 if let Ok(mut holder) = app.state::<CompanionState>().0.lock() {
                     if let Some(child) = holder.take() { let _ = child.kill(); }
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod supervisor_tests {
+    use super::*;
+
+    #[test]
+    fn crash_budget_allows_only_five_restarts_per_minute() {
+        let t = Instant::now();
+        let mut history = VecDeque::new();
+        for i in 0u32..5 {
+            assert_eq!(
+                restart_delay(&mut history, t + Duration::from_secs(i as u64)),
+                Some(Duration::from_secs(1 << i))
+            );
+        }
+        assert_eq!(restart_delay(&mut history, t + Duration::from_secs(5)), None);
+        // Fresh time window after 60 seconds permits an explicit later retry.
+        assert_eq!(
+            restart_delay(&mut history, t + Duration::from_secs(66)),
+            Some(Duration::from_secs(1))
+        );
+    }
 }
