@@ -134,7 +134,8 @@ class LastSeenStore:
         age_ms = max(0, now_ms - seen)
         return {"event_id": id_, "latitude": lat, "longitude": lon,
                 "accuracy_meters": accuracy, "observed_at_ms": seen,
-                "age_ms": age_ms, "is_live_fix": age_ms <= 120_000,
+                "age_ms": age_ms, "is_recent_fix": age_ms <= 120_000,
+                "is_live_fix": False,
                 "provider": provider}
 
     def pending(self, limit: int = 100) -> list[tuple[int, LocationFix]]:
@@ -165,8 +166,11 @@ class TrackingService:
         fix = self.receiver.read_fix(now_ms=now_ms)
         if fix is None:
             return None
+        current_ms = int(time.time() * 1000) if now_ms is None else now_ms
+        if current_ms - fix.observed_at_ms > 30_000:
+            return None
         self.store.add(fix, now_ms=now_ms)
-        return self.store.latest(now_ms=now_ms)
+        return {**self.store.latest(now_ms=now_ms), "is_live_fix": True}
 
     def on_secure_transport_available(self, sender: Callable[[int, LocationFix], bool]) -> int:
         """Hook for paired, TLS-pinned WAN sender upon network restoration.

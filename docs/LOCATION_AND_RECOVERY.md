@@ -27,7 +27,7 @@ The requested ideal is precise GPS even after a laptop is stolen, continuous ope
 
 1. `GpsdReceiver` — opt-in loopback-only `gpsd` TPV source; requires an actual 2D/3D fix and valid recent receiver time, latitude/longitude, and error estimates `epx` and `epy`. No receiver => no data. A GNSS fix with no accuracy estimate is not accepted.
 2. `LocationFix.validate` — rejects invalid coordinate ranges, NaN/infinite numbers, unknown accuracy, fake provider labels and stale/future timestamps.
-3. `LastSeenStore` — durable SQLite history with exact `observed_at_ms` timestamp, `accuracy_meters`, and `is_live_fix` derived from fix age (fresh for up to two minutes, otherwise stale). On Unix, database file permissions are restricted to the current user; use full-disk encryption.
+3. `LastSeenStore` — durable SQLite history with exact `observed_at_ms` timestamp, `accuracy_meters`, and an `is_recent_fix` age indicator (up to two minutes). Stored last-seen records always report `is_live_fix=false`; only a successful immediate receiver refresh may be marked live, and it must have been observed within 30 seconds. On Unix, database file permissions are restricted to the current user; use full-disk encryption.
 4. `TrackingService` — explicit `refresh()`, pending queue of unsent records, and `on_secure_transport_available(sender)`, which **only acknowledges an event after a trusted sender confirms remote durable receipt**. No sender is automatically deployed.
 5. `LocationPoller` — opt-in periodic sampling, default 30 seconds, **only while the process is running**; stopped at service shutdown.
 

@@ -102,7 +102,7 @@ flowchart TD
 ```
 
 - **Location accuracy** comes from real receiver-reported uncertainty. Ordinary laptops seldom have dedicated GNSS/GPS receivers. Optional `gpsd` support works only with a configured receiver while the app is running; Wi-Fi or IP estimates are not meter-accurate GPS.
-- **Offline** means no new remote report is delivered. Fixes already stored locally survive app restart; the phone only knows the **last location previously delivered to it or a trusted remote service**. An offline queue on a stolen laptop is not, by itself, a remote tracking service.
+- **Live versus last-seen:** A previously stored location is **never** labeled live, even if its timestamp is recent. Only a successful immediate receiver read can set the live flag.\n- **Offline** means no new remote report is delivered. Fixes already stored locally survive app restart; the phone only knows the **last location previously delivered to it or a trusted remote service**. An offline queue on a stolen laptop is not, by itself, a remote tracking service.
 - **After reconnection** a tested queue hook can send unacknowledged fixes when a future paired end-to-end encrypted remote channel is available. The sender/service is still missing, so no instant reconnect alert is claimed.
 - **Sleep, shutdown or dead battery:** user-mode Python cannot guarantee tracking, networking, or webcam operation. Supported macOS Find My hardware/network functionality may locate an offline sleeping Mac; Windows Find My Device should be enabled separately on Windows. A discrete cellular GPS tracker with its own battery is needed for tracking independent of laptop power/network.
 

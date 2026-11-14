@@ -29,7 +29,8 @@ def test_last_seen_persists_across_restarts_and_expires(tmp_path):
     s = LastSeenStore(path)
     idx = s.add(good_fix(), now_ms=NOW)
     assert idx > 0
-    assert s.latest(now_ms=NOW)['is_live_fix']
+    assert not s.latest(now_ms=NOW)['is_live_fix']
+    assert s.latest(now_ms=NOW)['is_recent_fix']
     s.close()
     s = LastSeenStore(path)
     l = s.latest(now_ms=NOW+3600_000)
