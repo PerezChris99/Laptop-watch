@@ -46,3 +46,57 @@ For every fix, record: commit SHA, test ID, exact invocation, date, OS/device, r
 **Platform reference:** https://developer.android.com/develop/background-work/services/fgs/timeout
 
 Do not promote to `main` if any newly modified subsystem has a red required gate. An audit document is not a claim that the listed issues are fixed.
+
+
+## Phase 0 forensic baseline gate — 2026-11-14 (commit 30f685e)
+
+This is an **observed environment and repository inventory**, not a passed
+build or security certification. The GitHub tree was inspected using the
+connected repository API. Direct clone was attempted; there is no checkout
+and the runtime cannot resolve `github.com`. Commands below reflect actual
+executions and inspection; required build commands could not start.
+
+| Gate / ID | Severity | Exact evidence | Status | Action to unblock |
+|---|---|---|---|---|
+| BASE-001 Warning.txt | P0 | `GET contents/Warning.txt?ref=perez` returned HTTP 404; recursive tree has no `Warning.txt` | **BLOCKED: required reference missing** | Owner supply original `Warning.txt` exact file/content; no invented substitute |
+| BASE-002 full checkout | P0 | `git ls-remote https://github.com/PerezChris99/Laptop-watch.git HEAD` → `Could not resolve host: github.com`; `/mnt/data/Laptop-watch/.git` absent | **BLOCKED: source not materialized** | Restore outbound DNS/HTTPS or provide a locally available full checkout |
+| BASE-003 Python full test | P0 | Python 3.13.5, pytest 9.0.2, cryptography 46.0.4, fastapi 0.128.2 available; `aiortc`, `av`, `sounddevice` missing; no checkout | **NOT EXECUTED** | Checkout + dependency index: `python -m pip install -e 'desktop/src-python[test,media,discovery]'`, `cd desktop/src-python && python -m pytest -q` |
+| BASE-004 Rust/Tauri | P0 | `cargo` and `rustc` commands missing | **NOT EXECUTED** | Install Rust toolchain + platform Tauri prerequisites; run `cargo build --manifest-path desktop/src-tauri/Cargo.toml` and `cargo test --manifest-path desktop/src-tauri/Cargo.toml` |
+| BASE-005 React/Vite | P0 | Node v22.16.0 and npm 10.9.2 present, **no desktop/package-lock.json** in Git tree; no source checkout/network | **NOT EXECUTED** | Generate and review lockfile with trusted registry; `cd desktop && npm ci && npm run build`; add ESLint, Prettier and `checkJs` gates |
+| BASE-006 Android/Gradle | P0 | Tree has only `gradle/wrapper/gradle-wrapper.properties`, no `gradlew`, `gradlew.bat`, or `gradle-wrapper.jar`; `gradle`, `adb` absent | **NOT EXECUTED** | Official verified Gradle wrapper; JDK/Android SDK; `./gradlew assembleDebug test lint` |
+| BASE-007 Cargo locks | P1 | Tree has `desktop/src-tauri/Cargo.toml` but no `Cargo.lock` | **OPEN** | Generate official resolver `Cargo.lock`, review crate versions, commit |
+| BASE-008 Android material | P1 | No physical Android/desktop, cameras or GNSS exposed to the execution environment | **NOT EXECUTED** | Actual Android/Windows/Mac/Linux device matrix, cameras, network and permission checks |
+| BASE-009 desktop supervision | P0 | `desktop/src-tauri/src/main.rs` only starts a sidecar via `start_companion`; termination clears process state; no automatic restart and no max-five-in-60-second supervisor | **OPEN** | Rust single-instance process manager, crash/restart tests, graceful Quit, tray error, autostart owner consent |
+| BASE-010 installer performance | P1 | `desktop/scripts/prepare_sidecar.py` passes `--onefile`; target specified `--onedir`, cold start and installed size not measured | **OPEN** | Change packaging layout and validate Tauri external binaries on each host, record executable size and cold start |
+| BASE-011 owner loopback | P0 | Local UI uses Tauri IPC and direct Python subprocess; dedicated ephemeral-token owner loopback API not present or verified | **BLOCKED: security design/test** | Define and test separate owner auth boundary, fail closed and reject anonymous localhost control |
+| BASE-012 React Native | P0 | No `mobile/` directory or committed mobile JS lockfile, no RN signing/pairing/camera/native modules | **NOT IMPLEMENTED** | Only after Phase 0 gate: JS-only RN app, exact signed interop, secure Keystore + OS pinning, parity evidence |
+| BASE-013 mobile migration | OWNER AUTHORITY | Existing Kotlin `app/` is authoritative parity reference, master requires deletion only after proven parity | **NOT AUTHORIZED** | Owner explicitly authorize deletion after documented verified parity, no premature removal |
+| BASE-014 legal/commercial | OWNER AUTHORITY | No owner-approved `LICENSE` and no actual signing or payment/store credentials | **BLOCKED** | Owner legal decisions, account approvals, signing identities, service deployment and device acceptance |
+
+### Test/build attempt log
+
+```text
+date: 2026-11-14
+environment: isolated Linux runner /mnt/data
+python --version                    -> Python 3.13.5
+node --version                      -> v22.16.0
+npm --version                       -> 10.9.2
+pytest --version                    -> pytest 9.0.2
+command -v cargo                    -> missing
+command -v rustc                    -> missing
+command -v gradle                   -> missing
+command -v adb                      -> missing
+command -v docker                   -> missing
+git ls-remote https://github.com/PerezChris99/Laptop-watch.git HEAD
+                                    -> fatal: Could not resolve host: github.com
+test -d /mnt/data/Laptop-watch/.git -> missing
+```
+
+**Gate verdict: Phase 0 FAIL/BLOCKED.** Not correct to assert “all
+source code complete except third-party/infra,” not correct to label the
+Python test suite green at the integrated commit. Phase 1+ remain
+unverified/not started at this gate. No benchmark values fabricated.
+
+All code modifications requiring inspection of `Warning.txt` await the
+missing authoritative file. See `docs/DECISIONS.md` for conservative
+security defaults and the reason production claims remain prohibited.
