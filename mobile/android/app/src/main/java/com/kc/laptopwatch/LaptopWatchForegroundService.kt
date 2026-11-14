@@ -145,7 +145,9 @@ class LaptopWatchForegroundService : Service() {
                                 else output.toString(Charsets.UTF_8.name())
                             }
                             val payload = body?.let { JSONObject(it) }
-                            if (payload?.optBoolean("motion_armed", false) == false) {
+                            // HTTP success alone is not an authenticated active state.
+                            if (payload == null || payload.optBoolean("online", false) != true ||
+                                payload.optBoolean("motion_armed", false) != true) {
                                 active.set(false)
                                 return
                             }

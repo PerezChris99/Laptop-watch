@@ -3,7 +3,7 @@ import 'react-native-url-polyfill/auto';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RTCView } from 'react-native-webrtc';
 import Video from 'react-native-video';
-import { downloadEvidence, exportEvidenceLocal, deleteEvidenceLocal } from './net/evidence.js';
+import { downloadEvidence, exportEvidenceLocal, deleteEvidenceLocal, purgePrivateEvidence } from './net/evidence.js';
 import { signedRelayJson, normalizedRelayUrl } from './net/signedRelay.js';
 import { pushAvailable, registerPush, unregisterPush, pushEnrollmentStatus, pushStatusMessage } from './notifications/push.js';
 import { QrScanner } from './pairing/QrScanner.jsx';
@@ -14,7 +14,7 @@ import { startForegroundConnection, stopForegroundConnection } from './backgroun
 import { checkNotifications, RESULTS } from 'react-native-permissions';
 import { startLiveView } from './media/live.js';
 import { locationStatus } from './location/labels.js';
-import { cacheLastSeen, cacheEvidence, cacheAlerts, loadAlerts, recordPrivateEvidence, forgetPrivateEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
+import { cacheLastSeen, cacheEvidence, cacheAlerts, clearCachedAlerts, loadAlerts, recordPrivateEvidence, forgetPrivateEvidence, getPreference, setPreference, loadLastSeen, deleteDesktopCache } from './storage/db.js';
 import { ActivityIndicator, Alert, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, Image, Platform } from 'react-native';
 import { tokens } from './design/tokens.js';
 import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, DestructiveButton, ConsentNotice, Toast, EmptyState, LastSeenBadge, EvidenceThumb } from './components/Paper.jsx';
@@ -540,7 +540,8 @@ export default function App() {
           { text: 'Cancel', style: 'cancel' },
           { text: 'Clear', style: 'destructive', onPress: () => perform(async () => {
             await client().status(); await client().clearIncidents();
-            setAlerts([]); afterId.current = 0; setNotice('Laptop incident metadata cleared.');
+            await clearCachedAlerts(paired.desktopId);
+             setAlerts([]); afterId.current = 0; setNotice('Laptop incident metadata cleared.');
           }) },
         ])} />
     </PaperCard>;
@@ -575,7 +576,7 @@ export default function App() {
 
     return <PaperCard><SectionHeader title="Settings & privacy" subtitle="Your device, your consent and your security settings." />
       <Text style={styles.body}>Native TLS pinning: {transportAvailable ? 'Bridge present, device testing pending' : 'Not installed'}</Text>
-      <Text style={styles.body}>Push: not configured. Native background connection: {backgroundActive ? 'requested and active in process' : 'off'}.</Text>
+      <Text style={styles.body}>Push: {pushEnabled ? (pushEnrolled ? 'owner-enrolled' : 'available, not enrolled') : 'not provisioned'}. Native background connection: {backgroundActive ? 'requested; native receipt pending' : 'off'}.</Text>
       <SecondaryButton title={backgroundOptIn ? 'Turn off background paired connection' : 'Enable optional armed background connection'}
         disabled={busy || !paired?.approved}
         onPress={() => {
@@ -681,7 +682,8 @@ export default function App() {
             foregroundStarted.current = false; await stopForegroundConnection().catch(() => {});
             setBackgroundOptIn(false); setBackgroundActive(false);
             await setPreference('background_opt_in', '0');
-            if (paired?.desktopId) await deleteDesktopCache(paired.desktopId);
+            await purgePrivateEvidence();
+             if (paired?.desktopId) await deleteDesktopCache(paired.desktopId);
             await clearIdentity(); setPaired(null); setStatus(null); setConnected(false);
             setLocation(null); setLocationHistory([]); setLastFixFresh(false); setAlerts([]); setEvidence([]); setLocalMedia({}); setSelectedMedia(null);
             setAudioListen(false); setTalkbackEnabled(false);

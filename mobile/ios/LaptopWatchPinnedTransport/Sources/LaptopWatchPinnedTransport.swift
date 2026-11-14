@@ -2,6 +2,7 @@ import Foundation
 import Security
 import CryptoKit
 import React
+import UIKit
 
 /**
  Owner-paired, strict leaf-DER SHA256 trust. Supports self-signed LAN
@@ -128,6 +129,41 @@ final class LaptopWatchPinnedTransport: NSObject {
         try? FileManager.default.removeItem(at: directory)
         reject("REPORT_EXPORT_FAILED", "Private report export unavailable", nil)
       }
+    }
+  }
+
+  /** Clear only app-private downloaded evidence on explicit owner unpair. */
+  @objc(deleteAllLocal:rejecter:)
+  func deleteAllLocal(_ resolve: @escaping RCTPromiseResolveBlock,
+                      rejecter reject: @escaping RCTPromiseRejectBlock) {
+    do {
+      guard let support = FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        throw NSError(domain: "LaptopWatchPrivateEvidence", code: 3)
+      }
+      let directory = support.appendingPathComponent("LaptopWatchEvidence", isDirectory: true)
+      let files = FileManager.default
+      if files.fileExists(atPath: directory.path) {
+        let root = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard root.isDirectory == true && root.isSymbolicLink != true else {
+          throw NSError(domain: "LaptopWatchPrivateEvidence", code: 4)
+        }
+        let entries = try files.contentsOfDirectory(at: directory,
+          includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        for entry in entries {
+          let allowed = entry.lastPathComponent.range(
+            of: "^(photo-[a-f0-9]{32}[.]jpg|video-[a-f0-9]{32}[.]mp4)$",
+            options: .regularExpression) != nil
+          let values = try entry.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+          guard allowed && values.isRegularFile == true && values.isSymbolicLink != true else {
+            throw NSError(domain: "LaptopWatchPrivateEvidence", code: 5)
+          }
+        }
+        try files.removeItem(at: directory)
+      }
+      resolve(true)
+    } catch {
+      reject("EVIDENCE_PURGE_FAILED", "Private evidence was not fully purged", nil)
     }
   }
 

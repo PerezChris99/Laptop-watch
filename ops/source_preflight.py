@@ -105,10 +105,17 @@ def native_contract() -> None:
         ),
         "mobile/android/app/src/main/java/com/kc/laptopwatch/LaptopWatchForegroundService.kt": (
             "LW1", "/api/status", "Ed25519Signer", "startForeground",
+            'payload == null', 'optBoolean("online", false)',
+        ),
+        "mobile/android/app/src/main/java/com/kc/laptopwatch/LaptopWatchEvidenceManagement.kt": (
+            "fun deleteAllLocal(", "fun exportReport(", "content.none",
+        ),
+        "mobile/ios/LaptopWatchPinnedTransport/Sources/LaptopWatchPinnedTransport.swift": (
+            "import UIKit", "@objc(deleteAllLocal:rejecter:)",
         ),
         "mobile/ios/LaptopWatchPinnedTransport/Sources/LaptopWatchPinnedTransportBridge.m": (
             "sendPinned:", "downloadPinned:", "deleteLocal:", "exportLocal:",
-            "sendSignedRelay:", "exportReport:",
+            "sendSignedRelay:", "exportReport:", "deleteAllLocal:",
         ),
         "mobile/src/net/SignedClient.js": (
             "GET /api/status", "POST /api/lock", "POST /api/alarm",
@@ -124,17 +131,26 @@ def native_contract() -> None:
             "restart_delay", "tauri_plugin_single_instance",
         ),
         "mobile/src/net/evidence.js": (
-            "downloadEvidence", "deleteEvidenceLocal", "exportEvidenceLocal",
+            "downloadEvidence", "deleteEvidenceLocal", "exportEvidenceLocal", "purgePrivateEvidence",
         ),
         "mobile/src/media/live.js": (
             "startLiveView", "mediaDevices.getUserMedia", "localMicrophone.getTracks()",
         ),
         "mobile/src/storage/db.js": (
-            "encryptionKey", "cacheEncryptionKey", "laptopwatch-private-v2.sqlite",
+            "encryptionKey", "cacheEncryptionKey", "laptopwatch-private-v2.sqlite", "clearCachedAlerts",
         ),
+        "mobile/src/App.jsx": ("await purgePrivateEvidence()", "await clearCachedAlerts("),
+
     }
     for path, tokens in checks.items():
         require_file(path, tokens)
+
+    # A doubly escaped Kotlin Unicode literal is not a valid Char.
+    android_export = require_file(
+        "mobile/android/app/src/main/java/com/kc/laptopwatch/LaptopWatchEvidenceManagement.kt")
+    bad_literal = "'" + chr(92) * 2 + "u0000'"
+    if bad_literal in android_export:
+        ERRORS.append("Android report export uses malformed NUL char literal")
 
     manifest = require_file("mobile/package.json")
     if manifest:
