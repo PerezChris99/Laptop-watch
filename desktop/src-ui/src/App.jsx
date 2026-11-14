@@ -134,14 +134,17 @@ export default function App () {
         <div className="sidebarFooter">Monitoring requires your consent. Visible camera activity only.</div>
       </aside>
       <main className="main" aria-live="polite">
-        <div className="topline"><span className="eyebrow">LAPTOPWATCH / {page.toUpperCase()}</span><span className={'status ' + (protecting ? 'green' : '')}>{protecting ? 'LAN gateway launched' : 'Not monitoring'}</span></div>
+        <div className="topline"><span className="eyebrow">LAPTOPWATCH / {page.toUpperCase()}</span><span className={'status ' + (protecting ? 'green' : '')}>{protecting ? 'Gateway process requested' : 'Not monitoring'}</span></div>
         {error && <p role="alert" className="error">{error}</p>}
         {message && <p className="notice">{message}</p>}
         {!ready && !error && <p>Preparing a private desktop identity…</p>}
         {page === 'overview' && <>
           <h1>Protect your laptop. Stay in control.</h1>
           <p className="lede">LaptopWatch pairs your own workstation with Android. Approve each phone, control when the camera is armed, and retain evidence locally.</p>
-          <div className="hero"><img src="/hero_banner.jpg" alt="LaptopWatch laptop and Android anti-theft concept" /></div>
+          <section className="paperHero" aria-label="Privacy by design">
+            <span className="paperHeroEyebrow">VISIBLE SECURITY · OWNER APPROVAL</span>
+            <p>Every device must be paired in person. Monitoring remains under the owner’s control, with clear consent and no covert audio recording.</p>
+          </section>
           <div className="grid">
             <div className="panel"><h3>1. Pair</h3><p>Show a two-minute QR. The phone must prove its key and you approve on this laptop.</p><button disabled={!ready || !!busy} onClick={() => setPage('pair')}>Pair Android</button></div>
             <div className="panel"><h3>2. Arm</h3><p>Only a paired controller can arm, photograph, record or sound a deterrent. The webcam remains visible to the OS.</p><span className="muted">No silent background camera permission.</span></div>
