@@ -15,6 +15,8 @@ import time
 import uuid
 from typing import Any, Callable
 
+from .storage_policy import EvidenceStoragePolicy, StorageLimitExceeded
+
 
 class CaptureUnavailable(RuntimeError):
     pass
@@ -36,7 +38,7 @@ class EvidenceRecorder:
     its result. Evidence stays under a private user-specific directory.
     """
     def __init__(self, directory: str | Path, *, cv2_module: Any | None = None,
-                 max_duration_seconds: float = 180.0):
+                 max_duration_seconds: float = 180.0, max_total_bytes: int = 2 * 1024**3):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         if os.name == "posix":
@@ -55,6 +57,7 @@ class EvidenceRecorder:
         self._last_result: VideoResult | None = None
         self.max_duration_seconds = min(max(1.0, float(max_duration_seconds)), 300.0)
         self.max_file_bytes = 128 * 1024 * 1024  # bound individual evidence clips
+        self.storage_policy = EvidenceStoragePolicy(self.directory, limit_bytes=max_total_bytes)
 
     @property
     def recording(self) -> bool:
@@ -149,6 +152,8 @@ class EvidenceRecorder:
             raise CaptureUnavailable("Invalid JPEG image")
         if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
             raise CaptureUnavailable("Frame is not JPEG encoded")
+        with self._lock:
+            self.storage_policy.require_room(len(jpeg))
         clip_id = uuid.uuid4().hex
         filename = f"photo-{clip_id}.jpg"
         path = self.directory / filename
@@ -164,6 +169,7 @@ class EvidenceRecorder:
         with self._lock:
             if self.recording:
                 raise CaptureUnavailable("Already recording")
+            self.storage_policy.require_room(8 * 1024 * 1024)
             cv2 = self._import_cv2()
             cap = self._open()
             try:
@@ -217,6 +223,12 @@ class EvidenceRecorder:
                         if self._file.stat().st_size >= self.max_file_bytes:
                             self._failure = "Recording stopped at the 128 MiB clip limit"
                             break
+                    if self._frames % 60 == 0:
+                        try:
+                            self.storage_policy.require_room(0)
+                        except StorageLimitExceeded:
+                            self._failure = "Recording stopped at the evidence storage quota"
+                            break
         except Exception:
             self._failure = "Camera encoder failed"
         finally:
@@ -253,6 +265,12 @@ class EvidenceRecorder:
             if result is None:
                 raise CaptureUnavailable("Video has no completed frames")
             return result
+
+    def purge_expired(self, *, retention_days: int) -> int:
+        """Explicit owner maintenance only; regular deletion is not secure erasure."""
+        with self._lock:
+            active_name = self._file.name if self.recording and self._file else None
+            return self.storage_policy.purge_expired(days=retention_days, active_file=active_name)
 
     def stop_if_recording(self) -> None:
         with self._lock:
