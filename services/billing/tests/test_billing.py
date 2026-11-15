@@ -255,3 +255,27 @@ def test_refund_or_chargeback_blocks_entitlement(client):
     assert webhook(api, subscription({}, status='active'),
                    event_type='subscription.updated', event_time=CLOCK+10).status_code == 200
     assert lease(api, account, device, key).status_code == 403
+
+
+def test_signed_device_checkout_ticket_mints_price_bound_authorization(client):
+    api, app, account, device, key, signing = client
+    auth_setup(client, paid=False)
+    nonce = enc(secrets.token_bytes(16))
+    def payload(signer, price=PRICE_PRO, nonce=nonce):
+        challenge = (f'LW-CHECKOUT-1\n{account}\n{device}\n{price}\n'
+                     f'{CLOCK}\n{nonce}\n').encode()
+        return {'account_id': account, 'device_id': device, 'price_id': price,
+                'timestamp': CLOCK, 'nonce': nonce, 'signature': enc(signer.sign(challenge))}
+    endpoint = '/v1/billing/checkout-ticket'
+    assert api.post(endpoint, json=payload(Ed25519PrivateKey.generate())).status_code == 403
+    good = api.post(endpoint, json=payload(key))
+    assert good.status_code == 200, good.text
+    assert good.json()['price_id'] == PRICE_PRO
+    assert api.post(endpoint, json=payload(key)).status_code == 403
+    tampered = payload(key, PRICE_PRO, enc(secrets.token_bytes(16)))
+    tampered['price_id'] = PRICE_BUSINESS
+    assert api.post(endpoint, json=tampered).status_code == 403
+    assert webhook(api, subscription(good.json()['custom_data'])).status_code == 200
+    assert lease(api, account, device, key).status_code == 403
+    assert completed_transaction(api).status_code == 200
+    assert lease(api, account, device, key).status_code == 200

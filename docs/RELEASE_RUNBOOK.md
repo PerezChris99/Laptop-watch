@@ -55,6 +55,22 @@ Review and lock actual resolved versions before accepting any build. At minimum
 run the signed gateway, Ed25519 replay, pairing, audit-tamper, owner-health
 and new signed GNSS history tests. Capture complete non-secret output.
 
+## 1b. Commercial billing contract (pilot, no live merchant deployment)
+
+```bash
+python -m pip install -e './services/billing[test]'
+python -m pytest -q services/billing/tests
+python ops/lock_dependencies.py  # nonzero until authentic locks exist
+```
+
+Paddle webhooks require verified `transaction.completed` alongside
+subscription state for paid leases. Refund/chargeback adjustments suspend
+leases. Registered devices can request signed checkout authorizations,
+but live Paddle merchant credentials, buyer onboarding, payment UI,
+client-side entitlement enforcement, accurate renewal reconciliation and
+real financial acceptance remain **BLOCKED**. See
+[services/billing/README.md](../services/billing/README.md).
+
 ## 2. React Native JavaScript mobile
 
 ```bash

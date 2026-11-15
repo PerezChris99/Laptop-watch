@@ -369,6 +369,10 @@ class LeaseInput(BaseModel):
     signature: str
 
 
+class CheckoutInput(LeaseInput):
+    price_id: str
+
+
 def paddle_portal_url(api_key: str, customer_id: str, subscription_id: str,
                       *, sandbox: bool = False) -> str:
     if not api_key:
@@ -451,6 +455,26 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
         with store.lock:
             if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
                 raise HTTPException(404, 'Account not found')
+        return {'price_id': data.price_id,
+                'custom_data': {'laptopwatch_checkout_ticket': ticket_for(account_id, data.price_id, checkout_secret, now())},
+                'expires_in_seconds': 900}
+
+    @app.post('/v1/billing/checkout-ticket')
+    async def device_checkout_ticket(data: CheckoutInput):
+        # This is customer-initiated purchase authorization, NOT permission
+        # to grant an entitlement. Payment still requires signed Paddle events.
+        try:
+            account_id, device_id = strict_uuid(data.account_id), strict_uuid(data.device_id)
+            if data.price_id not in prices or isinstance(data.timestamp, bool) or abs(now() - data.timestamp) > 60:
+                raise ValueError('invalid checkout request')
+            dec(data.nonce, 16)
+            pub = store.device_public_key(account_id, device_id)
+            challenge = (f'LW-CHECKOUT-1\n{account_id}\n{device_id}\n{data.price_id}\n'
+                         f'{data.timestamp}\n{data.nonce}\n').encode()
+            Ed25519PublicKey.from_public_bytes(pub).verify(dec(data.signature, 64), challenge)
+            store.claim_nonce(device_id, data.nonce, now())
+        except Exception as exc:
+            raise HTTPException(403, 'Checkout authorization rejected') from exc
         return {'price_id': data.price_id,
                 'custom_data': {'laptopwatch_checkout_ticket': ticket_for(account_id, data.price_id, checkout_secret, now())},
                 'expires_in_seconds': 900}

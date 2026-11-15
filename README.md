@@ -86,7 +86,7 @@ unprovisioned external services impose real limits.
 | GNSS/recovery | Real gpsd last-seen history, opt-in signed encrypted relay | Receiver, network outage and field testing |
 | Push/notifications | Android owner-gated FCM source + relay token rotation | Firebase provisioning, delivery and Doze |
 | Private local storage | Keychain seed and OP-SQLite SQLCipher configuration | Native encryption, migrations and reinstall behavior |
-| Commercial distribution | Proprietary source license; tested Paddle webhook/entitlement service (operator-provisioned only) | Client enforcement, self-service checkout, genuine locks, merchant approval, builds/signing/legal acceptance |
+| Commercial distribution | Proprietary source license; tested Paddle webhook/entitlement service (operator-enrolled devices; signed checkout tickets) | Client enforcement, self-service checkout, genuine locks, merchant approval, builds/signing/legal acceptance |
 
 **Source implementation is not equivalent to a passing build.**
 The original Kotlin app was retired at the owner's direction, not because

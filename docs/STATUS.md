@@ -17,7 +17,7 @@ and PR #20 (legacy Kotlin app/build retirement). See Git history and
 | Desktop engine | Python FastAPI signed pairing/commands, camera, incident model gate, audit, evidence and GNSS | Complete pytest, webcam/MP4/WebRTC/audio, adversarial network and OS |
 | Relay/FCM | Owner-provisionable encrypted HTTPS metadata relay; Android FCM registration + rotation | DNS/HTTPS, identity/FCM credentials, delivery, backups, Doze/outage |
 | Persistence | SQLite nonce/replay/history; Keychain phone seeds + SQLCipher mobile cache | Key-loss/reinstall, migration, retention, deletion, backup and tamper tests |
-| Legal/commercial | Proprietary source LICENSE; Paddle-signed payment/subscription/adjustment entitlement backend and 13 passing isolated tests; draft website/privacy/EULA | Actual merchant approval, client enforcement, self-service onboarding, refunds/disputes, stores, support |
+| Legal/commercial | Proprietary source LICENSE; Paddle-signed payment/subscription/adjustment entitlement backend and 14 passing isolated tests; draft website/privacy/EULA | Actual merchant approval, client enforcement, self-service onboarding, refunds/disputes, stores, support |
 
 ## What was removed
 
