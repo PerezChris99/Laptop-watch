@@ -127,3 +127,20 @@
 - Source scaffolds and Gradle wrapper have been added; avoid stale
   documentation asserting those files are missing. Dependency locking,
   native builds, signing, independent audit and hardware remain blocked.
+
+## Decision 011 — Proprietary original-work license and pilot billing (2026-11-15)
+
+- The owner explicitly requested commercial licensing, production dependency
+  locking and payment/subscription workflows. The repository now includes a
+  proprietary source LICENSE and a Paddle-signed billing/entitlement service.
+- The historic restriction against adding any LICENSE is superseded. This
+  does **not** approve a live public EULA, payments, product distribution,
+  licensing of third-party assets or compliance claims.
+- The backend validates paid transactions separately from subscription state,
+  blocks refunds/chargebacks, and supports authenticated enrolled-device
+  checkout authorization. 14 billing unit/integration tests passed in an
+  isolated local Python environment; no live merchant sandbox run occurred.
+- True npm/Cargo/Pod dependency locks could not be resolved without registry,
+  Cargo, CocoaPods and native toolchains. The checked-in lock generator
+  reports BLOCKED instead of inventing pinned dependencies.
+- GitHub Actions stay disabled. All merges use `perez` into `main`.
