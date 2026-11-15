@@ -190,3 +190,14 @@ flows, not proven acceptance tests; expand and run them on real hardware.
 
 Current authoring did **not** execute these build, native, security or
 hardware commands. Log real successes and failures in `docs/DEFECTS.md`.
+
+## Production commercial issuer pin (new)
+
+Before making a **paid** desktop build, obtain the Ed25519 issuer **public** key through an independently verified operator channel and put its canonical base64url 32-byte representation in a file outside source control. On a trusted release host run:
+
+```bash
+python ops/provision_license_issuer.py --public-key-file /safe/issuer-public-key.b64url
+LW_COMMERCIAL_BUILD=1 python desktop/scripts/prepare_sidecar.py
+```
+
+Review the resulting `desktop/src-python/laptopwatch/license_trust.py` and build provenance; sign and notarize the exact packaged binary. If the key is absent or malformed, the commercial packaging step fails closed. Neither the billing HTTP response nor an end user's environment variable is authoritative for a license signing key. This does **not** mean the merchant API or signed installer has been independently verified.

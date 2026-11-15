@@ -25,6 +25,26 @@ def main() -> None:
     from PIL import Image
     import PyInstaller.__main__
 
+    # A paid commercial binary must embed an independently approved issuer.
+    # Free beta builds may omit it, but then paid remote actions fail closed.
+    if os.getenv("LW_COMMERCIAL_BUILD") == "1":
+        from base64 import urlsafe_b64decode, urlsafe_b64encode
+        import ast
+        key_path = DESKTOP / "src-python" / "laptopwatch" / "license_trust.py"
+        parsed = ast.parse(key_path.read_text(encoding="utf-8"))
+        values = [node.value.value for node in parsed.body if isinstance(node, ast.Assign)
+                  and any(getattr(target, "id", None) == "TRUSTED_ISSUER_PUBLIC_KEY_B64URL"
+                          for target in node.targets)
+                  and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)]
+        if len(values) != 1:
+            raise RuntimeError("Commercial build requires exactly one audited issuer public key")
+        value = values[0]
+        try:
+            raw = urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("Invalid commercial issuer key") from exc
+        if len(raw) != 32 or urlsafe_b64encode(raw).decode().rstrip("=") != value:
+            raise RuntimeError("Commercial issuer pin invalid; refusing package")
     ICONS.mkdir(parents=True, exist_ok=True)
     original = ROOT / "docs" / "images" / "app_icon.jpg"
     if not original.is_file():

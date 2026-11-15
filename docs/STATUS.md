@@ -52,7 +52,7 @@ independent penetration tests, or certify physical-device behavior.
       24-hour thermal, battery and process stability benchmarks.
 - [ ] Genuine GNSS receiver, opt-in relay DNS/TLS/backups, real Firebase FCM
       and permitted model weights with measured false-positive accuracy.
-- [ ] Desktop OS-native secret protection and independent privacy/security
+- [ ] Commercial issuer public key provisioned and verified signed installer; desktop OS-native secret protection and independent privacy/security
       assessment, approved signing/updater and recovery strategy.
 - [ ] Owner-approved licensing/legal terms, privacy, disclosure, payment,
       stores and customer support with final distribution sign-off.
