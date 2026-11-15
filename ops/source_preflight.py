@@ -207,9 +207,11 @@ def native_contract() -> None:
     require_file("mobile/.gitignore", (
         "**/google-services.json", "**/GoogleService-Info.plist",
     ))
-    for path in (ROOT / ".github/workflows", ROOT / "LICENSE"):
-        if path.is_file() or path.is_dir():
-            ERRORS.append(f"New workflow or owner-unapproved LICENSE must be reviewed: {path.relative_to(ROOT)}")
+    if (ROOT / ".github/workflows").exists():
+        ERRORS.append("GitHub Actions workflows are disabled by owner policy")
+    # Owner explicitly approved proprietary licensing of original source.
+    require_file("LICENSE", ("Proprietary Software License Notice", "Third-party components"))
+
 
 
 def design_and_python() -> None:
@@ -234,7 +236,13 @@ def design_and_python() -> None:
         ERRORS.append("Owner relay Python source compilation failed")
     if not compileall.compile_dir(ROOT / "services/location-relay/tests", quiet=1):
         ERRORS.append("Owner relay Python test compilation failed")
-    for path in ("desktop/src-python/pyproject.toml", "services/location-relay/pyproject.toml"):
+    if not compileall.compile_dir(ROOT / "services/billing/laptopwatch_billing", quiet=1):
+        ERRORS.append("Billing service Python source compilation failed")
+    if not compileall.compile_dir(ROOT / "services/billing/tests", quiet=1):
+        ERRORS.append("Billing service Python test compilation failed")
+    require_file("ops/lock_dependencies.py", ("--generate", "package-lock.json", "Cargo.lock", "Podfile.lock"))
+    for path in ("desktop/src-python/pyproject.toml", "services/location-relay/pyproject.toml",
+                 "services/billing/pyproject.toml"):
         value = require_file(path)
         if value:
             try:
@@ -242,10 +250,17 @@ def design_and_python() -> None:
                 extras = project["project"]["optional-dependencies"]
                 if "test" not in extras:
                     ERRORS.append(f"Missing test extra for {path}")
-                if path.startswith("services/") and "fcm" not in extras:
+                if path == "services/location-relay/pyproject.toml" and "fcm" not in extras:
                     ERRORS.append("Relay needs explicit optional FCM dependencies")
             except (ValueError, KeyError, TypeError):
                 ERRORS.append(f"Invalid Python package metadata: {path}")
+    require_file("services/billing/laptopwatch_billing/app.py", (
+        "verify_paddle", "verify_ticket", "verify_license",
+        "subscription.", "claim_nonce", "Paddle-Signature",
+    ))
+    require_file("services/billing/tests/test_billing.py", (
+        "test_webhook_verifier_tampering_and_replay", "test_device_caps_fail_closed",
+    ))
     require_file("services/location-relay/Dockerfile", (
         "COPY services/location-relay/pyproject.toml", "'.[fcm]'", 
     ))

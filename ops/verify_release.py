@@ -90,6 +90,7 @@ def checks(mode: str) -> list[Result]:
     desktop = ROOT / "desktop"
     mobile = ROOT / "mobile"
     relay = ROOT / "services/location-relay"
+    billing = ROOT / "services/billing"
     rust = desktop / "src-tauri"
     android = mobile / "android"
 
@@ -100,6 +101,12 @@ def checks(mode: str) -> list[Result]:
         record_command("python:relay-tests",
                        [sys.executable, "-m", "pytest", "-q", "services/location-relay/tests"],
                        paths=(relay / "pyproject.toml",)),
+        record_command("python:billing-tests",
+                       [sys.executable, "-m", "pytest", "-q", "services/billing/tests"],
+                       paths=(billing / "pyproject.toml",)),
+        record_command("dependencies:locked",
+                       [sys.executable, "ops/lock_dependencies.py"],
+                       paths=(ROOT / "ops/lock_dependencies.py",)),
         grouped("desktop:node", [
             ["npm", "ci"], ["npm", "run", "test:ui"], ["npm", "run", "lint"],
             ["npm", "run", "check:js"], ["npm", "run", "build"],
