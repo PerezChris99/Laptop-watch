@@ -31,6 +31,9 @@ from .incidents import IncidentStore, PersonCameraGuard
 from .person_detector import YoloxNanoDetector, MotionPersonGate, DetectorUnavailable
 from .remote_incidents import SignedIncidentSender, RemoteIncidentPoller, IncidentDeliveryCursor
 from .security import PairingRegistry, SignedRequestVerifier, unb64url
+from .licensing import (BillingClient, PaidLicense, LicenseGate,
+                        LicenseUnavailable, TRUSTED_ISSUER_PUBLIC_KEY_B64URL,
+                        validate_service_url)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
     reject.add_argument('--request-id', required=True)
     sub.add_parser('devices', help='list paired phone ids')
     sub.add_parser('audit-history', help='verify signed audit chain and return 100 latest events')
+    billing = sub.add_parser('billing', help='owner-only commercial enrollment and status')
+    billing.add_argument('action', choices=['enroll', 'checkout', 'refresh', 'status', 'portal'])
+    billing.add_argument('--account-id', default=None, help='operator-issued customer UUID (enroll)')
+    billing.add_argument('--billing-url', default=None, help='approved HTTPS billing domain (enroll)')
+    billing.add_argument('--invite-code', default=None, help='single-use operator invite (enroll)')
+    billing.add_argument('--price-id', default=None, help='approved Paddle price ID (checkout)')
     sub.add_parser('incidents', help='list recent verified person incidents')
     sub.add_parser('clear-incidents', help='delete local incident metadata (not media)')
 
@@ -175,6 +184,52 @@ def main(argv: list[str] | None = None) -> int:
             SignedAuditLog(state_dir / 'audit.jsonl', get_audit_key(state_dir)).append('unpair', args.device_id, result='success')
             print('Phone revoked')
             return 0
+        if args.command == 'billing':
+            if not TRUSTED_ISSUER_PUBLIC_KEY_B64URL:
+                parser.error('No pinned license issuer in this build; paid activation disabled')
+            device_path, config_path = state_dir / 'desktop_id', state_dir / 'billing-account.json'
+            if not device_path.is_file():
+                parser.error('Initialize persistent desktop identity with physical pairing first')
+            desktop_id = str(uuid.UUID(device_path.read_text(encoding='ascii').strip()))
+            try:
+                if args.action == 'enroll':
+                    if not args.account_id or not args.billing_url or not args.invite_code:
+                        parser.error('Enroll requires account UUID, HTTPS billing URL, and operator invite')
+                    if config_path.exists():
+                        parser.error('Account already enrolled; migrate/revoke through operator')
+                    account_id = str(uuid.UUID(args.account_id))
+                    url = validate_service_url(args.billing_url)
+                else:
+                    stored = json.loads(config_path.read_text(encoding='utf-8'))
+                    account_id = str(uuid.UUID(stored['account_id']))
+                    url = validate_service_url(stored['billing_url'])
+                client = BillingClient(url, account_id, desktop_id, get_audit_key(state_dir))
+                cache = PaidLicense(state_dir, account_id, desktop_id)
+                if args.action == 'enroll':
+                    client.enroll(args.invite_code)
+                    fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd, 'w', encoding='utf-8') as file:
+                        json.dump({'account_id': account_id, 'billing_url': url}, file)
+                    print(json.dumps({'enrolled': True, 'device_id': desktop_id}))
+                elif args.action == 'checkout':
+                    if not args.price_id:
+                        parser.error('checkout requires a real provisioned merchant price ID')
+                    # Display only to a trusted owner. Checkout ticket is not a license.
+                    print(json.dumps(client.checkout(args.price_id)))
+                elif args.action == 'refresh':
+                    claims = client.lease(cache)
+                    print(json.dumps({'plan': claims['plan'], 'expires_at': claims['expires_at']}))
+                elif args.action == 'portal':
+                    import webbrowser
+                    if not webbrowser.open(client.portal(), new=2):
+                        raise LicenseUnavailable('Unable to open provider-hosted customer portal')
+                else:
+                    claims = cache.current()
+                    print(json.dumps({'plan': claims['plan'], 'expires_at': claims['expires_at']}
+                                     if claims else {'plan': 'free', 'entitlement': 'unavailable'}))
+                return 0
+            except (ValueError, OSError, KeyError) as exc:
+                parser.error('Commercial operation refused: ' + type(exc).__name__)
         if args.command == 'serve':
             if not 1 <= args.port <= 65535:
                 parser.error('port out of range')
@@ -184,6 +239,22 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error('--relay-url requires real GNSS consent via --enable-gpsd')
             if args.incident_relay_url and args.person_model is None:
                 parser.error('--incident-relay-url requires a verified person model')
+            paid_gate = None
+            if args.relay_url or args.incident_relay_url or args.turn_url:
+                try:
+                    stored = json.loads((state_dir / 'billing-account.json').read_text(encoding='utf-8'))
+                    account_id = str(uuid.UUID(stored['account_id']))
+                    desktop_id = str(uuid.UUID((state_dir / 'desktop_id').read_text(encoding='ascii').strip()))
+                    client = BillingClient(stored['billing_url'], account_id, desktop_id,
+                                           get_audit_key(state_dir))
+                    cache = PaidLicense(state_dir, account_id, desktop_id)
+                    paid_gate = LicenseGate(cache, client)
+                    feature = ('wan_media' if args.turn_url else 'remote_incidents'
+                               if args.incident_relay_url else 'remote_location')
+                    if not paid_gate.allowed(feature):
+                        raise LicenseUnavailable('current paid entitlement required')
+                except (ValueError, OSError, KeyError) as exc:
+                    parser.error('Remote paid capability unavailable: ' + type(exc).__name__)
             host = '0.0.0.0' if args.listen_lan else '127.0.0.1'
             if args.listen_lan:
                 # Public listener requires a physically approved, explicitly paired phone.
@@ -246,7 +317,8 @@ def main(argv: list[str] | None = None) -> int:
                     desktop_id_file.read_text(encoding='ascii').strip(),
                     get_audit_key(state_dir),
                 )
-                incident_poller = RemoteIncidentPoller(incidents, incident_cursor, incident_sender)
+                incident_poller = RemoteIncidentPoller(
+                    incidents, incident_cursor, paid_gate.wrap_incidents(incident_sender))
             poller = LocationPoller(tracking) if tracking is not None else None
             remote_poller = None
             if args.relay_url:
@@ -258,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
                     desktop_id_path.read_text(encoding='ascii').strip(),
                     get_audit_key(state_dir),
                 )
-                remote_poller = RemoteLocationPoller(tracking, sender)
+                remote_poller = RemoteLocationPoller(tracking, paid_gate.wrap_location(sender))
             mdns = None
             if args.listen_lan:
                 host_file = state_dir / 'pairing_host'
