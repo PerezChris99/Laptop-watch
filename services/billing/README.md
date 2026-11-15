@@ -73,12 +73,20 @@ reactivate a canceled subscription. Missing information is fail-closed.
    for recurring prices. Events without a valid ticket or pre-existing account
    binding return 422 and require manual reconciliation. Once a subscription
    has been bound, updates use the persisted account/merchant customer ID.
-9. Registered desktop signs challenge bytes exactly:
+9. After operator provisioning of the desktop device, a registered device
+   can independently request a checkout authorization with signed
+   `POST /v1/billing/checkout-ticket`. Sign the exact bytes
+   `LW-CHECKOUT-1\n{account_uuid}\n{device_uuid}\n{price_id}\n{unix_seconds}\n{nonce_b64url16}\n`.
+   The endpoint rejects altered prices, revoked devices and replayed
+   requests; returns a 15-minute, account/price-bound Paddle checkout
+   `custom_data` payload. A real Paddle.js hosted checkout UI and public
+   device enrollment/sign-in are separate work.
+10. Registered desktop signs challenge bytes exactly:
    `LW-LICENSE-1\n{account_uuid}\n{device_uuid}\n{unix_seconds}\n{nonce_b64url16}\n`
    POST that body and base64url signature to `/v1/licenses/lease`. Verify the
    Ed25519 signed lease using the **pinned** issuer public key, local desktop
    identity, plan, and expiration. Maximum lease TTL is 1 hour.
-10. For billing management, sign the distinct `LW-PORTAL-1\n...` challenge and
+11. For billing management, sign the distinct `LW-PORTAL-1\n...` challenge and
     call `/v1/billing/portal`. It creates a fresh provider-hosted session for
     the bound customer; do not store/cache/log the returned URL. Use Paddle's
     hosted portal to manage subscription, cancellation, invoices and payment
@@ -86,9 +94,10 @@ reactivate a canceled subscription. Missing information is fail-closed.
 
 The license-issuer service does **not** create a full customer login, email
 verification, purchase UI, mobile-app in-app purchases, automated device
-self-enrollment or recovery workflow. Until those exist, operator actions
-are mandatory: **this is a secure pilot billing backend, not customer-ready
-self-service commerce**. No code in current desktop/mobile apps enforces
+self-enrollment or recovery workflow. Operator onboarding remains mandatory, but an enrolled
+device can now obtain its own signed checkout authorization.
+**This remains a pilot billing backend, not customer-ready self-service
+commerce.** No code in current desktop/mobile apps enforces
 paid entitlements yet. Integration, issuer key pinning, recovery and merchant
 approval remain release blockers.
 

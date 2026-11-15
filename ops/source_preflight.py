@@ -257,6 +257,7 @@ def design_and_python() -> None:
     require_file("services/billing/laptopwatch_billing/app.py", (
         "verify_paddle", "verify_ticket", "verify_license",
         "subscription.", "claim_nonce", "Paddle-Signature",
+        "LW-CHECKOUT-1", "/v1/billing/checkout-ticket",
     ))
     require_file("services/billing/tests/test_billing.py", (
         "test_webhook_verifier_tampering_and_replay", "test_device_caps_fail_closed",
