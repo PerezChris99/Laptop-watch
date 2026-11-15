@@ -145,14 +145,26 @@ class Store:
           CREATE TABLE IF NOT EXISTS webhook_events(id TEXT PRIMARY KEY, received_at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS paid_transactions(
             id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, customer_id TEXT NOT NULL,
-            recorded_at INTEGER NOT NULL);
+            recorded_at INTEGER NOT NULL,
+            billing_period_start INTEGER NOT NULL DEFAULT 0,
+            billing_period_end INTEGER NOT NULL DEFAULT 0);
           CREATE INDEX IF NOT EXISTS idx_paid_subscription ON paid_transactions(subscription_id,customer_id);
           CREATE TABLE IF NOT EXISTS billing_holds(
             subscription_id TEXT PRIMARY KEY, reason TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS enrollment_invites(
+            token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            FOREIGN KEY(account_id) REFERENCES accounts(id));
           CREATE TABLE IF NOT EXISTS lease_nonces(
             device_id TEXT NOT NULL, nonce TEXT NOT NULL, created_at INTEGER NOT NULL,
             PRIMARY KEY(device_id,nonce));
         ''')
+        # Non-destructive migration: historical transactions without a verified
+        # billing period do not grant a new license until reconciled with Paddle.
+        existing_columns = {row[1] for row in self.db.execute('PRAGMA table_info(paid_transactions)')}
+        for column in ('billing_period_start', 'billing_period_end'):
+            if column not in existing_columns:
+                self.db.execute(f'ALTER TABLE paid_transactions ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0')
         self.db.execute('PRAGMA foreign_keys=ON')
 
     @contextmanager
@@ -169,6 +181,38 @@ class Store:
     def create_account(self, account_id: str):
         with self.tx() as db:
             db.execute('INSERT INTO accounts(id) VALUES (?)', (strict_uuid(account_id),))
+
+    def create_invite(self, account_id: str, now: int) -> str:
+        account_id = strict_uuid(account_id)
+        code = enc(secrets.token_bytes(32))
+        with self.tx() as db:
+            if not db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
+                raise ValueError('account not found')
+            db.execute('DELETE FROM enrollment_invites WHERE expires_at <= ?', (now,))
+            db.execute('INSERT INTO enrollment_invites(token_hash,account_id,expires_at) VALUES (?,?,?)',
+                       (hashlib.sha256(code.encode('ascii')).hexdigest(), account_id, now + 900))
+        return code
+
+    def redeem_invite(self, account_id: str, device_id: str, public_key: bytes,
+                      token: str, timestamp: int, nonce: str, signature: bytes, now: int) -> None:
+        account_id, device_id = strict_uuid(account_id), strict_uuid(device_id)
+        if isinstance(timestamp, bool) or abs(now - timestamp) > 60:
+            raise ValueError('stale enrollment proof')
+        Ed25519PublicKey.from_public_bytes(public_key)
+        dec(token, 32)
+        dec(nonce, 16)
+        digest = hashlib.sha256(token.encode('ascii')).hexdigest()
+        msg = (f'LW-ENROLL-1\n{account_id}\n{device_id}\n{enc(public_key)}\n'
+               f'{timestamp}\n{nonce}\n{digest}\n').encode('ascii')
+        Ed25519PublicKey.from_public_bytes(public_key).verify(signature, msg)
+        with self.tx() as db:
+            valid = db.execute('SELECT 1 FROM enrollment_invites WHERE token_hash=? '
+                               'AND account_id=? AND expires_at>?', (digest, account_id, now)).fetchone()
+            if not valid:
+                raise ValueError('invalid, redeemed or expired invite')
+            db.execute('INSERT INTO devices(id,account_id,public_key) VALUES (?,?,?)',
+                       (device_id, account_id, public_key))
+            db.execute('DELETE FROM enrollment_invites WHERE token_hash=?', (digest,))
 
     def register_device(self, account_id: str, device_id: str, public_key: bytes):
         Ed25519PublicKey.from_public_bytes(public_key)
@@ -207,13 +251,22 @@ class Store:
                     if (data.get('status') != 'completed' or
                         not isinstance(tx, str) or not re.fullmatch(r'txn_[a-z0-9]{26}', tx)):
                         raise ValueError('invalid paid transaction')
+                    period = data.get('billing_period')
+                    if not isinstance(period, dict):
+                        raise ValueError('transaction must contain a verifiable billing period')
+                    period_start = parse_instant(period.get('starts_at'))
+                    period_end = parse_instant(period.get('ends_at'))
+                    if period_start >= period_end or period_end - period_start > 370 * 86400:
+                        raise ValueError('invalid transaction billing period')
                     if (isinstance(sub, str) and re.fullmatch(r'sub_[a-z0-9]{26}', sub) and
                         isinstance(customer, str) and re.fullmatch(r'ctm_[a-z0-9]{26}', customer)):
                         prior = db.execute('SELECT customer_id FROM subscriptions WHERE id=?', (sub,)).fetchone()
                         if prior and prior['customer_id'] != customer:
                             raise ValueError('customer mismatch')
-                        db.execute('INSERT OR IGNORE INTO paid_transactions VALUES (?,?,?,?)',
-                                   (tx, sub, customer, when))
+                        db.execute('''INSERT OR IGNORE INTO paid_transactions
+                            (id, subscription_id, customer_id, recorded_at, billing_period_start, billing_period_end)
+                            VALUES (?,?,?,?,?,?)''',
+                            (tx, sub, customer, when, period_start, period_end))
                         result = 'payment-recorded'
                     else:
                         result = 'ignored-no-recurring-subscription'
@@ -301,7 +354,10 @@ class Store:
             subscriptions = self.db.execute('''SELECT * FROM subscriptions WHERE account_id=? AND
                 status IN ('active','trialing') AND period_end>?
                 AND EXISTS (SELECT 1 FROM paid_transactions p WHERE p.subscription_id=subscriptions.id
-                            AND p.customer_id=subscriptions.customer_id)
+                            AND p.customer_id=subscriptions.customer_id
+                            AND p.billing_period_end >= subscriptions.period_end - 300
+                            AND p.billing_period_end <= subscriptions.period_end + 300
+                            AND p.billing_period_start < subscriptions.period_end)
                 AND NOT EXISTS (SELECT 1 FROM billing_holds h WHERE h.subscription_id=subscriptions.id)
                 ORDER BY period_end DESC''',
                 (account_id, now)).fetchall()
@@ -346,6 +402,22 @@ class DeviceInput(BaseModel):
     account_id: str
     device_id: str
     public_key: str
+
+
+class InviteInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    account_id: str
+
+
+class EnrollInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    account_id: str
+    device_id: str
+    public_key: str
+    invite_code: str
+    timestamp: int
+    nonce: str
+    signature: str
 
 
 class RevokeInput(BaseModel):
@@ -424,6 +496,29 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
             return {'account_id': account_id}
         except (KeyError, ValueError, sqlite3.IntegrityError):
             raise HTTPException(400, 'Invalid or existing account')
+
+    @app.post('/v1/admin/invitations')
+    async def create_invitation(request: Request, data: InviteInput):
+        admin(request)
+        try:
+            code = store.create_invite(data.account_id, now())
+            # Only the authenticated operator receives the one-time token.
+            # No tokens in URLs, logs, metrics or customer-facing responses.
+            return {'invite_code': code, 'expires_in_seconds': 900}
+        except ValueError:
+            raise HTTPException(404, 'Account unavailable')
+
+    @app.post('/v1/accounts/enroll')
+    async def enroll_device(data: EnrollInput):
+        # Operator-assisted onboarding: proof of possession of a fresh private
+        # key AND a one-use invite issued out of band to the intended customer.
+        try:
+            store.redeem_invite(data.account_id, data.device_id,
+                                dec(data.public_key, 32), data.invite_code,
+                                data.timestamp, data.nonce, dec(data.signature, 64), now())
+            return {'enrolled': True}
+        except Exception:
+            raise HTTPException(403, 'Enrollment rejected')
 
     @app.post('/v1/admin/devices')
     async def device(request: Request, data: DeviceInput):
