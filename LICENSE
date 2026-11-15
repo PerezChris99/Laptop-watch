@@ -1,0 +1,15 @@
+LaptopWatch — Proprietary Software License Notice
+
+Copyright (c) 2026 Kweezi Perez Christopher. All rights reserved.
+
+LaptopWatch's original source code, documentation, branding, and proprietary
+assets are not offered under an open-source license. No permission to use,
+reproduce, modify, distribute, sublicense, host, or sell this original work is
+granted by the public availability of this repository. Commercial use and
+redistribution require a separate written agreement with the copyright holder.
+
+Third-party components remain subject to their own licenses, including the
+React Native Community Template MIT notice in docs/THIRD_PARTY_NOTICES.md.
+This notice does not revoke or supersede any third-party rights and is not
+itself an end-user license agreement. The commercial EULA is separately drafted
+in docs/commercial/EULA.md and needs legal approval before publication.
