@@ -174,7 +174,7 @@ class BillingClient:
 
     def _post(self, path: str, payload: dict) -> dict:
         if path not in {'/v1/accounts/enroll', '/v1/billing/checkout-ticket',
-                        '/v1/billing/portal', '/v1/licenses/lease'}:
+                        '/v1/billing/portal', '/v1/licenses/lease', '/v1/accounts/close'}:
             raise LicenseUnavailable('unsupported billing request')
         body = json.dumps(payload, separators=(',', ':'), ensure_ascii=True).encode('ascii')
         if len(body) > 4096:
@@ -193,7 +193,7 @@ class BillingClient:
         return result
 
     def _proof(self, operation: str, *, price_id: str | None = None) -> dict:
-        if operation not in {'LICENSE', 'PORTAL', 'CHECKOUT'}:
+        if operation not in {'LICENSE', 'PORTAL', 'CHECKOUT', 'ACCOUNT-CLOSE'}:
             raise LicenseUnavailable('invalid billing operation')
         now = int(self.clock())
         nonce = b64(secrets.token_bytes(16))
@@ -242,6 +242,20 @@ class BillingClient:
             raise LicenseUnavailable('billing service issued no license')
         # Ignore response.public_key; trust only embedded issuer.
         return cache.store(response['license'], now=int(self.clock()))
+
+    def close_account(self, confirm_account_id: str) -> dict:
+        """Require a distinct signed proof and exact account identifier.
+        Closure stops entitlement issuance, NOT Paddle recurring charges.
+        """
+        if _uuid(confirm_account_id) != self.account_id:
+            raise LicenseUnavailable('Account closure confirmation does not match')
+        data = self._proof('ACCOUNT-CLOSE')
+        data['confirm_account_id'] = self.account_id
+        result = self._post('/v1/accounts/close', data)
+        if (result.get('result') not in {'closed','already_closed'}
+                or result.get('provider_cancellation_required') is not True):
+            raise LicenseUnavailable('Account closure not confirmed')
+        return result
 
     def portal(self) -> str:
         result = self._post('/v1/billing/portal', self._proof('PORTAL'))

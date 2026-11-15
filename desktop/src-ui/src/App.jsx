@@ -36,6 +36,7 @@ export default function App () {
   const [billingHost, setBillingHost] = useState('')
   const [billingInvite, setBillingInvite] = useState('')
   const [billingPrice, setBillingPrice] = useState('')
+  const [billingCloseConfirm, setBillingCloseConfirm] = useState('')
   const [billingStatus, setBillingStatus] = useState(null)
   const [enableGpsd, setEnableGpsd] = useState(false)
   const [relayUrl, setRelayUrl] = useState(
@@ -165,14 +166,17 @@ export default function App () {
       billingUrl: action === 'enroll' ? billingHost.trim() : null,
       inviteCode: action === 'enroll' ? billingInvite.trim() : null,
       priceId: action === 'checkout' ? billingPrice.trim() : null,
+      confirmAccountId: action === 'close' ? billingCloseConfirm.trim() : null,
     })
     if (action === 'enroll') setBillingInvite('')
+    if (action === 'close') { setBillingCloseConfirm(''); setBillingStatus(null) }
     if (action === 'status' || action === 'refresh') {
       setBillingStatus(JSON.parse(raw))
     }
     setMessage(action === 'checkout'
       ? 'Paddle checkout opened. The subscription activates only after verified payment.'
       : action === 'portal' ? 'Paddle customer portal opened securely.'
+      : action === 'close' ? 'Account access closed. Cancel any active Paddle subscription separately to prevent recurring charges.'
       : action === 'enroll' ? 'Device enrolled. Complete payment to activate your plan.'
       : action === 'refresh' ? 'Verified subscription refreshed.'
       : 'License status refreshed.')
@@ -333,7 +337,20 @@ export default function App () {
               autoComplete="off" placeholder="pri_..." />
             <button disabled={!ready || !!busy || !billingPrice} onClick={() => commercial('checkout')}>Open secure checkout</button>
             <button disabled={!ready || !!busy} onClick={() => commercial('portal')}>Manage subscription with Paddle</button>
-            <p className="muted">No payment-card information is entered into LaptopWatch. Contact the seller before deleting an account with an active subscription; account deletion alone does not stop recurring charges.</p>
+            <p className="muted">No payment-card information is entered into LaptopWatch. Account closure is separate from provider cancellation; cancel the subscription in the Paddle portal first.</p>
+          </div>
+          <div className="panel">
+            <h3>Close commercial account</h3>
+            <p>Closing revokes your commercial account and license immediately. It does not remove local camera evidence and does not cancel Paddle billing. Cancel any active Paddle subscription in the portal before closing.</p>
+            <label htmlFor="billingClose">Type your complete customer account UUID to confirm</label>
+            <input id="billingClose" value={billingCloseConfirm} autoComplete="off"
+              onChange={e => setBillingCloseConfirm(e.target.value)} placeholder="Exact customer account UUID" />
+            <button className="danger" disabled={!ready || !!busy ||
+              !billingCloseConfirm || billingCloseConfirm !== billingAccount.trim()}
+              onClick={() => {
+                if (!window.confirm('Close this commercial account and revoke all paid access? This does NOT stop recurring Paddle charges.')) return
+                commercial('close')
+              }}>Close commercial account</button>
           </div>
         </>}
         {page === 'settings' && <>

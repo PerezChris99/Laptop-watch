@@ -52,11 +52,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('devices', help='list paired phone ids')
     sub.add_parser('audit-history', help='verify signed audit chain and return 100 latest events')
     billing = sub.add_parser('billing', help='owner-only commercial enrollment and status')
-    billing.add_argument('action', choices=['enroll', 'checkout', 'refresh', 'status', 'portal'])
+    billing.add_argument('action', choices=['enroll', 'checkout', 'refresh', 'status', 'portal', 'close'])
     billing.add_argument('--account-id', default=None, help='operator-issued customer UUID (enroll)')
     billing.add_argument('--billing-url', default=None, help='approved HTTPS billing domain (enroll)')
     billing.add_argument('--invite-code', default=None, help='single-use operator invite (enroll)')
     billing.add_argument('--price-id', default=None, help='approved Paddle price ID (checkout)')
+    billing.add_argument('--confirm-account-id', default=None, help='must exactly match account UUID (close)')
     sub.add_parser('incidents', help='list recent verified person incidents')
     sub.add_parser('clear-incidents', help='delete local incident metadata (not media)')
 
@@ -228,6 +229,16 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.action == 'refresh':
                     claims = client.lease(cache)
                     print(json.dumps({'plan': claims['plan'], 'expires_at': claims['expires_at']}))
+                elif args.action == 'close':
+                    if not args.confirm_account_id or args.confirm_account_id != account_id:
+                        parser.error('Closure requires an exact matching --confirm-account-id')
+                    # Do not silently stop ongoing payment at Paddle; an owner
+                    # must cancel through the provider portal separately.
+                    result = client.close_account(args.confirm_account_id)
+                    cache.path.unlink(missing_ok=True)
+                    config_path.unlink(missing_ok=True)
+                    print(json.dumps({'closed': True,
+                                      'provider_cancellation_required': result['provider_cancellation_required']}))
                 elif args.action == 'portal':
                     import webbrowser
                     if not webbrowser.open(client.portal(), new=2):
