@@ -26,6 +26,7 @@ import uuid
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives import serialization
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 MAX_WEBHOOK = 262_144
@@ -151,6 +152,8 @@ class Store:
           CREATE INDEX IF NOT EXISTS idx_paid_subscription ON paid_transactions(subscription_id,customer_id);
           CREATE TABLE IF NOT EXISTS billing_holds(
             subscription_id TEXT PRIMARY KEY, reason TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS checkout_bindings(
+            ticket_hash TEXT PRIMARY KEY, subscription_id TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS enrollment_invites(
             token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL,
             expires_at INTEGER NOT NULL,
@@ -333,8 +336,17 @@ class Store:
                 custom_data = data.get('custom_data') or {}
                 if not isinstance(custom_data, dict):
                     raise ValueError('missing checkout linkage')
-                account_id = verify_ticket(custom_data.get('laptopwatch_checkout_ticket', ''),
+                checkout_ticket = custom_data.get('laptopwatch_checkout_ticket', '')
+                account_id = verify_ticket(checkout_ticket,
                                            ticket_secret, price_id, when // 1_000_000)
+                token_hash = hashlib.sha256(checkout_ticket.encode('ascii')).hexdigest()
+                linked = db.execute('SELECT subscription_id FROM checkout_bindings WHERE ticket_hash=?',
+                                    (token_hash,)).fetchone()
+                if linked and linked['subscription_id'] != sub_id:
+                    raise ValueError('checkout ticket already bound to another subscription')
+                if not linked:
+                    db.execute('INSERT INTO checkout_bindings(ticket_hash,subscription_id) VALUES (?,?)',
+                               (token_hash, sub_id))
                 if not db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
                     raise ValueError('unknown account')
             db.execute('''INSERT INTO subscriptions(id,account_id,customer_id,price_id,status,period_end,event_time)
@@ -441,6 +453,12 @@ class LeaseInput(BaseModel):
     signature: str
 
 
+class CheckoutValidateInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    price_id: str
+    ticket: str
+
+
 class CheckoutInput(LeaseInput):
     price_id: str
 
@@ -469,7 +487,8 @@ def paddle_portal_url(api_key: str, customer_id: str, subscription_id: str,
 
 def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
                operator_secret: str, signing_key: Ed25519PrivateKey,
-               prices: dict[str, tuple[str, int]], clock=None, portal_provider=None) -> FastAPI:
+               prices: dict[str, tuple[str, int]], clock=None, portal_provider=None,
+               paddle_client_token: str | None = None, sandbox: bool = False) -> FastAPI:
     if not prices or len(set(prices)) != len(prices) or any(not k.startswith('pri_') or
        plan not in {'pro', 'business'} or seats < 1 or seats > 100 for k,(plan,seats) in prices.items()):
         raise ValueError('merchant price IDs and enforced device quotas are required')
@@ -486,6 +505,37 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
         bearer = request.headers.get('Authorization', '')
         if not bearer.startswith('Bearer ') or not hmac.compare_digest(bearer[7:], operator_secret):
             raise HTTPException(401, 'Unauthorized')
+
+    # Public browser page: never receives a raw card, merchant API key or
+    # privileged operator bearer. Checkout ticket arrives only in URL fragment.
+    public = Path(__file__).resolve().parent / 'public'
+    page_headers = {
+        'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+        'Content-Security-Policy': (
+            "default-src 'none'; script-src 'self' https://cdn.paddle.com; "
+            "connect-src 'self' https://*.paddle.com; frame-src https://*.paddle.com; "
+            "img-src 'self' data: https://*.paddle.com; "
+            "style-src 'self' 'unsafe-inline' https://*.paddle.com; "
+            "font-src 'self' https://*.paddle.com; form-action https://*.paddle.com; "
+            "frame-ancestors 'none'; base-uri 'none'; upgrade-insecure-requests")}
+
+    @app.get('/checkout')
+    async def checkout_page():
+        return FileResponse(public / 'checkout.html', media_type='text/html', headers=page_headers)
+
+    @app.get('/checkout.js')
+    async def checkout_script():
+        return FileResponse(public / 'checkout.js', media_type='application/javascript', headers=page_headers)
+
+    @app.get('/v1/billing/public-config')
+    async def checkout_public_config():
+        if (not paddle_client_token or
+            not paddle_client_token.startswith('test_' if sandbox else 'live_')):
+            raise HTTPException(503, 'Merchant checkout unavailable')
+        return JSONResponse({'client_token': paddle_client_token,
+                             'environment': 'sandbox' if sandbox else 'production',
+                             'prices': sorted(prices)}, headers={'Cache-Control':'no-store'})
 
     @app.post('/v1/admin/accounts')
     async def account(request: Request, data: dict):
@@ -553,6 +603,25 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
         return {'price_id': data.price_id,
                 'custom_data': {'laptopwatch_checkout_ticket': ticket_for(account_id, data.price_id, checkout_secret, now())},
                 'expires_in_seconds': 900}
+
+    @app.post('/v1/billing/checkout-validation')
+    async def validate_checkout(data: CheckoutValidateInput):
+        # Refuse checkout before payment if this price/account authorization is
+        # expired, altered or already bound to another subscription.
+        try:
+            if data.price_id not in prices:
+                raise ValueError('unknown price')
+            account_id = verify_ticket(data.ticket, checkout_secret, data.price_id, now())
+            with store.lock:
+                if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
+                    raise ValueError('unknown account')
+                bound = store.db.execute('SELECT 1 FROM checkout_bindings WHERE ticket_hash=?',
+                      (hashlib.sha256(data.ticket.encode('ascii')).hexdigest(),)).fetchone()
+            if bound:
+                raise ValueError('already used checkout authorization')
+            return JSONResponse({'valid': True}, headers={'Cache-Control': 'no-store'})
+        except (ValueError, TypeError, KeyError):
+            raise HTTPException(403, 'Checkout invitation invalid or expired')
 
     @app.post('/v1/billing/checkout-ticket')
     async def device_checkout_ticket(data: CheckoutInput):
@@ -682,6 +751,8 @@ def from_env():
     return create_app(db_path=need('LW_BILLING_DB'), webhook_secret=need('LW_PADDLE_WEBHOOK_SECRET'),
         checkout_secret=need('LW_CHECKOUT_TICKET_SECRET'), operator_secret=need('LW_BILLING_OPERATOR_SECRET'),
         signing_key=key, prices=prices,
+        paddle_client_token=os.environ.get('LW_PADDLE_CLIENT_TOKEN') or None,
+        sandbox=os.environ.get('LW_PADDLE_SANDBOX','false').lower() == 'true',
         portal_provider=(lambda customer, subscription: paddle_portal_url(
             need('LW_PADDLE_API_KEY'), customer, subscription,
             sandbox=os.environ.get('LW_PADDLE_SANDBOX', 'false').lower() == 'true'))

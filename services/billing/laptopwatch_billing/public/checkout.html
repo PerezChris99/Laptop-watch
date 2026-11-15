@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>LaptopWatch · Secure checkout</title>
+<style>
+:root { font-family:system-ui,-apple-system,Segoe UI,sans-serif; color:#0B1B3D; background:#F5F5F7; line-height:1.55 }
+body { margin:0; min-height:100vh; display:grid; place-items:center; padding:20px; box-sizing:border-box }
+main { box-sizing:border-box; background:white; padding:clamp(24px,5vw,52px); width:min(100%,560px);
+  border:1px solid #dbe3eb; box-shadow:0 14px 35px #0b1b3d0a }
+.eyebrow { color:#1f729c; letter-spacing:.16em; text-transform:uppercase; font-size:12px; font-weight:700 }
+h1 { font-size:clamp(24px,5vw,36px); letter-spacing:-.04em; line-height:1.2; margin:12px 0 16px }
+p { color:#405570; margin:0 0 18px }
+button { color:#fff; background:#0B1B3D; border:0; padding:14px 22px; font:inherit; cursor:pointer;
+  min-height:48px; width:100%; font-weight:600 }
+button:hover:not(:disabled) { background:#17658f }
+button:focus-visible { outline:3px solid #38BDF8; outline-offset:3px }
+button:disabled { opacity:.5; cursor:not-allowed }
+#status { color:#0B1B3D; min-height:2em }
+.note { font-size:13px; border-top:1px solid #e2e8ee; margin-top:24px; padding-top:20px }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">LaptopWatch · Billing</div>
+  <h1>Activate your security plan</h1>
+  <p>Complete payment directly in Paddle's secure checkout. Your card details are never entered into or stored by LaptopWatch.</p>
+  <p id="status" role="status" aria-live="polite">Validating your checkout invitation…</p>
+  <button id="checkout" type="button" disabled>Continue to secure checkout</button>
+  <p class="note">Checkout completion does not automatically authorize access. Your desktop application validates the signed subscription license after Paddle confirms payment. Manage cancellations in the customer portal.</p>
+</main>
+<script src="/checkout.js" defer></script>
+</body>
+</html>
