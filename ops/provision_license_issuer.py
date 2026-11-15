@@ -50,8 +50,8 @@ Changing it requires an independently approved rotation and new signed build.
     temporary.replace(target)
     if mobile_target is not None:
         mobile_target.parent.mkdir(parents=True, exist_ok=True)
-        generated = ("// Independently pinned license issuer, public key only.\\n"
-                     + f"export const TRUSTED_ISSUER_PUBLIC_KEY_B64URL = '{key_text}';\\n")
+        generated = ("// Independently pinned license issuer, public key only.\n"
+                     + f"export const TRUSTED_ISSUER_PUBLIC_KEY_B64URL = '{key_text}';\n")
         mobile_target.write_text(generated, encoding='utf-8')
     return hashlib.sha256(raw).hexdigest()
 
