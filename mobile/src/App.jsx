@@ -20,6 +20,8 @@ import { tokens } from './design/tokens.js';
 import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, DestructiveButton, ConsentNotice, Toast, EmptyState, LastSeenBadge, EvidenceThumb } from './components/Paper.jsx';
 import { loadIdentity, saveIdentity, clearIdentity } from './storage/identity.js';
 import { pinnedTransport } from './net/pinnedTransport.js';
+import { cachedCommercialLease, refreshCommercialLease, enrollCommercialDevice,
+  normalizeBillingUrl, forgetCommercialLicense } from './licensing/client.js';
 import { SignedClient } from './net/SignedClient.js';
 import { requestPairing, verifyApproval } from './pairing/pair.js';
 
@@ -55,6 +57,12 @@ export default function App() {
   const [warningText, setWarningText] = useState('');
   const [relayInput, setRelayInput] = useState('');
   const [relayUrl, setRelayUrl] = useState('');
+  const [billingHost, setBillingHost] = useState('');
+  const [billingInput, setBillingInput] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [accountInput, setAccountInput] = useState('');
+  const [invitation, setInvitation] = useState('');
+  const [paidLease, setPaidLease] = useState(null);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushEnrolled, setPushEnrolled] = useState(false);
   const [autoSnapshot, setAutoSnapshot] = useState(true);
@@ -90,13 +98,16 @@ export default function App() {
       getPreference('relay_https_url'), getPreference('push_opt_in'),
       getPreference('person_auto_snapshot'), getPreference('person_auto_alarm'),
       getPreference('person_auto_record'),
-    ]).then(([consent, fgs, relay, push, snap, alarm, record]) => {
+      getPreference('commercial_account'), getPreference('commercial_billing_host'),
+    ]).then(([consent, fgs, relay, push, snap, alarm, record, account, billing]) => {
       if (!mounted.current) return;
       setConsented(consent === '1');
       setBackgroundOptIn(fgs === '1');
       setRelayUrl(relay || '');
       setRelayInput(relay || '');
       setPushEnrolled(push === '1');
+      setAccountId(account || ''); setAccountInput(account || '');
+      setBillingHost(billing || ''); setBillingInput(billing || '');
       setAutoSnapshot(snap !== '0');
       setAutoAlarm(alarm === '1');
       setAutoRecord(record === '1');
@@ -111,9 +122,22 @@ export default function App() {
     return () => { mounted.current = false; };
   }, []);
 
+  // An expiring device-bound paid lease is validated locally before remote use.
+  // A clock check is performed for each action, not just when the page renders.
+  const paidAvailable = () => Boolean(paidLease?.account_id === accountId &&
+    paidLease?.device_id === paired?.deviceId &&
+    paidLease?.expires_at > Math.floor(Date.now()/1000));
+  useEffect(() => {
+    let active = true;
+    cachedCommercialLease(paired, accountId).then(claims => {
+      if (active) setPaidLease(claims);
+    }).catch(() => { if (active) setPaidLease(null); });
+    return () => { active = false; };
+  }, [paired?.deviceId, paired?.approved, accountId]);
+
   // Rotated tokens require an existing owner opt-in and foreground signing.
   useEffect(() => {
-    if (!paired?.approved || !pushEnrolled || !pushEnabled || !relayUrl) return;
+    if (!paired?.approved || !pushEnrolled || !pushEnabled || !relayUrl || !paidAvailable()) return;
     const reconcile = () => {
       if (AppState.currentState !== 'active') return;
       reconcilePushOnForeground(paired, relayUrl).catch(() => {
@@ -125,7 +149,7 @@ export default function App() {
       if (state === 'active') reconcile();
     });
     return () => subscription.remove();
-  }, [paired, pushEnrolled, pushEnabled, relayUrl]);
+  }, [paired, pushEnrolled, pushEnabled, relayUrl, paidLease, accountId]);
 
   useEffect(() => {
     if (!paired?.desktopId) { setLocation(null); return; }
@@ -238,7 +262,7 @@ export default function App() {
       if (mounted.current) { setConnected(false); setStatus(null); setLastFixFresh(false); }
       // The separately configured owner relay reports historical events only.
       // Never interpret its result as LAN connectivity or execute actions.
-      if (relayUrl) {
+      if (relayUrl && paidAvailable()) {
         try {
           const remoteFix = await signedRelayJson(paired, relayUrl, 'GET', '/api/location/latest');
           if (mounted.current && Number.isFinite(remoteFix.latitude) &&
@@ -266,7 +290,7 @@ export default function App() {
         } catch (_) { /* No offline command queue or synthetic notification. */ }
       }
     }
-  }, [paired, transportAvailable, client, relayUrl]);
+  }, [paired, transportAvailable, client, relayUrl, paidLease, accountId]);
 
   useEffect(() => {
     refresh();
@@ -645,6 +669,53 @@ export default function App() {
           })} />
       </PaperCard>
       <PaperCard>
+        <SectionHeader title="Commercial subscription" subtitle="Local paired controls are free. Remote services require a current verified license from an independently trusted issuer." />
+        <Text style={styles.body}>License: {paidAvailable() ? (paidLease.plan + ' until ' + new Date(paidLease.expires_at*1000).toLocaleString()) : 'Free / no verified paid entitlement'}</Text>
+        <TextInput style={{ backgroundColor:c.surface,borderWidth:1,borderColor:c.hairline,
+          borderRadius:8,color:c.ink,padding:12,marginBottom:8 }}
+          value={accountInput} onChangeText={setAccountInput} autoCapitalize="none"
+          autoCorrect={false} accessibilityLabel="Customer account UUID"
+          placeholder="Customer account UUID supplied by operator" />
+        <TextInput style={{ backgroundColor:c.surface,borderWidth:1,borderColor:c.hairline,
+          borderRadius:8,color:c.ink,padding:12,marginBottom:8 }}
+          value={billingInput} onChangeText={setBillingInput} autoCapitalize="none"
+          autoCorrect={false} keyboardType="url" accessibilityLabel="Approved billing HTTPS hostname"
+          placeholder="https://billing.example.com" />
+        <SecondaryButton title="Save billing connection" disabled={busy}
+          onPress={() => perform(async () => {
+            const account=accountInput.trim().toLowerCase();
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(account))
+              throw new Error('Invalid customer account ID');
+            const billing=normalizeBillingUrl(billingInput.trim());
+            if (account!==accountId || billing!==billingHost) {
+              await setPreference('commercial_signed_lease','');
+              setPaidLease(null);
+            }
+            await setPreference('commercial_account',account);
+            await setPreference('commercial_billing_host',billing);
+            setAccountId(account); setBillingHost(billing);
+            setNotice('Commercial connection saved. No paid rights granted without a signed lease.');
+          })} />
+        <TextInput style={{ backgroundColor:c.surface,borderWidth:1,borderColor:c.hairline,
+          borderRadius:8,color:c.ink,padding:12,marginVertical:8 }}
+          value={invitation} onChangeText={setInvitation} autoCapitalize="none"
+          autoCorrect={false} secureTextEntry accessibilityLabel="One-time device enrollment invitation"
+          placeholder="One-time invitation from account operator" />
+        <SecondaryButton title="Enroll this paired phone" disabled={!paired?.approved || !accountId || !billingHost || busy}
+          onPress={() => perform(async () => {
+            await enrollCommercialDevice(paired,accountId,billingHost,invitation);
+            setInvitation('');
+            setNotice('Device enrolled. Refresh license after the subscription payment is confirmed.');
+          })} />
+        <PrimaryButton title="Refresh verified subscription" disabled={!paired?.approved || !accountId || !billingHost || busy}
+          onPress={() => perform(async () => {
+            const claims=await refreshCommercialLease(paired,accountId,billingHost);
+            setPaidLease(claims);
+            setNotice('A device-bound paid license has been cryptographically verified.');
+          })} />
+        <ConsentNotice>Checkout is not offered inside this mobile app. Use the approved seller channel, subject to Google Play and Apple payment policies. A checkout screen alone never grants a subscription.</ConsentNotice>
+      </PaperCard>
+      <PaperCard>
         <SectionHeader title="Optional owner HTTPS relay" subtitle="Remote last-seen and event metadata are encrypted and separately signed. No remote action queue." />
         <TextInput style={{ backgroundColor: c.surface, borderWidth: 1, borderColor: c.hairline,
           borderRadius: 8, color: c.ink, padding: 12, marginBottom: 8 }}
@@ -661,7 +732,7 @@ export default function App() {
           })} />
         <Text style={styles.body}>Firebase: {pushEnabled ? 'available, opt-in only' : 'not provisioned on this build'}. {pushStatusMessage()}</Text>
         <SecondaryButton title={pushEnrolled ? 'Request FCM unregistration' : 'Register optional incident notifications'}
-          disabled={!pushEnabled || !paired?.approved || !relayUrl || busy}
+          disabled={!pushEnabled || !paired?.approved || !relayUrl || (!paidAvailable() && !pushEnrolled) || busy}
           onPress={() => Alert.alert(pushEnrolled ? 'Disable push?' : 'Enable incident notifications?', 'Only signed event metadata may trigger generic notifications. Firebase is not an action channel and incident details require a signed query.', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Confirm', onPress: () => perform(async () => {
@@ -670,6 +741,7 @@ export default function App() {
                 await setPreference('push_opt_in','0'); setPushEnrolled(false);
                 setNotice('Remote push registration revoked.');
               } else {
+                if (!paidAvailable()) throw new Error('Current paid subscription required for remote push');
                 if (!await askNotificationPermission()) throw new Error('Notification permission denied');
                 await registerPush(paired, relayUrl);
                 await setPreference('push_opt_in','1'); setPushEnrolled(true);
@@ -701,6 +773,8 @@ export default function App() {
             await purgePrivateEvidence();
              if (paired?.desktopId) await deleteDesktopCache(paired.desktopId);
             await clearIdentity(); setPaired(null); setStatus(null); setConnected(false);
+            await forgetCommercialLicense(); setPaidLease(null); setAccountId(''); setBillingHost('');
+            setAccountInput(''); setBillingInput(''); setInvitation('');
             setLocation(null); setLocationHistory([]); setLastFixFresh(false); setAlerts([]); setEvidence([]); setLocalMedia({}); setSelectedMedia(null);
             setAudioListen(false); setTalkbackEnabled(false);
             if (liveSession.current) { await liveSession.current.stop(); liveSession.current = null; }
