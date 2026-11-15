@@ -261,7 +261,17 @@ def design_and_python() -> None:
     ))
     require_file("services/billing/tests/test_billing.py", (
         "test_webhook_verifier_tampering_and_replay", "test_device_caps_fail_closed",
+        "test_subscription_renewal_requires_payment_for_that_period",
+        "test_checkout_ticket_requires_live_validation_and_single_subscription_binding",
     ))
+    require_file("desktop/src-python/laptopwatch/licensing.py", (
+        "verify_license", "LicenseGate", "TRUSTED_ISSUER_PUBLIC_KEY_B64URL",
+    ))
+    require_file("services/billing/laptopwatch_billing/public/checkout.html", ("checkout.js", "LaptopWatch",))
+    require_file("services/billing/laptopwatch_billing/public/checkout.js", (
+        "Paddle.Checkout.open", "history.replaceState", "checkout-validation",
+    ))
+    command(["node", "--check", "services/billing/laptopwatch_billing/public/checkout.js"])
     require_file("services/location-relay/Dockerfile", (
         "COPY services/location-relay/pyproject.toml", "'.[fcm]'", 
     ))

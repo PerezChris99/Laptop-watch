@@ -1,6 +1,6 @@
 # LaptopWatch — authoritative implementation status
 
-**Updated:** 14 November 2026  
+**Updated:** 15 November 2026  
 **Repository state:** owner-authorized source migration to React Native completed
 as a version-control decision; **release is STOP-SHIP**.
 
@@ -17,7 +17,7 @@ and PR #20 (legacy Kotlin app/build retirement). See Git history and
 | Desktop engine | Python FastAPI signed pairing/commands, camera, incident model gate, audit, evidence and GNSS | Complete pytest, webcam/MP4/WebRTC/audio, adversarial network and OS |
 | Relay/FCM | Owner-provisionable encrypted HTTPS metadata relay; Android FCM registration + rotation | DNS/HTTPS, identity/FCM credentials, delivery, backups, Doze/outage |
 | Persistence | SQLite nonce/replay/history; Keychain phone seeds + SQLCipher mobile cache | Key-loss/reinstall, migration, retention, deletion, backup and tamper tests |
-| Legal/commercial | Proprietary source LICENSE; Paddle-signed payment/subscription/adjustment entitlement backend and 14 passing isolated tests; draft website/privacy/EULA | Actual merchant approval, client enforcement, self-service onboarding, refunds/disputes, stores, support |
+| Legal/commercial | Proprietary source LICENSE; Paddle-backed billing, operator-invite enrollment, source checkout UI and desktop signed lease enforcement; 21 passing isolated billing tests plus 3 standalone client tests; draft website/privacy/EULA | Actual merchant approval, mobile entitlement/store billing, customer recovery, full checkout sandbox and refund/dispute operations, stores, support |
 
 ## What was removed
 
@@ -38,7 +38,7 @@ independent penetration tests, or certify physical-device behavior.
 
 ## STOP-SHIP: concrete unexecuted checks
 
-- [ ] Real merchant-sandbox checkout, client-side paid feature enforcement, customer onboarding and dispute/refund reconciliation.
+- [ ] Real merchant-sandbox checkout, mobile paid entitlement enforcement, full self-service signup/recovery, account deletion and dispute/refund reconciliation. Source-only desktop signed gating and operator invitations are present.
 - [ ] Fully materialized clean checkout; exact reviewed mobile/desktop npm,
       Cargo, Pod and transitive dependency locks and supply-chain audits.
 - [ ] Executed `python ops/source_preflight.py`, full Python + relay pytest,

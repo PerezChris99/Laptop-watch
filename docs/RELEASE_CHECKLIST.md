@@ -29,8 +29,9 @@
 - [ ] OS keystore hardening, identity rotation, media deletion, forensic review
 - [ ] Secure media WAN/ICE/TURN and user-accessible key revocation verified
 - [x] Proprietary LICENSE for original source (not permission to commercially distribute)
-- [x] Isolated Paddle payment/subscription/adjustment/backend tests (14 passed)
-- [ ] Desktop/mobile paid entitlement enforcement and actual Paddle Checkout UI
+- [x] Isolated Paddle payment/subscription/adjustment/backend tests (21 passed locally)
+- [x] Source-only desktop license verification and gated paid remote services; hosted Paddle.js checkout launcher source
+- [ ] Native desktop checkout acceptance, Android/iOS paid entitlement enforcement and full customer account lifecycle
 - [ ] Merchant sandbox integration, subscription renewals, refunds/disputes and customer registration
 - [ ] Privacy/EULA, third-party licenses, live commerce, store policies and support approval
 - [ ] Long reliability, security and recovery testing; no open critical defects
