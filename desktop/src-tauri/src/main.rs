@@ -345,10 +345,11 @@ async fn billing_action(
     app: AppHandle, action: String,
     account_id: Option<String>, billing_url: Option<String>,
     invite_code: Option<String>, price_id: Option<String>,
+    confirm_account_id: Option<String>,
 ) -> Result<String, String> {
     // Only fixed owner operations enter the packaged Python CLI. No shell,
     // arbitrary Python entrypoints, operator bearer, or user-defined flags.
-    if !matches!(action.as_str(), "enroll" | "checkout" | "refresh" | "status" | "portal") {
+    if !matches!(action.as_str(), "enroll" | "checkout" | "refresh" | "status" | "portal" | "close") {
         return Err("Unsupported commercial action".into());
     }
     let mut args=vec![action.clone()];
@@ -374,6 +375,11 @@ async fn billing_action(
             return Err("Invalid Paddle price identifier".into());
         }
         args.extend(["--price-id".into(),price]);
+    }
+    if action == "close" {
+        let confirmed = confirm_account_id.ok_or("Type the account UUID to close")?;
+        require_uuid(&confirmed)?;
+        args.extend(["--confirm-account-id".into(),confirmed]);
     }
     run_cli(&app,"billing",args).await
 }

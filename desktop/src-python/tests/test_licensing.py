@@ -74,3 +74,21 @@ def test_bad_urls_and_missing_issuer_rejected(tmp_path):
     with pytest.raises(LicenseUnavailable):
         client.checkout('not-an-approved-price')
     assert not PaidLicense(tmp_path, cache.account_id, cache.device_id, '').allow('remote_incidents')
+
+
+def test_account_closure_requires_distinct_signed_confirmation(tmp_path):
+    client, cache, token = sample(tmp_path)
+    requests = []
+    def fake(path,payload):
+        requests.append((path,payload))
+        if path == '/v1/accounts/close':
+            assert payload['confirm_account_id'] == client.account_id
+            assert payload['device_id'] == client.device_id
+            return {'result':'closed','provider_cancellation_required':True}
+        raise AssertionError('unexpected route')
+    client._post=fake
+    with pytest.raises(LicenseUnavailable):
+        client.close_account(str(uuid.uuid4()))
+    assert client.close_account(client.account_id)['result']=='closed'
+    assert len(requests)==1 and requests[0][0]=='/v1/accounts/close'
+    assert requests[0][1]['signature'] and requests[0][1]['timestamp']==CLOCK
