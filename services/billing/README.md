@@ -29,12 +29,15 @@ sequenceDiagram
     Device->>Device: Check embedded issuer public key + device + expiry
 ```
 
-Only a verified `subscription.*` webhook grants a paid entitlement. A checkout
-success callback and transaction.completed event do not. The service denies
-leases for past_due, canceled, paused, expired, revoked, unregistered or
-over-quota identities; unrecognized prices are rejected. Out-of-order webhook
-events cannot reactivate a canceled subscription. Missing information is
-fail-closed and needs reconciliation with Paddle before granting access.
+A **verified `subscription.*` event plus a matching verified
+`transaction.completed` payment event** is required to grant a paid
+entitlement. A checkout success callback or uncollected invoice does not
+authorize access. Verified `adjustment.created/updated` refund and
+chargeback events place a conservative entitlement hold pending manual
+reconciliation. The service denies leases for past_due, canceled, paused,
+expired, refunded/held, revoked, unregistered or over-quota identities;
+unrecognized prices are rejected. Out-of-order webhook events cannot
+reactivate a canceled subscription. Missing information is fail-closed.
 
 ## Setup on a trusted host
 
@@ -61,7 +64,11 @@ fail-closed and needs reconciliation with Paddle before granting access.
    ticket to the Paddle.js `Checkout.open({items:[{priceId,quantity:1}],customData})`
    **only after operator-authenticated provisioning**. See Paddle's official
    Checkout docs. Operator provisioning is intentionally NOT public signup.
-8. On signed Paddle subscription creation, the first webhook must include
+8. Configure the Paddle notification destination to deliver
+   `subscription.*`, `transaction.completed`, `adjustment.created`, and
+   `adjustment.updated` event families. Neither a subscription event without
+   a recorded completed payment nor a checkout success screen grants access.
+   On signed Paddle subscription creation, the first webhook must include
    `custom_data.laptopwatch_checkout_ticket`. It is copied to subscriptions
    for recurring prices. Events without a valid ticket or pre-existing account
    binding return 422 and require manual reconciliation. Once a subscription
@@ -93,15 +100,19 @@ approval remain release blockers.
 - Use separate sandbox and production secrets, keys, prices, URLs and data.
 - Reconcile missing/failed webhook deliveries against Paddle's API before
   claiming customer access or billing correctness; monitor 422 responses.
-- Treat trialing as entitled for the plan only after a verified Paddle
-  subscription event; past_due fails closed with no automatic grace.
+- A trialing subscription also requires a verified completed transaction
+  under the current conservative policy; an actual free-trial product
+  requires a separately tested and approved entitlement rule. Past_due
+  fails closed with no automatic grace.
 - Current configured plans: Pro=3 devices, Business=10. No unlimited devices;
   actual plan prices/quotas are owner-controlled and NOT yet approved.
 - Store only merchant subscription/customer IDs, plan, status, period and
   signed device public keys. Do not collect payment-card details.
-- Product-specific subscription refunds/partial credits must be reviewed
-  against Paddle notification and transaction/adjustment events and tested
-  before treating them as live; dispute/fraud reconciliation is outstanding.
+- Approved/pending refund and chargeback notifications conservatively
+  suspend new leases, even for partial adjustments, until an operator
+  reconciles the situation. Automated reinstatement, proration,
+  transaction-per-renewal reconciliation and fraud workflows remain
+  unimplemented; review actual Paddle semantics before live billing.
 - Key rotation, self-serve identity onboarding, device activation and
   cross-platform client enforcement remain incomplete; document them before launch.
 

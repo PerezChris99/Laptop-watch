@@ -54,13 +54,15 @@ def admin(api, path, payload):
     return api.post(path, json=payload, headers={'Authorization': 'Bearer ' + 'o' * 40})
 
 
-def auth_setup(context):
+def auth_setup(context, *, paid=True):
     api, app, account, device, key, signing = context
     assert admin(api, '/v1/admin/accounts', {'account_id': account}).status_code == 200
     raw_public = key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
     assert admin(api, '/v1/admin/devices', {
         'account_id': account, 'device_id': device, 'public_key': enc(raw_public)}).status_code == 200
+    if paid:
+        assert completed_transaction(api).json()['result'] == 'payment-recorded'
     return admin(api, '/v1/admin/checkout-ticket', {'account_id': account, 'price_id': PRICE_PRO}).json()['custom_data']
 
 
@@ -72,6 +74,12 @@ def webhook(api, data, event_type='subscription.created', event_time=CLOCK, even
     return api.post('/webhooks/paddle', content=body,
                     headers={'Paddle-Signature': f'ts={CLOCK};h1={signature}',
                              'Content-Type': 'application/json'})
+
+
+def completed_transaction(api):
+    return webhook(api, {'id': 'txn_' + 't'*26, 'subscription_id': SUB,
+                         'customer_id': CUSTOMER, 'status': 'completed'},
+                   event_type='transaction.completed')
 
 
 def subscription(custom, status='active', price=PRICE_PRO, end=CLOCK+7200):
@@ -169,7 +177,7 @@ def test_seat_limits_and_missing_period(client):
 def test_unknown_event_ignored_no_entitlement(client):
     api, app, account, device, key, signing = client
     custom = auth_setup(client)
-    assert webhook(api, subscription(custom), event_type='transaction.completed').json()['result'] == 'ignored'
+    assert webhook(api, subscription(custom), event_type='transaction.created').json()['result'] == 'ignored'
     assert lease(api, account, device, key).status_code == 403
 
 
@@ -203,6 +211,7 @@ def test_customer_portal_requires_distinct_signed_device_proof(tmp_path):
         ticket = admin(api, '/v1/admin/checkout-ticket', {'account_id': account,
                                                           'price_id': PRICE_PRO}).json()['custom_data']
         assert webhook(api, subscription(ticket)).status_code == 200
+        assert completed_transaction(api).status_code == 200
         nonce = enc(secrets.token_bytes(16))
         msg = f'LW-PORTAL-1\n{account}\n{device}\n{CLOCK}\n{nonce}\n'.encode()
         payload = {'account_id': account, 'device_id': device, 'timestamp': CLOCK,
@@ -222,4 +231,27 @@ def test_cancellation_wins_equal_second_timestamp(client):
     # Same second: old 1s-granularity logic incorrectly ignored cancellation.
     assert webhook(api, subscription({}, status='canceled'),
                    event_type='subscription.canceled').status_code == 200
+    assert lease(api, account, device, key).status_code == 403
+
+
+def test_active_subscription_without_completed_payment_is_not_entitled(client):
+    api, app, account, device, key, signing = client
+    custom = auth_setup(client, paid=False)
+    assert webhook(api, subscription(custom)).status_code == 200
+    assert lease(api, account, device, key).status_code == 403
+    assert completed_transaction(api).json()['result'] == 'payment-recorded'
+    assert lease(api, account, device, key).status_code == 200
+
+
+def test_refund_or_chargeback_blocks_entitlement(client):
+    api, app, account, device, key, signing = client
+    custom = auth_setup(client)
+    assert webhook(api, subscription(custom)).status_code == 200
+    adjustment = {'id': 'adj_'+'a'*26, 'subscription_id': SUB,
+                  'customer_id': CUSTOMER, 'action': 'refund', 'status': 'approved'}
+    assert webhook(api, adjustment, event_type='adjustment.created').json()['result'] == 'entitlement-held'
+    assert lease(api, account, device, key).status_code == 403
+    # Out-of-order active update must NOT override a financial adjustment hold.
+    assert webhook(api, subscription({}, status='active'),
+                   event_type='subscription.updated', event_time=CLOCK+10).status_code == 200
     assert lease(api, account, device, key).status_code == 403

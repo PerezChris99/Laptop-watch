@@ -143,6 +143,12 @@ class Store:
             event_time INTEGER NOT NULL, FOREIGN KEY(account_id) REFERENCES accounts(id));
           CREATE INDEX IF NOT EXISTS idx_sub_accounts ON subscriptions(account_id,status);
           CREATE TABLE IF NOT EXISTS webhook_events(id TEXT PRIMARY KEY, received_at INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS paid_transactions(
+            id TEXT PRIMARY KEY, subscription_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+            recorded_at INTEGER NOT NULL);
+          CREATE INDEX IF NOT EXISTS idx_paid_subscription ON paid_transactions(subscription_id,customer_id);
+          CREATE TABLE IF NOT EXISTS billing_holds(
+            subscription_id TEXT PRIMARY KEY, reason TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS lease_nonces(
             device_id TEXT NOT NULL, nonce TEXT NOT NULL, created_at INTEGER NOT NULL,
             PRIMARY KEY(device_id,nonce));
@@ -184,6 +190,53 @@ class Store:
         event_type = event.get('event_type')
         if not isinstance(event_id, str) or not re.fullmatch(r'evt_[a-z0-9]{26}', event_id):
             raise ValueError('invalid Paddle event ID')
+        # Successful checkout screens and initial invoices are NOT payment proof.
+        # Only a verified transaction.completed event may unlock a subscription.
+        if event_type in {'transaction.completed', 'adjustment.created', 'adjustment.updated'}:
+            data = event.get('data')
+            if not isinstance(data, dict):
+                raise ValueError('invalid payment/adjustment event')
+            when = event_micros(event.get('occurred_at'))
+            with self.tx() as db:
+                if db.execute('SELECT 1 FROM webhook_events WHERE id=?', (event_id,)).fetchone():
+                    return 'duplicate'
+                if event_type == 'transaction.completed':
+                    tx = data.get('id')
+                    sub = data.get('subscription_id')
+                    customer = data.get('customer_id')
+                    if (data.get('status') != 'completed' or
+                        not isinstance(tx, str) or not re.fullmatch(r'txn_[a-z0-9]{26}', tx)):
+                        raise ValueError('invalid paid transaction')
+                    if (isinstance(sub, str) and re.fullmatch(r'sub_[a-z0-9]{26}', sub) and
+                        isinstance(customer, str) and re.fullmatch(r'ctm_[a-z0-9]{26}', customer)):
+                        prior = db.execute('SELECT customer_id FROM subscriptions WHERE id=?', (sub,)).fetchone()
+                        if prior and prior['customer_id'] != customer:
+                            raise ValueError('customer mismatch')
+                        db.execute('INSERT OR IGNORE INTO paid_transactions VALUES (?,?,?,?)',
+                                   (tx, sub, customer, when))
+                        result = 'payment-recorded'
+                    else:
+                        result = 'ignored-no-recurring-subscription'
+                else:
+                    action = data.get('action')
+                    status = data.get('status')
+                    sub = data.get('subscription_id')
+                    customer = data.get('customer_id')
+                    result = 'adjustment-reviewed'
+                    if (isinstance(sub, str) and re.fullmatch(r'sub_[a-z0-9]{26}', sub)
+                        and isinstance(customer, str) and re.fullmatch(r'ctm_[a-z0-9]{26}', customer)
+                        and action in {'refund','chargeback','chargeback_warning'}
+                        and status in {'approved', 'pending_approval'}):
+                        prior = db.execute('SELECT customer_id FROM subscriptions WHERE id=?', (sub,)).fetchone()
+                        if prior is not None and prior['customer_id'] != customer:
+                            raise ValueError('adjustment customer mismatch')
+                        # Conservative hold: never auto-restore rights on a
+                        # reversal without verified operator reconciliation.
+                        db.execute('INSERT OR IGNORE INTO billing_holds VALUES (?,?)', (sub,action))
+                        result = 'entitlement-held'
+                db.execute('INSERT INTO webhook_events(id,received_at) VALUES (?,?)',
+                           (event_id, int(time.time())))
+            return result
         if event_type not in SUB_EVENTS:
             return 'ignored'
         data = event.get('data')
@@ -246,7 +299,11 @@ class Store:
             if device is None:
                 raise ValueError('device unrecognized or revoked')
             subscriptions = self.db.execute('''SELECT * FROM subscriptions WHERE account_id=? AND
-                status IN ('active','trialing') AND period_end>? ORDER BY period_end DESC''',
+                status IN ('active','trialing') AND period_end>?
+                AND EXISTS (SELECT 1 FROM paid_transactions p WHERE p.subscription_id=subscriptions.id
+                            AND p.customer_id=subscriptions.customer_id)
+                AND NOT EXISTS (SELECT 1 FROM billing_holds h WHERE h.subscription_id=subscriptions.id)
+                ORDER BY period_end DESC''',
                 (account_id, now)).fetchall()
             for s in subscriptions:
                 plan, seats = prices[s['price_id']]
