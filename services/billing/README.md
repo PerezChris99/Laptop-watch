@@ -59,11 +59,13 @@ reactivate a canceled subscription. Missing information is fail-closed.
 5. `python -m pytest -q services/billing/tests`
 6. `laptopwatch-billing` starts the server on **127.0.0.1:8899**. Use a
    properly secured TLS reverse proxy for public webhook and lease traffic.
-7. Operator provisions `POST /v1/admin/accounts`, `POST /v1/admin/devices`,
+7. Operator provisions `POST /v1/admin/accounts`, then creates a one-use invitation using `POST /v1/admin/invitations`. The customer desktop uses `billing enroll` with the out-of-band invitation, cryptographically proving possession of its Ed25519 key. The legacy operator-only device route `POST /v1/admin/devices` remains available. The desktop then obtains a short-lived authorized checkout ticket using
    `POST /v1/admin/checkout-ticket`; provide approved `price_id` and checkout
-   ticket to the Paddle.js `Checkout.open({items:[{priceId,quantity:1}],customData})`
-   **only after operator-authenticated provisioning**. See Paddle's official
-   Checkout docs. Operator provisioning is intentionally NOT public signup.
+   ticket bound to its real merchant price. The browser page at /checkout
+   uses Paddle.js with only the public client-side token, validates the ticket
+   server-side, and opens hosted checkout. The operator can also issue a
+   ticket through POST /v1/admin/checkout-ticket. Operator enrollment is still
+   required, so this is **not** open anonymous registration.
 8. Configure the Paddle notification destination to deliver
    `subscription.*`, `transaction.completed`, `adjustment.created`, and
    `adjustment.updated` event families. Neither a subscription event without
@@ -79,8 +81,10 @@ reactivate a canceled subscription. Missing information is fail-closed.
    `LW-CHECKOUT-1\n{account_uuid}\n{device_uuid}\n{price_id}\n{unix_seconds}\n{nonce_b64url16}\n`.
    The endpoint rejects altered prices, revoked devices and replayed
    requests; returns a 15-minute, account/price-bound Paddle checkout
-   `custom_data` payload. A real Paddle.js hosted checkout UI and public
-   device enrollment/sign-in are separate work.
+   `custom_data` payload. Desktop CLI 'billing checkout --price-id ...'
+   opens /checkout with short-lived authorization only in a URL fragment.
+   Only one subscription can bind to each ticket, and the browser must
+   validate price, account and expiration before calling Paddle.
 10. Registered desktop signs challenge bytes exactly:
    `LW-LICENSE-1\n{account_uuid}\n{device_uuid}\n{unix_seconds}\n{nonce_b64url16}\n`
    POST that body and base64url signature to `/v1/licenses/lease`. Verify the
@@ -92,14 +96,21 @@ reactivate a canceled subscription. Missing information is fail-closed.
     hosted portal to manage subscription, cancellation, invoices and payment
     method. The provider callback is **not** license authority: webhook is.
 
-The license-issuer service does **not** create a full customer login, email
-verification, purchase UI, mobile-app in-app purchases, automated device
-self-enrollment or recovery workflow. Operator onboarding remains mandatory, but an enrolled
-device can now obtain its own signed checkout authorization.
-**This remains a pilot billing backend, not customer-ready self-service
-commerce.** No code in current desktop/mobile apps enforces
-paid entitlements yet. Integration, issuer key pinning, recovery and merchant
-approval remain release blockers.
+Desktop device enrollment, a minimal hosted Paddle Checkout UI, and desktop
+signed paid-feature gating now exist as **source code**. Desktop billing CLI:
+`laptopwatch billing enroll --account-id UUID --billing-url https://... --invite-code CODE`;
+then `laptopwatch billing checkout --price-id pri_...`;
+`laptopwatch billing refresh`, `billing status`, and `billing portal`.
+Before issuing invitations, the proprietor MUST embed the authentic issuer
+**public** key in `desktop/src-python/laptopwatch/license_trust.py` and
+distribute through a reviewed signed build; blank means free-only/fail closed.
+The merchant's API response cannot update that trust anchor.
+
+Open account signup, email verification, cross-device account recovery, native
+mobile/store purchases, mobile entitlement enforcement, and real hosted
+merchant acceptance remain **incomplete**. The checkout page must be tested
+against Paddle's real sandbox, including CSP/frame/network calls, before
+enabling any production customer payments.
 
 ## Operational requirements
 
@@ -118,10 +129,12 @@ approval remain release blockers.
 - Store only merchant subscription/customer IDs, plan, status, period and
   signed device public keys. Do not collect payment-card details.
 - Approved/pending refund and chargeback notifications conservatively
-  suspend new leases, even for partial adjustments, until an operator
-  reconciles the situation. Automated reinstatement, proration,
-  transaction-per-renewal reconciliation and fraud workflows remain
-  unimplemented; review actual Paddle semantics before live billing.
+  suspend new leases, including partial adjustments, until an operator
+  reconciles. Each renewed period now needs a corresponding completed
+  transaction whose verified billing period matches the active subscription.
+  Historical receipts with no billing period are not trusted after migration.
+  Automated reinstatement, proration, full merchant API reconciliation and
+  fraud workflows remain incomplete.
 - Key rotation, self-serve identity onboarding, device activation and
   cross-platform client enforcement remain incomplete; document them before launch.
 
@@ -129,3 +142,11 @@ Paddle references: https://developer.paddle.com/webhooks/about/signature-verific
 https://developer.paddle.com/webhooks/subscriptions/subscription-updated/,
 https://developer.paddle.com/api-reference/customer-portals/create-customer-portal-session/,
 https://www.paddle.com/help/start/account-verification/which-countries-are-supported-by-paddle
+
+## Hosted checkout configuration
+
+- Set `LW_PADDLE_CLIENT_TOKEN` to the provider-issued **public** Paddle.js token (test_ for sandbox; live_ for production). Never use a secret merchant API key here.
+- Deploy the billing FastAPI app through a reviewed HTTPS reverse proxy. It serves `GET /checkout`, `GET /checkout.js`, `GET /v1/billing/public-config`, and `POST /v1/billing/checkout-validation`.
+- The checkout link fragment is removed from browser history before Paddle.js is loaded. The page is CSP-restricted and never claims payment is complete merely because Checkout closes.
+- Keep enrollment invitations, checkout tickets, and portal URLs out of analytics, logs, screenshots, and support messages.
+- Real Paddle checkout, portal, TLS/CSP, webhook delivery and product approval still require sandbox integration testing; local mocked tests do not prove it works at the merchant.

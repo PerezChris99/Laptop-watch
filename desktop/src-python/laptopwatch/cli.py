@@ -214,8 +214,17 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.action == 'checkout':
                     if not args.price_id:
                         parser.error('checkout requires a real provisioned merchant price ID')
-                    # Display only to a trusted owner. Checkout ticket is not a license.
-                    print(json.dumps(client.checkout(args.price_id)))
+                    # Short-lived signed authorization belongs in URL fragment,
+                    # never query strings or proxy/server logs. Strip it on the page.
+                    from urllib.parse import urlencode
+                    import webbrowser
+                    authorization = client.checkout(args.price_id)
+                    fragment = urlencode({
+                        'price_id': authorization['price_id'],
+                        'ticket': authorization['custom_data']['laptopwatch_checkout_ticket']})
+                    if not webbrowser.open(url + '/checkout#' + fragment, new=2):
+                        raise LicenseUnavailable('Unable to open approved checkout in browser')
+                    print('Secure Paddle checkout opened. No license until verified payment.')
                 elif args.action == 'refresh':
                     claims = client.lease(cache)
                     print(json.dumps({'plan': claims['plan'], 'expires_at': claims['expires_at']}))

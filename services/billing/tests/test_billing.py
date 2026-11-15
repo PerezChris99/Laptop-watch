@@ -356,3 +356,42 @@ def test_invitation_cannot_enroll_other_account_and_expires(client):
     msg=f'LW-ENROLL-1\n{account}\n{device}\n{enc(pub)}\n{CLOCK}\n{nonce}\n{digest}\n'.encode()
     payload.update(account_id=account, signature=enc(key.sign(msg)))
     assert api.post('/v1/accounts/enroll', json=payload).status_code == 403
+
+
+def test_checkout_page_cannot_publish_merchant_secrets(client):
+    api, *rest = client
+    html = api.get('/checkout')
+    assert html.status_code == 200
+    assert 'Content-Security-Policy' in html.headers
+    assert html.headers['Referrer-Policy'] == 'no-referrer'
+    assert api.get('/checkout.js').status_code == 200
+    assert api.get('/v1/billing/public-config').status_code == 503
+
+
+def test_public_config_exposes_only_public_client_token(tmp_path):
+    app = create_app(db_path=str(tmp_path/'merchant.db'), webhook_secret='w'*40,
+        checkout_secret='c'*40, operator_secret='o'*40,
+        signing_key=Ed25519PrivateKey.generate(), prices={PRICE_PRO:('pro',3)},
+        paddle_client_token='test_validpublictoken', sandbox=True)
+    with TestClient(app) as api:
+        response=api.get('/v1/billing/public-config')
+        assert response.status_code == 200
+        assert response.json() == {'client_token':'test_validpublictoken',
+                                   'environment':'sandbox','prices':[PRICE_PRO]}
+        assert 'secret' not in response.text.lower()
+
+
+def test_checkout_ticket_requires_live_validation_and_single_subscription_binding(client):
+    api, app, account, device, key, signing = client
+    custom = auth_setup(client, paid=False)
+    ticket = custom['laptopwatch_checkout_ticket']
+    valid = api.post('/v1/billing/checkout-validation', json={'price_id':PRICE_PRO,'ticket':ticket})
+    assert valid.status_code == 200
+    assert api.post('/v1/billing/checkout-validation', json={'price_id':PRICE_BUSINESS,
+               'ticket':ticket}).status_code == 403
+    assert webhook(api, subscription(custom)).status_code == 200
+    assert api.post('/v1/billing/checkout-validation', json={'price_id':PRICE_PRO,
+               'ticket':ticket}).status_code == 403
+    other = subscription(custom)
+    other['id'] = 'sub_'+'o'*26
+    assert webhook(api, other).status_code == 422
