@@ -86,7 +86,7 @@ unprovisioned external services impose real limits.
 | GNSS/recovery | Real gpsd last-seen history, opt-in signed encrypted relay | Receiver, network outage and field testing |
 | Push/notifications | Android owner-gated FCM source + relay token rotation | Firebase provisioning, delivery and Doze |
 | Private local storage | Keychain seed and OP-SQLite SQLCipher configuration | Native encryption, migrations and reinstall behavior |
-| Commercial distribution | Build recipes and draft legal policies | Dependency locks, builds, signing, compliance, sale approval |
+| Commercial distribution | Proprietary source license; tested Paddle webhook/entitlement service (operator-provisioned only) | Client enforcement, self-service checkout, genuine locks, merchant approval, builds/signing/legal acceptance |
 
 **Source implementation is not equivalent to a passing build.**
 The original Kotlin app was retired at the owner's direction, not because
@@ -122,6 +122,7 @@ desktop/
   src-tauri/    Rust native shell, tray, supervised sidecar
   src-python/   Python authenticated service, tests, capture and GNSS
 services/location-relay/    Optional encrypted owner metadata service
+services/billing/           Paddle webhooks, subscriptions, signed licenses (pilot only)
 design/                     Shared paper/blue/yellow/gold design tokens
 shared/protocol-vectors/    Cross-language signing fixtures
 ops/source_preflight.py     Offline source-contract preflight
@@ -193,8 +194,8 @@ production approval. This repository does not include GitHub Actions.
   provide independent theft-recovery hardware.
 - Installer signing, package audits, physical acceptance, privacy/consent,
   commercial license and any store approvals are mandatory before sale.
-  **No approved repository-wide license or commercial distribution rights
-  are implied by this README.**
+  **The original source has a proprietary LICENSE, but the product EULA,
+  third-party commercial rights and merchant acceptance need approval.**
 
 See [scenarios](docs/SCENARIOS.md), [architecture](docs/ARCHITECTURE.md),
 [status](docs/STATUS.md) and [commercial policy drafts](docs/commercial/).
