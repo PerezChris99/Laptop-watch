@@ -76,9 +76,12 @@ def webhook(api, data, event_type='subscription.created', event_time=CLOCK, even
                              'Content-Type': 'application/json'})
 
 
-def completed_transaction(api):
-    return webhook(api, {'id': 'txn_' + 't'*26, 'subscription_id': SUB,
-                         'customer_id': CUSTOMER, 'status': 'completed'},
+def completed_transaction(api, *, start=CLOCK-3600, end=CLOCK+7200, tx='t'*26):
+    return webhook(api, {'id': 'txn_' + tx, 'subscription_id': SUB,
+                         'customer_id': CUSTOMER, 'status': 'completed',
+                         'billing_period': {
+                            'starts_at': datetime.fromtimestamp(start, timezone.utc).isoformat(),
+                            'ends_at': datetime.fromtimestamp(end, timezone.utc).isoformat()}},
                    event_type='transaction.completed')
 
 
@@ -279,3 +282,77 @@ def test_signed_device_checkout_ticket_mints_price_bound_authorization(client):
     assert lease(api, account, device, key).status_code == 403
     assert completed_transaction(api).status_code == 200
     assert lease(api, account, device, key).status_code == 200
+
+
+def test_subscription_renewal_requires_payment_for_that_period(client):
+    api, app, account, device, key, signing = client
+    custom = auth_setup(client)
+    assert webhook(api, subscription(custom)).status_code == 200
+    assert lease(api, account, device, key).status_code == 200
+    renewal_end = CLOCK + 35 * 86400
+    # Merchant reports new period before the corresponding payment completes.
+    assert webhook(api, subscription({}, end=renewal_end),
+                   event_type='subscription.updated', event_time=CLOCK+10).status_code == 200
+    assert lease(api, account, device, key).status_code == 403
+    assert completed_transaction(api, start=CLOCK+7200, end=renewal_end,
+                                 tx='r'*26).status_code == 200
+    assert lease(api, account, device, key).status_code == 200
+
+
+def test_payment_period_cannot_be_missing_or_forged(client):
+    api, app, account, device, key, signing = client
+    ticket = auth_setup(client, paid=False)
+    assert webhook(api, subscription(ticket)).status_code == 200
+    assert webhook(api, {'id': 'txn_' + 'z'*26, 'subscription_id': SUB,
+                        'customer_id': CUSTOMER, 'status': 'completed'},
+                   event_type='transaction.completed').status_code == 422
+    assert lease(api, account, device, key).status_code == 403
+    assert completed_transaction(api, end=CLOCK + 40*86400, tx='y'*26).status_code == 200
+    assert lease(api, account, device, key).status_code == 403
+    assert completed_transaction(api).status_code == 200
+    assert lease(api, account, device, key).status_code == 200
+
+
+def test_operator_invite_requires_key_proof_and_is_single_use(client):
+    api, app, account, device, key, signing = client
+    assert admin(api, '/v1/admin/accounts', {'account_id':account}).status_code == 200
+    assert api.post('/v1/admin/invitations', json={'account_id': account}).status_code == 401
+    issue = admin(api, '/v1/admin/invitations', {'account_id':account})
+    assert issue.status_code == 200
+    invite = issue.json()['invite_code']
+    pub = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                        serialization.PublicFormat.Raw)
+    nonce = enc(secrets.token_bytes(16))
+    digest = hashlib.sha256(invite.encode('ascii')).hexdigest()
+    msg = (f'LW-ENROLL-1\n{account}\n{device}\n{enc(pub)}\n'
+           f'{CLOCK}\n{nonce}\n{digest}\n').encode()
+    payload = {'account_id':account, 'device_id':device, 'public_key':enc(pub),
+               'invite_code':invite, 'timestamp':CLOCK, 'nonce':nonce,
+               'signature':enc(key.sign(msg))}
+    wrong = dict(payload)
+    wrong['signature'] = enc(Ed25519PrivateKey.generate().sign(msg))
+    assert api.post('/v1/accounts/enroll', json=wrong).status_code == 403
+    assert api.post('/v1/accounts/enroll', json=payload).json() == {'enrolled': True}
+    assert api.post('/v1/accounts/enroll', json=payload).status_code == 403
+    assert api.post('/v1/billing/checkout-ticket', json={'account_id':account,
+           'device_id':device, 'price_id':PRICE_PRO,
+           'timestamp':CLOCK, 'nonce':nonce, 'signature':enc(key.sign(b'invalid'))}).status_code == 403
+
+
+def test_invitation_cannot_enroll_other_account_and_expires(client):
+    api, app, account, device, key, signing = client
+    assert admin(api, '/v1/admin/accounts', {'account_id':account}).status_code == 200
+    invite = admin(api, '/v1/admin/invitations', {'account_id':account}).json()['invite_code']
+    pub = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                        serialization.PublicFormat.Raw)
+    nonce=enc(secrets.token_bytes(16))
+    other=str(uuid.uuid4())
+    digest=hashlib.sha256(invite.encode()).hexdigest()
+    msg=f'LW-ENROLL-1\n{other}\n{device}\n{enc(pub)}\n{CLOCK}\n{nonce}\n{digest}\n'.encode()
+    payload={'account_id':other,'device_id':device,'public_key':enc(pub),'invite_code':invite,
+             'timestamp':CLOCK,'nonce':nonce,'signature':enc(key.sign(msg))}
+    assert api.post('/v1/accounts/enroll', json=payload).status_code == 403
+    app.state.store.db.execute('UPDATE enrollment_invites SET expires_at=?', (CLOCK-1,))
+    msg=f'LW-ENROLL-1\n{account}\n{device}\n{enc(pub)}\n{CLOCK}\n{nonce}\n{digest}\n'.encode()
+    payload.update(account_id=account, signature=enc(key.sign(msg)))
+    assert api.post('/v1/accounts/enroll', json=payload).status_code == 403
