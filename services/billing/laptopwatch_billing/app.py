@@ -135,6 +135,9 @@ class Store:
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.executescript('''
           CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY);
+          CREATE TABLE IF NOT EXISTS closed_accounts(
+            account_id TEXT PRIMARY KEY, requested_at INTEGER NOT NULL,
+            FOREIGN KEY(account_id) REFERENCES accounts(id));
           CREATE TABLE IF NOT EXISTS devices(
             id TEXT PRIMARY KEY, account_id TEXT NOT NULL, public_key BLOB NOT NULL,
             revoked INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(account_id) REFERENCES accounts(id));
@@ -185,12 +188,32 @@ class Store:
         with self.tx() as db:
             db.execute('INSERT INTO accounts(id) VALUES (?)', (strict_uuid(account_id),))
 
+    def is_closed(self, account_id: str) -> bool:
+        with self.lock:
+            return bool(self.db.execute('SELECT 1 FROM closed_accounts WHERE account_id=?',
+                                        (strict_uuid(account_id),)).fetchone())
+
+    def close_account(self, account_id: str, now: int) -> str:
+        """Revoke all local entitlements. Merchant cancellation and statutory
+        financial retention must be handled separately through Paddle."""
+        account_id = strict_uuid(account_id)
+        with self.tx() as db:
+            if not db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
+                raise ValueError('unknown account')
+            if db.execute('SELECT 1 FROM closed_accounts WHERE account_id=?', (account_id,)).fetchone():
+                return 'already_closed'
+            db.execute('INSERT INTO closed_accounts(account_id,requested_at) VALUES (?,?)',
+                       (account_id, now))
+            db.execute('UPDATE devices SET revoked=1 WHERE account_id=?', (account_id,))
+            db.execute('DELETE FROM enrollment_invites WHERE account_id=?', (account_id,))
+            return 'closed'
+
     def create_invite(self, account_id: str, now: int) -> str:
         account_id = strict_uuid(account_id)
         code = enc(secrets.token_bytes(32))
         with self.tx() as db:
-            if not db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
-                raise ValueError('account not found')
+            if not db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone() or self.is_closed(account_id):
+                raise ValueError('account not found or closed')
             db.execute('DELETE FROM enrollment_invites WHERE expires_at <= ?', (now,))
             db.execute('INSERT INTO enrollment_invites(token_hash,account_id,expires_at) VALUES (?,?,?)',
                        (hashlib.sha256(code.encode('ascii')).hexdigest(), account_id, now + 900))
@@ -211,8 +234,8 @@ class Store:
         with self.tx() as db:
             valid = db.execute('SELECT 1 FROM enrollment_invites WHERE token_hash=? '
                                'AND account_id=? AND expires_at>?', (digest, account_id, now)).fetchone()
-            if not valid:
-                raise ValueError('invalid, redeemed or expired invite')
+            if not valid or self.is_closed(account_id):
+                raise ValueError('invalid, redeemed, closed or expired invite')
             db.execute('INSERT INTO devices(id,account_id,public_key) VALUES (?,?,?)',
                        (device_id, account_id, public_key))
             db.execute('DELETE FROM enrollment_invites WHERE token_hash=?', (digest,))
@@ -220,7 +243,9 @@ class Store:
     def register_device(self, account_id: str, device_id: str, public_key: bytes):
         Ed25519PublicKey.from_public_bytes(public_key)
         with self.tx() as db:
-            db.execute('INSERT INTO devices(id,account_id,public_key) VALUES (?,?,?)',
+            if self.is_closed(account_id):
+                raise ValueError('closed account')
+            db.execute('INSERT INTO devices(id,account_id,public_key) VALUES (?,?,?)'
                        (strict_uuid(device_id), strict_uuid(account_id), public_key))
 
     def revoke_device(self, account_id: str, device_id: str):
@@ -361,8 +386,8 @@ class Store:
         with self.lock:
             device = self.db.execute('SELECT * FROM devices WHERE id=? AND account_id=? AND revoked=0',
                                      (device_id, account_id)).fetchone()
-            if device is None:
-                raise ValueError('device unrecognized or revoked')
+            if device is None or self.is_closed(account_id):
+                raise ValueError('device unrecognized, revoked or account closed')
             subscriptions = self.db.execute('''SELECT * FROM subscriptions WHERE account_id=? AND
                 status IN ('active','trialing') AND period_end>?
                 AND EXISTS (SELECT 1 FROM paid_transactions p WHERE p.subscription_id=subscriptions.id
@@ -451,6 +476,10 @@ class LeaseInput(BaseModel):
     timestamp: int
     nonce: str
     signature: str
+
+
+class CloseAccountInput(LeaseInput):
+    confirm_account_id: str
 
 
 class CheckoutValidateInput(BaseModel):
@@ -547,6 +576,33 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
         except (KeyError, ValueError, sqlite3.IntegrityError):
             raise HTTPException(400, 'Invalid or existing account')
 
+    @app.post('/v1/admin/accounts/close')
+    async def operator_close_account(request: Request, data: InviteInput):
+        admin(request)
+        try:
+            return {'result': store.close_account(data.account_id, now()),
+                    'provider_cancellation_required': True}
+        except ValueError:
+            raise HTTPException(404, 'Account unavailable')
+
+    @app.post('/v1/accounts/close')
+    async def owner_close_account(data: CloseAccountInput):
+        try:
+            account_id, device_id = strict_uuid(data.account_id), strict_uuid(data.device_id)
+            if (data.confirm_account_id != account_id or isinstance(data.timestamp, bool)
+                or abs(now() - data.timestamp) > 60):
+                raise ValueError('stale or unconfirmed close request')
+            dec(data.nonce, 16)
+            pub = store.device_public_key(account_id, device_id)
+            challenge = (f'LW-ACCOUNT-CLOSE-1\n{account_id}\n{device_id}\n'
+                         f'{data.timestamp}\n{data.nonce}\n').encode('ascii')
+            Ed25519PublicKey.from_public_bytes(pub).verify(dec(data.signature, 64), challenge)
+            store.claim_nonce(device_id, data.nonce, now())
+            result = store.close_account(account_id, now())
+            return {'result': result, 'provider_cancellation_required': True}
+        except Exception:
+            raise HTTPException(403, 'Account closure rejected')
+
     @app.post('/v1/admin/invitations')
     async def create_invitation(request: Request, data: InviteInput):
         admin(request)
@@ -598,7 +654,7 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
         except ValueError:
             raise HTTPException(400, 'Invalid account ID')
         with store.lock:
-            if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
+            if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone() or store.is_closed(account_id):
                 raise HTTPException(404, 'Account not found')
         return {'price_id': data.price_id,
                 'custom_data': {'laptopwatch_checkout_ticket': ticket_for(account_id, data.price_id, checkout_secret, now())},
@@ -613,7 +669,7 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
                 raise ValueError('unknown price')
             account_id = verify_ticket(data.ticket, checkout_secret, data.price_id, now())
             with store.lock:
-                if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone():
+                if not store.db.execute('SELECT 1 FROM accounts WHERE id=?', (account_id,)).fetchone() or store.is_closed(account_id):
                     raise ValueError('unknown account')
                 bound = store.db.execute('SELECT 1 FROM checkout_bindings WHERE ticket_hash=?',
                       (hashlib.sha256(data.ticket.encode('ascii')).hexdigest(),)).fetchone()
