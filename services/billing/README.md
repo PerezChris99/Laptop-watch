@@ -150,3 +150,16 @@ https://www.paddle.com/help/start/account-verification/which-countries-are-suppo
 - The checkout link fragment is removed from browser history before Paddle.js is loaded. The page is CSP-restricted and never claims payment is complete merely because Checkout closes.
 - Keep enrollment invitations, checkout tickets, and portal URLs out of analytics, logs, screenshots, and support messages.
 - Real Paddle checkout, portal, TLS/CSP, webhook delivery and product approval still require sandbox integration testing; local mocked tests do not prove it works at the merchant.
+
+## Operator subscription reconciliation
+
+An authenticated Paddle API snapshot can repair a missed or delayed webhook **only for a previously signed-and-bound subscription**. No checkout screen, customer-supplied transaction ID or email grants a paid license. The reconciliation tool does not bypass immutable chargeback/refund holds or account-closure tombstones. Ensure merchant approval and an operator-controlled host before use.
+
+```bash
+# Default: inspect, change nothing
+python -m laptopwatch_billing.reconcile --subscription-id sub_REPLACE_WITH_REAL_ID
+# After reviewing the result and verifying live provider records:
+python -m laptopwatch_billing.reconcile --subscription-id sub_REPLACE_WITH_REAL_ID --apply
+```
+
+Configure LW_BILLING_DB, LW_PADDLE_API_KEY, LW_PADDLE_PRICE_PRO, LW_PADDLE_PRICE_BUSINESS and LW_PADDLE_SANDBOX appropriately. The tool checks the exact account/customer/price binding, current subscription period and completed Paddle transaction, with bounded pagination and HTTPS-only provider access. It fails closed for unverified renewals. Schedule it on trusted infrastructure after successful sandbox tests; it is not an automated production job. Separate Paddle cancellation, refunds, legal financial-retention and data-erasure workflows must still be handled.
