@@ -10,6 +10,7 @@ from laptopwatch.security import PairingRegistry, unb64url
 
 from .app import RelayStore, create_relay
 from .push import FirebaseProvider
+from .license_policy import RelayLicensePolicy
 
 
 def main(argv=None):
@@ -44,7 +45,18 @@ def main(argv=None):
             # Only the reverse proxy should expose this container to WAN.
             project_id=os.environ.get("LAPTOPWATCH_FIREBASE_PROJECT_ID","").strip()
             provider=FirebaseProvider(project_id) if project_id else None
-            uvicorn.run(create_relay(registry,storage,push_provider=provider),host="0.0.0.0",
+            required=os.environ.get("LW_RELAY_REQUIRE_LICENSE","0")=="1"
+            policy=None
+            if required:
+                issuer=os.environ.get("LW_LICENSE_ISSUER_PUBLIC_KEY","")
+                owner=os.environ.get("LW_RELAY_ACCOUNT_ID","")
+                if not issuer or not owner:
+                    parser.error("Commercial relay requires approved issuer and account ID")
+                try:
+                    policy=RelayLicensePolicy(issuer,owner)
+                except ValueError:
+                    parser.error("Invalid commercial relay license configuration")
+            uvicorn.run(create_relay(registry,storage,push_provider=provider,license_policy=policy),host="0.0.0.0",
                         port=args.port, access_log=False,proxy_headers=False)
     finally:
         storage.close()

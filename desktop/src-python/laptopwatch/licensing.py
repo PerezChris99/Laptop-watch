@@ -127,6 +127,15 @@ class PaidLicense:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
+    def signed_token(self, now: int | None = None) -> str | None:
+        try:
+            if self.current(now=now) is None:
+                return None
+            token=json.loads(self.path.read_text(encoding='utf-8'))['license']
+            return token if isinstance(token,str) else None
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     def allow(self, feature: str, now: int | None = None) -> bool:
         if feature == 'local':
             return True

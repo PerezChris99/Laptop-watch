@@ -51,12 +51,14 @@ class IncidentDeliveryCursor:
 
 class SignedIncidentSender:
     def __init__(self, base_url: str, desktop_id: str,
-                 private_key: Ed25519PrivateKey, *, timeout_seconds:float=5.0):
+                 private_key: Ed25519PrivateKey, *, timeout_seconds:float=5.0,
+                 license_token_provider=None):
         uuid.UUID(desktop_id)
         self.url=validated_relay_url(base_url)+"/api/incidents/report"
         self.desktop_id=desktop_id
         self.key=private_key
         self.timeout=min(max(timeout_seconds,1),15)
+        self.license_token_provider=license_token_provider
         self.opener=build_opener(HTTPSHandler(),RedirectDenied())
 
     def send(self, event: dict) -> bool:
@@ -78,6 +80,11 @@ class SignedIncidentSender:
             self.key,method="POST",path=path,body=body,
             timestamp=stamp,nonce=nonce,device_id=self.desktop_id)
         headers["Content-Type"]="application/json"
+        if self.license_token_provider is not None:
+            token=self.license_token_provider()
+            if not isinstance(token,str) or len(token)>8192:
+                return False
+            headers["X-LaptopWatch-License"]=token
         try:
             request=Request(self.url,data=body,headers=headers,method="POST")
             with self.opener.open(request,timeout=self.timeout) as response:

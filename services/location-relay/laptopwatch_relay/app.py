@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .license_policy import RelayLicensePolicy
 from .push import IncidentReport, IncidentCursor, PushToken, IncidentRelayStore, FirebaseProvider
 
 from laptopwatch.security import (
@@ -171,7 +172,8 @@ class RelayStore:
 
 
 def create_relay(registry: PairingRegistry, storage: RelayStore,
-                 push_provider: FirebaseProvider | None = None) -> FastAPI:
+                 push_provider: FirebaseProvider | None = None,
+                 license_policy: RelayLicensePolicy | None = None) -> FastAPI:
     app = FastAPI(title="LaptopWatch Private Location Relay",
                   docs_url=None, openapi_url=None, redoc_url=None)
     verifier = SignedRequestVerifier(registry, SlidingWindowLimiter(max_attempts=90, period=60))
@@ -240,6 +242,15 @@ def create_relay(registry: PairingRegistry, storage: RelayStore,
             return JSONResponse({"error":"Insufficient device authority"},status_code=403)
         if not desktop_path and role!="owner_phone":
             return JSONResponse({"error":"Insufficient device authority"},status_code=403)
+        # Optional commercial deployments verify paid access on the server,
+        # never relying on a mobile UI toggle. Deletion/unregister stay allowed.
+        protected={"/api/location/report","/api/location/latest",
+                   "/api/incidents/report","/api/incidents/query",
+                   "/api/push/register","/api/push/status"}
+        if license_policy is not None and request.url.path in protected:
+            if not license_policy.allows(request.headers.get("X-LaptopWatch-License"),
+                                         request.state.device_id):
+                return JSONResponse({"error":"Paid entitlement unavailable"},status_code=403)
         response=await call_next(request)
         response.headers["Cache-Control"]="no-store"
         response.headers["X-Content-Type-Options"]="nosniff"
