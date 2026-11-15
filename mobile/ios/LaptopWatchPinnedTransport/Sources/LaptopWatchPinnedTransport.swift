@@ -256,7 +256,12 @@ final class LaptopWatchPinnedTransport: NSObject {
                 "X-LaptopWatch-Timestamp","X-LaptopWatch-Signature"]
     guard keys.allSatisfy({ (headers[$0]?.count ?? 0) > 0 &&
                            (headers[$0]?.count ?? 0) <= 256 }),
-          headers.keys.allSatisfy({ keys.contains($0) }) else {
+          headers.keys.allSatisfy({ keys.contains($0) || $0 == "X-LaptopWatch-License" }),
+          (headers["X-LaptopWatch-License"].map { lease in
+            lease.count >= 20 && lease.count <= 8192 &&
+            lease.utf8.allSatisfy { $0 >= 33 && $0 <= 126 } &&
+            lease.filter { $0 == "." }.count == 1
+          } ?? true) else {
       fail()
       return
     }
@@ -268,6 +273,9 @@ final class LaptopWatchPinnedTransport: NSObject {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     }
     for key in keys { request.setValue(headers[key], forHTTPHeaderField: key) }
+    if let lease=headers["X-LaptopWatch-License"] {
+      request.setValue(lease,forHTTPHeaderField:"X-LaptopWatch-License")
+    }
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 15
     config.httpCookieStorage = nil

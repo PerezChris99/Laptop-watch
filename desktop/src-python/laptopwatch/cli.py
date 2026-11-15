@@ -325,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.incident_relay_url,
                     desktop_id_file.read_text(encoding='ascii').strip(),
                     get_audit_key(state_dir),
+                    license_token_provider=paid_gate.cache.signed_token,
                 )
                 incident_poller = RemoteIncidentPoller(
                     incidents, incident_cursor, paid_gate.wrap_incidents(incident_sender))
@@ -338,6 +339,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.relay_url,
                     desktop_id_path.read_text(encoding='ascii').strip(),
                     get_audit_key(state_dir),
+                    license_token_provider=paid_gate.cache.signed_token,
                 )
                 remote_poller = RemoteLocationPoller(tracking, paid_gate.wrap_location(sender))
             mdns = None

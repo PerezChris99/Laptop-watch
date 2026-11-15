@@ -41,13 +41,14 @@ def validated_relay_url(value: str) -> str:
 class SignedLocationSender:
     """Sends signed fixes; only a matching authenticated receipt is considered ack."""
     def __init__(self, url: str, desktop_id: str, private_key: Ed25519PrivateKey,
-                 *, timeout_s: float = 5.0):
+                 *, timeout_s: float = 5.0, license_token_provider=None):
         import uuid
         uuid.UUID(desktop_id)
         self.base = validated_relay_url(url)
         self.desktop_id = desktop_id
         self.private_key = private_key
         self.timeout_s = min(max(timeout_s, 1.0), 15.0)
+        self.license_token_provider = license_token_provider
         # urllib's default HTTPS handler validates hostname and system trust.
         # A cross-domain redirect is forbidden; it could leak a signed fix.
         self.opener = build_opener(HTTPSHandler(), RedirectDenied())
@@ -69,6 +70,11 @@ class SignedLocationSender:
             timestamp=stamp,nonce=nonce,device_id=self.desktop_id
         )
         headers["Content-Type"]="application/json"
+        if self.license_token_provider is not None:
+            token=self.license_token_provider()
+            if not isinstance(token,str) or len(token)>8192:
+                return False
+            headers["X-LaptopWatch-License"]=token
         request=Request(self.base + path, data=body, headers=headers, method="POST")
         try:
             with self.opener.open(request, timeout=self.timeout_s) as response:

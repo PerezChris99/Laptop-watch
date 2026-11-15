@@ -6,6 +6,7 @@ import { NativeModules, Platform } from 'react-native';
 import { bytesToUtf8, utf8ToBytes } from '@noble/hashes/utils';
 import { b64url, canonicalRequest, secureRandom16, sign } from '../crypto/protocol.js';
 import { fromByteArray, toByteArray } from 'base64-js';
+import { getPreference } from '../storage/db.js';
 
 const RELAY_ROUTES = new Set([
   'GET /api/location/latest', 'POST /api/incidents/query',
@@ -42,14 +43,19 @@ export async function signedRelayJson(paired, relayUrl, method, path, data = und
   const signature = b64url(sign(
     paired.privateSeed, canonicalRequest(method, path, body, timestamp, nonce, paired.deviceId),
   ));
+  // The server verifies this independently; client claims never grant remote rights.
+  const token=await getPreference('commercial_signed_lease').catch(()=>null);
+  const headers={
+    'X-LaptopWatch-Device':paired.deviceId,
+    'X-LaptopWatch-Nonce':nonce,
+    'X-LaptopWatch-Timestamp':String(timestamp),
+    'X-LaptopWatch-Signature':signature,
+  };
+  if (typeof token==='string' && token.length>=20 && token.length<=8192)
+    headers['X-LaptopWatch-License']=token;
   const request = {
     relayUrl: base, method, path, bodyBase64: data === undefined ? '' : fromByteArray(body),
-    headers: {
-      'X-LaptopWatch-Device': paired.deviceId,
-      'X-LaptopWatch-Nonce': nonce,
-      'X-LaptopWatch-Timestamp': String(timestamp),
-      'X-LaptopWatch-Signature': signature,
-    },
+    headers,
     followRedirects: false,
     timeoutMs: 15000,
   };

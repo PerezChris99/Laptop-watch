@@ -70,6 +70,12 @@ class LaptopWatchRelayModule(private val context: ReactApplicationContext) :
                     require(value.all { it.code in 32..126 })
                     request.header(key, value)
                 }
+                if (!signed.isNull("X-LaptopWatch-License")) {
+                    val lease=signed.getString("X-LaptopWatch-License") ?: error("Invalid license")
+                    require(lease.length in 20..8192 &&
+                        lease.all { it.code in 33..126 } && lease.count { it == '.' } == 1)
+                    request.header("X-LaptopWatch-License", lease)
+                }
                 if (method == "GET") {
                     require(body.isEmpty())
                     request.get()
