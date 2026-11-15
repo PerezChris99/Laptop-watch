@@ -15,6 +15,7 @@ const panels = [
   { id: 'alerts', title: 'Person alerts' },
   { id: 'location', title: 'Location' },
   { id: 'audit', title: 'Audit log' },
+  { id: 'subscription', title: 'Subscription' },
   { id: 'settings', title: 'Settings' },
 ]
 
@@ -31,6 +32,11 @@ export default function App () {
   const [lastSeen, setLastSeen] = useState(null)
   const [audit, setAudit] = useState([])
   const [autostart, setAutostart] = useState(false)
+  const [billingAccount, setBillingAccount] = useState('')
+  const [billingHost, setBillingHost] = useState('')
+  const [billingInvite, setBillingInvite] = useState('')
+  const [billingPrice, setBillingPrice] = useState('')
+  const [billingStatus, setBillingStatus] = useState(null)
   const [enableGpsd, setEnableGpsd] = useState(false)
   const [relayUrl, setRelayUrl] = useState(
     () => window.localStorage.getItem('laptopwatch_gnss_relay') || '')
@@ -150,6 +156,26 @@ export default function App () {
     await invoke('stop_companion')
     setProtecting(false)
     setMessage('Desktop gateway stopped.')
+  })
+
+  const commercial = (action) => execute('billing-' + action, async () => {
+    const raw = await invoke('billing_action', {
+      action,
+      accountId: action === 'enroll' ? billingAccount.trim() : null,
+      billingUrl: action === 'enroll' ? billingHost.trim() : null,
+      inviteCode: action === 'enroll' ? billingInvite.trim() : null,
+      priceId: action === 'checkout' ? billingPrice.trim() : null,
+    })
+    if (action === 'enroll') setBillingInvite('')
+    if (action === 'status' || action === 'refresh') {
+      setBillingStatus(JSON.parse(raw))
+    }
+    setMessage(action === 'checkout'
+      ? 'Paddle checkout opened. The subscription activates only after verified payment.'
+      : action === 'portal' ? 'Paddle customer portal opened securely.'
+      : action === 'enroll' ? 'Device enrolled. Complete payment to activate your plan.'
+      : action === 'refresh' ? 'Verified subscription refreshed.'
+      : 'License status refreshed.')
   })
 
   const saveMonitoringSettings = () => {
@@ -272,6 +298,43 @@ export default function App () {
             </li>)}</ul>}
           <button disabled={!ready} onClick={refresh}>Refresh incidents</button>
           <p className="muted">Foreground Android sync uses signed HTTPS. Background FCM notifications require a separately configured provider, owner enrollment and Internet access.</p>
+        </>}
+        {page === 'subscription' && <>
+          <h1>Your LaptopWatch subscription</h1>
+          <p className="lede">Local security controls remain available without payment. Remote services require a currently valid, device-bound and issuer-signed entitlement.</p>
+          <div className="panel">
+            <h3>Current entitlement</h3>
+            <p>{billingStatus ? (billingStatus.plan === 'free' ? 'Free · local features only'
+              : billingStatus.plan + ' · expires ' + new Date(billingStatus.expires_at * 1000).toLocaleString())
+              : 'No verified license status loaded.'}</p>
+            <button disabled={!ready || !!busy} onClick={() => commercial('status')}>Verify local license</button>
+            <button disabled={!ready || !!busy} onClick={() => commercial('refresh')}>Refresh from billing service</button>
+          </div>
+          <div className="panel">
+            <h3>First-time account enrollment</h3>
+            <p>Obtain your account ID and one-time invitation from the verified seller. The invitation is not stored on this screen.</p>
+            <label htmlFor="billingAccount">Customer account UUID</label>
+            <input id="billingAccount" autoComplete="off" value={billingAccount}
+              onChange={e => setBillingAccount(e.target.value)} placeholder="Account UUID" />
+            <label htmlFor="billingHost">Approved billing HTTPS domain</label>
+            <input id="billingHost" autoComplete="off" value={billingHost}
+              onChange={e => setBillingHost(e.target.value)} placeholder="https://billing.yourdomain.com" />
+            <label htmlFor="billingInvite">One-time enrollment invitation</label>
+            <input id="billingInvite" type="password" autoComplete="off" value={billingInvite}
+              onChange={e => setBillingInvite(e.target.value)} placeholder="Private invitation" />
+            <button disabled={!ready || !!busy || !billingAccount || !billingHost || !billingInvite}
+              onClick={() => commercial('enroll')}>Enroll this desktop</button>
+          </div>
+          <div className="panel">
+            <h3>Purchase or manage</h3>
+            <p>Only a verified Paddle payment and signed subscription event can activate paid features. Checkout and payment-method management open the provider's secure browser pages.</p>
+            <label htmlFor="billingPrice">Approved Paddle plan price identifier</label>
+            <input id="billingPrice" value={billingPrice} onChange={e => setBillingPrice(e.target.value)}
+              autoComplete="off" placeholder="pri_..." />
+            <button disabled={!ready || !!busy || !billingPrice} onClick={() => commercial('checkout')}>Open secure checkout</button>
+            <button disabled={!ready || !!busy} onClick={() => commercial('portal')}>Manage subscription with Paddle</button>
+            <p className="muted">No payment-card information is entered into LaptopWatch. Contact the seller before deleting an account with an active subscription; account deletion alone does not stop recurring charges.</p>
+          </div>
         </>}
         {page === 'settings' && <>
           <h1>Safety &amp; startup</h1>

@@ -339,6 +339,45 @@ async fn revoke_device(app: AppHandle, device_id: String) -> Result<String, Stri
     run_cli(&app, "revoke", vec!["--device-id".into(), device_id]).await
 }
 
+
+#[tauri::command]
+async fn billing_action(
+    app: AppHandle, action: String,
+    account_id: Option<String>, billing_url: Option<String>,
+    invite_code: Option<String>, price_id: Option<String>,
+) -> Result<String, String> {
+    // Only fixed owner operations enter the packaged Python CLI. No shell,
+    // arbitrary Python entrypoints, operator bearer, or user-defined flags.
+    if !matches!(action.as_str(), "enroll" | "checkout" | "refresh" | "status" | "portal") {
+        return Err("Unsupported commercial action".into());
+    }
+    let mut args=vec![action.clone()];
+    if action == "enroll" {
+        let account=account_id.ok_or("Customer account ID is required")?;
+        require_uuid(&account)?;
+        let url=billing_url.ok_or("Approved billing HTTPS URL is required")?;
+        if url.len()>256 || !url.starts_with("https://") || url.chars().any(|c| c.is_whitespace()) {
+            return Err("Billing URL must use trusted HTTPS".into());
+        }
+        let invite=invite_code.ok_or("One-time invitation is required")?;
+        if !(32..=256).contains(&invite.len()) ||
+           !invite.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+            return Err("Invalid one-time enrollment code".into());
+        }
+        args.extend(["--account-id".into(), account, "--billing-url".into(), url,
+                     "--invite-code".into(), invite]);
+    }
+    if action == "checkout" {
+        let price=price_id.ok_or("Approved Paddle price ID is required")?;
+        if price.len()!=30 || !price.starts_with("pri_") ||
+           !price[4..].bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+            return Err("Invalid Paddle price identifier".into());
+        }
+        args.extend(["--price-id".into(),price]);
+    }
+    run_cli(&app,"billing",args).await
+}
+
 #[tauri::command]
 fn open_evidence_directory(app: AppHandle) -> Result<(), String> {
     // Opens only this application's own evidence path; never accept an
@@ -583,7 +622,7 @@ fn main() {
             initialize_companion, suggest_lan_ip, create_pair_invitation,
             pending_pairs, paired_devices, dashboard_snapshot, companion_health,
             location_snapshot, audit_history,
-            approve_pending, reject_pending, revoke_device,
+            approve_pending, reject_pending, revoke_device, billing_action,
             evidence_files, open_evidence_directory, start_companion, stop_companion
         ])
         .build(tauri::generate_context!())
