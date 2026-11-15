@@ -28,7 +28,11 @@
 - [ ] Real GNSS receiver, cloud TLS, encrypted backup and recovery simulation
 - [ ] OS keystore hardening, identity rotation, media deletion, forensic review
 - [ ] Secure media WAN/ICE/TURN and user-accessible key revocation verified
-- [ ] Privacy/EULA/license owner approval, commerce, store policies and support
+- [x] Proprietary LICENSE for original source (not permission to commercially distribute)
+- [x] Isolated Paddle payment/subscription/adjustment/backend tests (14 passed)
+- [ ] Desktop/mobile paid entitlement enforcement and actual Paddle Checkout UI
+- [ ] Merchant sandbox integration, subscription renewals, refunds/disputes and customer registration
+- [ ] Privacy/EULA, third-party licenses, live commerce, store policies and support approval
 - [ ] Long reliability, security and recovery testing; no open critical defects
 
 Merge to main as an engineering checkpoint only. No production semver release

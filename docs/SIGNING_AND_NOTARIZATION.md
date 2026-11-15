@@ -1,8 +1,9 @@
 # LaptopWatch signing, notarization and commercial release — BLOCKED
 
-No production signing certificate, private key, notarization API key, app-store
-publisher identity or approved LICENSE/EULA/privacy text exists in this
-repository. No signing or store actions were executed. The following is an
+No production signing certificate, private key, notarization API key,
+app-store publisher identity or approved commercial EULA/privacy text exists
+in this repository. A proprietary root LICENSE covers original repository
+source, but does not approve customer distribution or third-party assets. No signing or store actions were executed. The following is an
 **owner-run release preparation guide**, not proof of signing.
 
 ## Windows desktop (Tauri)
@@ -64,6 +65,7 @@ reboot/Doze/physical-device testing. Redact all secrets and personal data in
 reports. No claims of production readiness, full parity or commercial rights
 until owner independently signs the acceptance matrix.
 
-The proprietor must separately approve a license, EULA, privacy/data-safety
-text, commercial jurisdiction and deletion of Kotlin `app/` only after a
-verified replacement.
+The proprietor has authorized proprietary source licensing and retired
+legacy Kotlin `app/`. Commercial EULA, privacy/data-safety text, sales
+jurisdictions, actual product distribution and independent runtime acceptance
+still require separate review and approval.

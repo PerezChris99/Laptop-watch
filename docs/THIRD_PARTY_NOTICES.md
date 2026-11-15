@@ -8,7 +8,9 @@ renamed and adapted for LaptopWatch. Source:
 https://github.com/react-native-community/template/tree/0.88-stable
 
 This third-party MIT notice does **not** confer a license or distribution
-approval over LaptopWatch's original code; no root LICENSE has been added.
+approval over LaptopWatch's original code. The repository now contains a
+proprietary root LICENSE for original work; third-party MIT rights and
+notice-redistribution obligations remain unchanged.
 
 MIT License
 
