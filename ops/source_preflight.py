@@ -316,7 +316,11 @@ def design_and_python() -> None:
 def main() -> int:
     require_file("ops/verify_release.py", (
         "release_approved", "release:real-world-acceptance", "BLOCKED",
+        "desktop:installer-build", "assembleRelease", "bundleRelease",
+        "archive", "python:release-operations-tests",
     ))
+    require_file("desktop/src-python/pyproject.toml", (
+        "release =", "pyinstaller", "pillow"))
     scan_sources()
     native_contract()
     design_and_python()
