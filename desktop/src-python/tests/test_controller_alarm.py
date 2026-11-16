@@ -1,7 +1,6 @@
 """Prevent false positive audible-deterrent reporting and verify WAV lifecycle."""
 from __future__ import annotations
 
-import os
 import sys
 import types
 import wave
