@@ -177,7 +177,7 @@ or scheduled cancellation is treated as successful.
 The service retries jobs every five minutes when `LW_PADDLE_API_KEY` is configured.
 An authenticated `subscription.canceled` webhook also confirms cancellation.
 Late subscription events after account closure are queued as well.
-The Paddle API key requires `subscription.write` permission.
+The Paddle API key requires both `subscription.write` (immediate cancellation) and `subscription.read` (authoritative status recovery) permissions.
 
 Operator-only maintenance endpoints:
 - `GET /v1/admin/closures/pending` returns the outstanding job count
