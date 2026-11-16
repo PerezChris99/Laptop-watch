@@ -39,43 +39,52 @@ class NativeController:
         return False
 
     def alarm(self) -> bool:
+        """Audible deterrent requested by an authenticated, paired owner.
+
+        Do not claim success on thread launch alone: audio devices, codecs and
+        players can fail after an asynchronous worker has already returned.
+        """
         system = platform.system()
         if system == 'Windows':
             try:
                 import winsound
-                def play():
-                    for hz in (1000, 1500, 1000):
-                        winsound.Beep(hz, 250)
-                threading.Thread(target=play, daemon=True).start()
+                for hz in (1000, 1500, 1000):
+                    winsound.Beep(hz, 250)
                 return True
-            except (OSError, ImportError):
+            except (OSError, ImportError, RuntimeError):
                 return False
-        player = shutil.which('afplay') if system == 'Darwin' else shutil.which('aplay')
+        if system not in {'Darwin', 'Linux'}:
+            return False
+        candidates = ('afplay',) if system == 'Darwin' else ('pw-play', 'paplay', 'aplay')
+        player = next((found for name in candidates if (found := shutil.which(name))), None)
         if not player:
             return False
-        def play_pcm():
-            filename = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-                    filename = tmp.name
-                    with wave.open(tmp, 'wb') as sound:
-                        sound.setnchannels(1)
-                        sound.setsampwidth(2)
-                        sound.setframerate(16000)
-                        frames = bytearray()
-                        for i in range(16000):
-                            frequency = 1100 if (i // 4000) % 2 else 1500
-                            sample = int(22000 * math.sin(2 * math.pi * frequency * i / 16000))
-                            frames.extend(sample.to_bytes(2, 'little', signed=True))
-                        sound.writeframes(frames)
-                subprocess.run([player, filename], timeout=5, check=False,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            finally:
-                if filename:
-                    try: os.remove(filename)
-                    except OSError: pass
-        threading.Thread(target=play_pcm, daemon=True).start()
-        return True
+        filename = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                filename = tmp.name
+                with wave.open(tmp, 'wb') as sound:
+                    sound.setnchannels(1)
+                    sound.setsampwidth(2)
+                    sound.setframerate(16000)
+                    frames = bytearray()
+                    for i in range(16000):
+                        frequency = 1100 if (i // 4000) % 2 else 1500
+                        sample = int(22000 * math.sin(2 * math.pi * frequency * i / 16000))
+                        frames.extend(sample.to_bytes(2, 'little', signed=True))
+                    sound.writeframes(frames)
+            return subprocess.run(
+                [player, filename], timeout=5, check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ).returncode == 0
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return False
+        finally:
+            if filename:
+                try:
+                    os.remove(filename)
+                except OSError:
+                    pass
 
     def speak(self, message: str) -> bool:
         """Deliver an explicit owner-requested warning through laptop speakers.
