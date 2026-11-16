@@ -114,3 +114,21 @@ Do not sell, tag or distribute an uncertified consumer build.
 - [ ] Complete all native builds, manufacturer/device matrix and storefront gates
 
 Source changes alone never satisfy final production-release acceptance.
+
+
+## Source-release operations completed — 16 November 2026
+
+- [x] Release lock verification checks actual dependency manifests and hashes
+- [x] Operator scripts can resolve real npm/Cargo/Pod/Python locks once registries/tools are available
+- [x] Full verifier requires Tauri installer, Android APK/AAB and iOS archive builds
+- [x] Real-world acceptance uses an independently signed exact-commit report set
+- [x] Recovery CLI creates encrypted consistent SQLite backups and refuses destructive restore
+- [x] Focused local tool tests: 31 passed (not a complete checkout)
+- [ ] Generate and review authentic dependency lockfiles on connected toolchains
+- [ ] Execute all integrated tests, build native release packages and install on devices
+- [ ] Conduct backup/restore drills on actual live datasets and size profiles
+- [ ] Provision independently approved signing/issuer identities and providers
+- [ ] Obtain human-reviewed physical/security/legal/payments/soak evidence
+- [ ] Run `verify_release.py --mode full --acceptance-manifest ...` on a clean tagged candidate
+
+**No release certification is implied by source changes.**

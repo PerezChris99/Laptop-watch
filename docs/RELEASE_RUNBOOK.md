@@ -229,3 +229,18 @@ hardware/legal/manual gates separately. On Windows PowerShell use
 The Android/iOS native projects are source-integrated only until their
 actual release builds, correct issuer pin, signed entitlements, network
 recovery and store policies pass on devices.
+
+
+## 16 November 2026 — reproducible and attestable product release tooling
+
+For a single maintained operator runbook covering dependency lock
+generation/validation, genuine packaging, independent sign-off and encrypted
+SQLite recovery, see [Product release operations](PRODUCT_RELEASE_OPERATIONS.md).
+The full verifier now has an explicit `--acceptance-manifest` option; without
+an independently signed manifest from an audited approver it remains BLOCKED.
+The manifest must match the exact clean Git revision, include all eight
+hashed evidence reports, and remain within its limited validity.
+
+The required genuine registry-generated npm, Cargo, CocoaPods and Python uv
+locks are still missing. Source code for their generation/checks is complete,
+but no false hashes or fabricated lockfiles were committed.
