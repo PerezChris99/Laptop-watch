@@ -119,6 +119,7 @@ Source changes alone never satisfy final production-release acceptance.
 ## Source-release operations completed — 16 November 2026
 
 - [x] Release lock verification checks actual dependency manifests and hashes
+- [x] Desktop Python release extra declares required PyInstaller and Pillow bundling dependencies
 - [x] Operator scripts can resolve real npm/Cargo/Pod/Python locks once registries/tools are available
 - [x] Full verifier requires Tauri installer, Android APK/AAB and iOS archive builds
 - [x] Real-world acceptance uses an independently signed exact-commit report set
