@@ -12,9 +12,9 @@ import subprocess
 import sys
 
 try:
-    from .lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock
+    from .lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock, python_lock
 except ImportError:  # also supports direct `python ops/lock_dependencies.py`
-    from lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock
+    from lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock, python_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = {
@@ -22,6 +22,9 @@ LOCKS = {
     'desktop/package-lock.json': ('npm', ['npm', 'install', '--package-lock-only', '--ignore-scripts']),
     'desktop/src-tauri/Cargo.lock': ('cargo', ['cargo', 'generate-lockfile']),
     'mobile/ios/Podfile.lock': ('pod', ['pod', 'install']),
+    'desktop/src-python/requirements.lock': ('uv', ['uv', 'pip', 'compile', 'pyproject.toml', '--all-extras', '--universal', '--generate-hashes', '-o', 'requirements.lock']),
+    'services/billing/requirements.lock': ('uv', ['uv', 'pip', 'compile', 'pyproject.toml', '--all-extras', '--universal', '--generate-hashes', '-o', 'requirements.lock']),
+    'services/location-relay/requirements.lock': ('uv', ['uv', 'pip', 'compile', 'pyproject.toml', '--all-extras', '--universal', '--generate-hashes', '-o', 'requirements.lock']),
 }
 
 
@@ -34,6 +37,8 @@ def validate(path: str) -> int:
         return cargo_lock(target)
     if path.endswith('Podfile.lock'):
         return pod_lock(target)
+    if path.endswith('requirements.lock'):
+        return python_lock(target.parent / 'pyproject.toml', target)
     raise LockValidationError('Unknown lock type')
 
 
@@ -45,7 +50,8 @@ def main() -> int:
     selected = {path: spec for path, spec in LOCKS.items() if
                 args.platform == 'all' or (args.platform == 'mobile' and path.startswith('mobile/'))
                 or (args.platform == 'desktop' and path.startswith('desktop/'))
-                or (args.platform == 'ios' and path.startswith('mobile/ios/'))}
+                or (args.platform == 'ios' and path.startswith('mobile/ios/'))
+                or (args.platform == 'all' and path.startswith('services/'))}
     missing = []
     for path, (executable, command) in selected.items():
         target = ROOT / path
