@@ -125,3 +125,42 @@ def pod_lock(lock: Path) -> int:
     if not cocoa:
         raise LockValidationError('Podfile.lock missing installed CocoaPods version')
     return len(checksums)
+
+
+def python_lock(manifest: Path, lock: Path) -> int:
+    """Require hashes, exact versions and coverage of all direct Python deps."""
+    try:
+        project = tomllib.loads(manifest.read_text(encoding='utf-8'))
+        text = lock.read_text(encoding='utf-8')
+    except (OSError, ValueError) as exc:
+        raise LockValidationError('Python manifest or lock unreadable') from exc
+    normalized = []
+    buffer = ''
+    for original in text.splitlines():
+        line = original.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line.endswith('\\'):
+            buffer += line[:-1] + ' '
+        else:
+            normalized.append((buffer + line).strip())
+            buffer = ''
+    if buffer or not normalized:
+        raise LockValidationError('Python lock is empty or truncated')
+    names = set()
+    for line in normalized:
+        match = re.match(r'^([A-Za-z0-9_.-]+)==([0-9][A-Za-z0-9_.!+-]*)\b', line)
+        if not match:
+            raise LockValidationError('Python lock has an unpinned or external dependency')
+        hashes = re.findall(r'--hash=sha256:([0-9a-f]{64})(?=\s|$)', line)
+        if not hashes or '--hash=' in re.sub(r'--hash=sha256:[0-9a-f]{64}', '', line):
+            raise LockValidationError('Python lock dependency lacks valid SHA-256 hash')
+        names.add(re.sub('[-_.]+', '-', match.group(1)).lower())
+    declarations = list(project['project'].get('dependencies', []))
+    for extra in project['project'].get('optional-dependencies', {}).values():
+        declarations.extend(extra)
+    required = {re.sub('[-_.]+', '-', re.match(r'^[A-Za-z0-9_.-]+', req).group()).lower()
+                for req in declarations}
+    if not required.issubset(names):
+        raise LockValidationError('Python lock does not cover pyproject direct dependencies')
+    return len(normalized)
