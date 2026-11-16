@@ -104,7 +104,8 @@ No final consumer release or paid production launch is authorized.
 
 ## Product-level operations hardening — 16 November 2026
 
-Code-level release tooling added: strict real dependency-lock authenticity
+Code-level release tooling added: required desktop release-sidecar dependencies,
+strict real dependency-lock authenticity
 checks (npm integrity, Cargo/Pods checksums, Python hash locks), native
 installer/archive build gates, runnable operations regression tests,
 cryptographically signed commit-bound acceptance with eight independently
