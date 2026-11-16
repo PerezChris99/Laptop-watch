@@ -77,7 +77,7 @@ def grouped(name: str, commands: list[list[str]], *,
                   monotonic() - start)
 
 
-def checks(mode: str) -> list[Result]:
+def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
     results = [
         record_command("source:contract", [sys.executable, "ops/source_preflight.py"],
                        paths=(ROOT / "ops/source_preflight.py",), tools=("node",)),
@@ -152,13 +152,19 @@ def checks(mode: str) -> list[Result]:
              "-destination", "generic/platform=iOS Simulator", "build"],
         ], cwd=ios, tools=("xcodebuild", "pod"),
             paths=(ios / "Podfile.lock", ios / "LaptopWatchMobile.xcworkspace/contents.xcworkspacedata")))
-    # No script can replace an actual paired laptop, physical phone, security
-    # assessment, signed installer, owner legal judgment or external provider.
-    results.append(Result(
-        "release:real-world-acceptance", "BLOCKED",
-        "Physical devices, signed installers, security, GNSS/FCM/relay, "
-        "independent legal and owner approval are mandatory; see docs/RELEASE_RUNBOOK.md",
-    ))
+    # An independent signing authority must attest to all real-world gates.
+    # Checking an owner's signed reports is not the same as doing the tests.
+    if acceptance_manifest is None:
+        results.append(Result("release:real-world-acceptance", "BLOCKED",
+            "No independently signed device/security/merchant/legal acceptance manifest; "
+            "see docs/RELEASE_RUNBOOK.md"))
+    else:
+        results.append(record_command("release:real-world-acceptance",
+            [sys.executable, "ops/release_attestation.py",
+             "--manifest", str(acceptance_manifest)],
+            paths=(ROOT / "ops/release_attestation.py",
+                   ROOT / "ops/release_trust.py"),
+            tools=("git",)))
     return results
 
 
@@ -166,14 +172,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LaptopWatch strict, non-fabricated release gates")
     parser.add_argument("--mode", choices=("source", "full"), default="full")
     parser.add_argument("--json", type=Path, help="Write local non-secret result summary")
+    parser.add_argument("--acceptance-manifest", type=Path,
+                        help="Independent signed device, merchant, security and legal acceptance evidence")
     opts = parser.parse_args(argv)
-    results = checks(opts.mode)
+    results = checks(opts.mode, opts.acceptance_manifest)
     for item in results:
         print(f"{item.status:7} {item.gate}: {item.detail} ({item.seconds:.1f}s)")
+    approved = (opts.mode == "full" and
+                any(item.gate == "release:real-world-acceptance" and item.status == "PASS"
+                    for item in results) and
+                all(item.status == "PASS" for item in results))
     message = {
         "mode": opts.mode,
-        "release_approved": False,
-        "note": "Source checks do not confer native/production acceptance.",
+        "release_approved": approved,
+        "note": ("Independent acceptance verified for exactly this source revision; "
+                 "the designated approver remains responsible for evidence authenticity."
+                 if approved else "Source checks do not confer native/production acceptance."),
         "results": [asdict(item) for item in results],
     }
     if opts.json:
