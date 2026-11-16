@@ -89,3 +89,15 @@ Earlier lines suggesting native project scaffolds or registered modules are
 missing describe an older checkpoint and no longer match the source tree.
 Current authoritative record: `docs/PARITY.md`,
 `docs/RELEASE_RUNBOOK.md` and new `Warning.txt`.
+
+
+## 16 November code checkpoint — stop-ship remains
+
+- [x] Source: persisted merchant-cancellation obligations and retries
+- [x] Source: mobile signed permanent account closure confirmation
+- [ ] Live Paddle sandbox subscription, cancellation, refund and retry tests
+- [ ] Genuine reviewed npm/Cargo/Pod locks and full integrated builds
+- [ ] Physical Android/iOS/laptop acceptance, pen test and signed installers
+- [ ] GNSS/FCM/TURN infrastructure, performance and legal approvals
+
+Do not sell, tag or distribute an uncertified consumer build.
