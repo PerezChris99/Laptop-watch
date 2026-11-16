@@ -197,7 +197,6 @@ class EvidenceRecorder:
                 path = self.directory / f"video-{clip_id}.mp4"
                 writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
                 if not writer.isOpened():
-                    writer.release()
                     raise CaptureUnavailable("MP4 encoder unavailable on this system")
                 if os.name == 'posix':
                     path.chmod(0o600)
