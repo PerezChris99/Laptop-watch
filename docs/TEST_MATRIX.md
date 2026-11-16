@@ -48,3 +48,17 @@ Test report must contain build commit, environment, time, log/video evidence and
 | OS-POWER-01 | Laptop sleep/wake/hibernate/Modern Standby, Find My compatibility | NOT RUN |
 
 **Note:** `PY-EVID-01/02` and `PY-GPS-01/02/03` comprise 13 executed tests in the newly added media/tracking test files; they are not substitutes for actual hardware, full Android builds or pen-testing.
+
+
+## Source regressions added on 16 November 2026
+
+| Test suite | Coverage | Integrated evidence |
+|---|---|---|
+| `test_evidence_lifecycle.py` | MP4 finalization, failed encoder, atomic photo saves and fsync cleanup | NOT RUN in complete checkout |
+| `test_controller_alarm.py` | Linux PCM format, missing players, nonzero exit, timeout, Windows beep | Mirrored isolated harness: 6 passed; actual integrated tests NOT RUN |
+| `test_closure.py` | Billing closure erases device keys and replay nonces | NOT RUN against current billing app |
+| `test_provision_license_issuer.py` | Same approved public issuer pinned on mobile/desktop | NOT RUN against complete checkout |
+| `test_release_commercial_gate.py` | Missing issuer blocks paid source gate | NOT RUN against complete checkout |
+
+**Release remains STOP-SHIP.** Isolated source tests cannot replace
+physical webcam/audio, OS lock, Android/iOS, merchant or installer validation.

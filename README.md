@@ -209,3 +209,16 @@ pending-cancellation feedback. This is source integration, not a certified
 Paddle deployment or signed consumer build. The trusted commercial issuer
 pin still requires approved release provisioning. **No production release
 is authorized.** See `docs/STATUS.md` and `services/billing/README.md`.
+
+
+### Additional reliability hardening (16 November 2026)
+
+The recording lifecycle now preserves completed MP4s pending explicit
+finalization; JPEG quota/write operations are serialized and partial failed
+writes are discarded. The alarm reports actual playback process failure
+instead of treating asynchronous thread creation as a successful deterrent.
+Commercial account closure erases enrolled device signing keys and replay
+nonces while retaining required financial cancellation records. Commercial
+release preflight checks the same independently verified issuer key in the
+desktop and mobile clients. These are source changes, not proof of a
+successful native build or tested physical-device release.
