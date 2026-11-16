@@ -119,3 +119,17 @@ def test_without_provider_pending_job_is_not_lost(tmp_path):
         assert app.state.store.close_account(account, NOW) == 'already_closed'
         assert app.state.store.pending_cancellations(account) == [SUB]
     app.state.store.db.close()
+
+
+def test_ambiguous_post_is_recovered_by_authoritative_provider_get():
+    calls = []
+    def opener(request, timeout):
+        calls.append((request.get_method(), request.full_url))
+        if request.get_method() == 'POST':
+            raise OSError('The provider may have applied cancellation before timeout')
+        return Response(json.dumps({'data': {'id': SUB, 'status': 'canceled'}}).encode())
+    cancel_subscription_immediately(KEY, SUB, opener=opener)
+    assert calls == [
+        ('POST', f'https://api.paddle.com/subscriptions/{SUB}/cancel'),
+        ('GET', f'https://api.paddle.com/subscriptions/{SUB}'),
+    ]
