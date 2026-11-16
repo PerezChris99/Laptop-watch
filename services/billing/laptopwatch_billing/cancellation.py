@@ -1,54 +1,63 @@
-"""Bounded, fail-closed Paddle subscription cancellation on account closure.
-
-Paddle is the authority for whether billing stopped. A scheduled cancellation,
-network timeout or malformed response is never represented as success.
-"""
+"""Bounded, fail-closed Paddle cancellation with idempotent status recovery."""
 from __future__ import annotations
 
 import json
 import re
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHandler
 
 _SUBSCRIPTION = re.compile(r'^sub_[a-z0-9]{26}$')
 
 
 class CancellationUnconfirmed(RuntimeError):
-    """A subscription has not been independently confirmed canceled."""
+    """Paddle has not independently confirmed recurring billing is canceled."""
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def cancel_subscription_immediately(api_key: str, subscription_id: str, *,
                                     sandbox: bool = False, opener=None) -> None:
-    """Request immediate cancellation and verify Paddle's returned state.
+    """Cancel immediately; if ambiguous, GET and verify authoritative status.
 
-    Provider API errors are redacted to avoid leaking credentials and metadata.
-    Caller must retry durably; a timeout is not cancellation confirmation.
+    A failed POST can have taken effect at Paddle. Reading authoritative state
+    avoids permanent retries without trusting an HTTP error as success.
+    All provider/transport errors remain unconfirmed and redact credentials.
     """
     if not isinstance(api_key, str) or len(api_key) < 20:
         raise CancellationUnconfirmed('Paddle cancellation is not configured')
     if not isinstance(subscription_id, str) or not _SUBSCRIPTION.fullmatch(subscription_id):
         raise CancellationUnconfirmed('Invalid subscription identifier')
     host = 'sandbox-api.paddle.com' if sandbox else 'api.paddle.com'
-    request = Request(
-        f'https://{host}/subscriptions/{subscription_id}/cancel',
-        data=b'{"effective_from":"immediately"}',
-        headers={'Authorization': 'Bearer ' + api_key,
-                 'Content-Type': 'application/json', 'Accept': 'application/json'},
-        method='POST',
-    )
-    try:
-        transport = opener or urlopen
+    url = f'https://{host}/subscriptions/{subscription_id}'
+    headers = {'Authorization': 'Bearer ' + api_key,
+               'Content-Type': 'application/json', 'Accept': 'application/json'}
+    transport = opener or build_opener(HTTPSHandler(), _NoRedirect()).open
+
+    def confirmed(request: Request) -> bool:
         with transport(request, timeout=8) as response:
             if response.status != 200:
-                raise CancellationUnconfirmed('Provider did not accept cancellation')
+                return False
             raw = response.read(16385)
         if len(raw) > 16384:
-            raise CancellationUnconfirmed('Provider response exceeded safety limit')
-        result = json.loads(raw)
-        payload = result.get('data') if isinstance(result, dict) else None
-        if not isinstance(payload, dict) or payload.get('id') != subscription_id or \
-                payload.get('status') != 'canceled':
-            raise CancellationUnconfirmed('Cancellation not confirmed by provider')
-    except CancellationUnconfirmed:
-        raise
-    except Exception as exc:
-        raise CancellationUnconfirmed('Paddle cancellation unavailable or unconfirmed') from exc
+            return False
+        data = json.loads(raw)
+        payload = data.get('data') if isinstance(data, dict) else None
+        return isinstance(payload, dict) and payload.get('id') == subscription_id \
+            and payload.get('status') == 'canceled'
+
+    post = Request(url + '/cancel', data=b'{"effective_from":"immediately"}',
+                   headers=headers, method='POST')
+    try:
+        if confirmed(post):
+            return
+    except Exception:
+        # Timed-out POST or HTTP 4xx can follow a successful prior cancellation.
+        pass
+    try:
+        if confirmed(Request(url, headers=headers, method='GET')):
+            return
+    except Exception:
+        pass
+    raise CancellationUnconfirmed('Paddle cancellation unavailable or unconfirmed')
