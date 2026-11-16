@@ -11,6 +11,11 @@ import shutil
 import subprocess
 import sys
 
+try:
+    from .lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock
+except ImportError:  # also supports direct `python ops/lock_dependencies.py`
+    from lock_validation import LockValidationError, npm_lock, cargo_lock, pod_lock
+
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = {
     'mobile/package-lock.json': ('npm', ['npm', 'install', '--package-lock-only', '--ignore-scripts']),
@@ -18,6 +23,18 @@ LOCKS = {
     'desktop/src-tauri/Cargo.lock': ('cargo', ['cargo', 'generate-lockfile']),
     'mobile/ios/Podfile.lock': ('pod', ['pod', 'install']),
 }
+
+
+
+def validate(path: str) -> int:
+    target = ROOT / path
+    if path.endswith('package-lock.json'):
+        return npm_lock(target.parent / 'package.json', target)
+    if path.endswith('Cargo.lock'):
+        return cargo_lock(target)
+    if path.endswith('Podfile.lock'):
+        return pod_lock(target)
+    raise LockValidationError('Unknown lock type')
 
 
 def main() -> int:
@@ -44,7 +61,13 @@ def main() -> int:
                 missing.append(path)
                 continue
         if target.is_file() and target.stat().st_size > 0:
-            print(f'PRESENT {path}: review diff, supply-chain audit, reproducible install required')
+            try:
+                count = validate(path)
+                print(f'VALIDATED {path}: {count} resolved dependencies; '
+                      'real package installation and supply-chain audit still required')
+            except (LockValidationError, OSError) as exc:
+                print(f'FAIL {path}: {exc}')
+                missing.append(path)
         else:
             print(f'BLOCKED {path}: genuine reviewed lock missing')
             missing.append(path)
