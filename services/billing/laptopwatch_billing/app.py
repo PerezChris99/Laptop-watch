@@ -214,7 +214,12 @@ class Store:
                 return 'already_closed'
             db.execute('INSERT INTO closed_accounts(account_id,requested_at) VALUES (?,?)',
                        (account_id, now))
-            db.execute('UPDATE devices SET revoked=1 WHERE account_id=?', (account_id,))
+            # Permanently erase per-device enrollment keys and replay metadata.
+            # Financial subscription/tombstone records are retained for merchant
+            # cancellation, disputes and legally required accounting only.
+            db.execute('DELETE FROM lease_nonces WHERE device_id IN '
+                       '(SELECT id FROM devices WHERE account_id=?)', (account_id,))
+            db.execute('DELETE FROM devices WHERE account_id=?', (account_id,))
             db.execute('DELETE FROM enrollment_invites WHERE account_id=?', (account_id,))
             # Closure tombstone revokes access immediately even if Paddle is offline.
             # Persist every outstanding recurring charge cancellation for retry.
