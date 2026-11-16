@@ -152,26 +152,38 @@ class EvidenceRecorder:
             raise CaptureUnavailable("Invalid JPEG image")
         if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
             raise CaptureUnavailable("Frame is not JPEG encoded")
+        # Reservation and durable write are one critical section. The person
+        # monitor and paired gateway may save evidence concurrently.
         with self._lock:
             self.storage_policy.require_room(len(jpeg))
-        clip_id = uuid.uuid4().hex
-        filename = f"photo-{clip_id}.jpg"
-        path = self.directory / filename
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as handle:
-            handle.write(jpeg)
-            handle.flush()
-            os.fsync(handle.fileno())
-        return {"id": clip_id, "kind": "photo", "filename": filename,
-                "size_bytes": len(jpeg)}
+            clip_id = uuid.uuid4().hex
+            filename = f"photo-{clip_id}.jpg"
+            path = self.directory / filename
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, 'wb') as handle:
+                    handle.write(jpeg)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except BaseException:
+                # Never list or download partially written evidence as genuine.
+                path.unlink(missing_ok=True)
+                raise
+            return {"id": clip_id, "kind": "photo", "filename": filename,
+                    "size_bytes": len(jpeg)}
 
     def start_recording(self) -> str:
         with self._lock:
-            if self.recording:
-                raise CaptureUnavailable("Already recording")
+            # The worker can finish autonomously on the duration/quota cap.
+            # Preserve that completed clip until stop_recording() finalizes it;
+            # never overwrite _thread/_last_result and lose forensic evidence.
+            if self._thread is not None:
+                raise CaptureUnavailable("Finish the previous clip before starting another")
             self.storage_policy.require_room(8 * 1024 * 1024)
             cv2 = self._import_cv2()
             cap = self._open()
+            writer = None
+            path = None
             try:
                 ok, first = cap.read()
                 if not ok:
@@ -201,7 +213,16 @@ class EvidenceRecorder:
                 self._thread.start()
                 return clip_id
             except Exception:
+                if writer is not None:
+                    writer.release()
                 cap.release()
+                if path is not None:
+                    try:
+                        path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                self._capture = self._writer = self._last_frame = None
+                self._current_id = self._file = self._thread = None
                 raise
 
     def _record_loop(self, first) -> None:
