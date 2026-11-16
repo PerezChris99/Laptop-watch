@@ -52,3 +52,18 @@ def test_pod_requires_actual_checksums(tmp_path):
     assert pod_lock(lock)==1
     lock.write_text(lock.read_text().replace('a'*40,'stub'))
     with pytest.raises(LockValidationError,match='spec checksums'):pod_lock(lock)
+
+
+def test_python_release_lock_requires_hashes_and_covers_all_extras(tmp_path):
+    from ops.lock_validation import python_lock
+    project=tmp_path/'pyproject.toml'; locked=tmp_path/'requirements.lock'
+    project.write_text('[project]\nname="demo"\ndependencies=["fastapi>=0.1"]\n'
+                       '[project.optional-dependencies]\ntest=["pytest>=8"]\n')
+    h='a'*64
+    locked.write_text('fastapi==0.1.0 --hash=sha256:'+h+'\n'
+                      'pytest==8.0.0 --hash=sha256:'+h+'\n')
+    assert python_lock(project,locked)==2
+    locked.write_text('fastapi==0.1.0 --hash=sha256:'+h+'\n')
+    with pytest.raises(LockValidationError,match='cover'):python_lock(project,locked)
+    locked.write_text('fastapi>=0.1\npytest==8.0.0\n')
+    with pytest.raises(LockValidationError,match='unpinned'):python_lock(project,locked)
