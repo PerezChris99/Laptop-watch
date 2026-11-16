@@ -177,7 +177,7 @@ or scheduled cancellation is treated as successful.
 The service retries jobs every five minutes when `LW_PADDLE_API_KEY` is configured.
 An authenticated `subscription.canceled` webhook also confirms cancellation.
 Late subscription events after account closure are queued as well.
-The Paddle API key requires `subscription.write` permission.
+The Paddle API key requires both `subscription.write` (immediate cancellation) and `subscription.read` (authoritative status recovery) permissions.
 
 Operator-only maintenance endpoints:
 - `GET /v1/admin/closures/pending` returns the outstanding job count
@@ -190,3 +190,13 @@ If merchant credentials are absent, access is still revoked but jobs remain open
 Already-issued offline paid leases remain valid until their short expiration
 (at most one hour). Enforced server-side account revocation and live merchant
 acceptance remain separate deployment and security requirements.
+
+
+### Closure data minimization
+
+Account closure removes enrolled device public keys and their replay nonces
+after verifying the closure signature. The account tombstone, merchant
+subscription IDs, cancellation jobs and statutory financial records remain
+so that merchant billing can be stopped and disputed safely. Do not infer
+that every backup was erased or that deletion meets jurisdiction-specific
+retention policy without a real operational retention review.

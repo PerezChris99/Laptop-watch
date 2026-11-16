@@ -101,3 +101,16 @@ Current authoritative record: `docs/PARITY.md`,
 - [ ] GNSS/FCM/TURN infrastructure, performance and legal approvals
 
 Do not sell, tag or distribute an uncertified consumer build.
+
+
+## 16 November 2026 — product hardening follow-up
+
+- [x] Source: do not overwrite a completed MP4 before explicit finalization
+- [x] Source: serialized photo quota/write, remove corrupt partial JPEGs
+- [x] Source: audible-alarm player-result checks and cleanup
+- [x] Source: account closure erases enrolled device keys and replay nonces
+- [ ] Run all new regressions against a complete integrated repository checkout
+- [ ] Real audio outputs, camera/MP4 decode, thermal/power and fallback drivers
+- [ ] Complete all native builds, manufacturer/device matrix and storefront gates
+
+Source changes alone never satisfy final production-release acceptance.

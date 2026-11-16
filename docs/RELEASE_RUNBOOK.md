@@ -201,3 +201,31 @@ LW_COMMERCIAL_BUILD=1 python desktop/scripts/prepare_sidecar.py
 ```
 
 Review the resulting `desktop/src-python/laptopwatch/license_trust.py` and build provenance; sign and notarize the exact packaged binary. If the key is absent or malformed, the commercial packaging step fails closed. Neither the billing HTTP response nor an end user's environment variable is authoritative for a license signing key. This does **not** mean the merchant API or signed installer has been independently verified.
+
+
+## Commercial issuer preflight — mandatory for paid builds
+
+The billing service signs device-bound leases with the authorized merchant
+issuer key. **Do not** use a key supplied by the billing API response as
+the trust anchor: obtain the PUBLIC issuer key through an independent
+operator-authenticated channel. Never commit the private signing key.
+
+After provisioning the independently approved public key into both
+`desktop/src-python/laptopwatch/license_trust.py` and
+`mobile/src/licensing/trust.js`:
+
+```bash
+python ops/provision_license_issuer.py --verify-only
+LW_COMMERCIAL_BUILD=1 python ops/verify_release.py --mode source
+```
+
+The commands must fail for blank, invalid or mismatched pins. They do not
+prove a live merchant checkout or secure binary. Run full verification
+with `LW_COMMERCIAL_BUILD=1 python ops/verify_release.py --mode full`
+before signing any paid desktop/mobile binary; complete the
+hardware/legal/manual gates separately. On Windows PowerShell use
+`$env:LW_COMMERCIAL_BUILD = "1"` before invoking Python.
+
+The Android/iOS native projects are source-integrated only until their
+actual release builds, correct issuer pin, signed entitlements, network
+recovery and store policies pass on devices.

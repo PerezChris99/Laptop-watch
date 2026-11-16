@@ -142,6 +142,7 @@ def native_contract() -> None:
         ),
         "mobile/src/App.jsx": (
             "await purgePrivateEvidence()", "await clearCachedAlerts(", "reconcilePushOnForeground",
+            "closeCommercialAccount", "Permanently close commercial account",
         ),
         "mobile/android/app/build.gradle": (
             "laptopwatchFcmEnabled", "google-services.json",
@@ -241,7 +242,19 @@ def design_and_python() -> None:
     if not compileall.compile_dir(ROOT / "services/billing/tests", quiet=1):
         ERRORS.append("Billing service Python test compilation failed")
     require_file("ops/lock_dependencies.py", ("--generate", "package-lock.json", "Cargo.lock", "Podfile.lock"))
-    require_file("ops/provision_license_issuer.py", ("parse_issuer_key", "TRUSTED_ISSUER_PUBLIC_KEY_B64URL"))
+    require_file("ops/provision_license_issuer.py", ("parse_issuer_key",
+        "verify_issuer_pins", "TRUSTED_ISSUER_PUBLIC_KEY_B64URL"))
+    require_file("desktop/src-python/tests/test_controller_alarm.py", (
+        "test_audio_backend_failure_is_never_reported_as_success",
+        "test_windows_beep_failure_is_not_success"))
+    require_file("desktop/src-python/tests/test_evidence_lifecycle.py", (
+        "test_finished_recording_cannot_be_replaced_before_finalization",
+        "test_fsync_failure_removes_partial_photo"))
+    require_file("services/billing/tests/test_cancellation.py", (
+        "test_closure_queues_provider_failure_then_operator_retries",
+        "test_ambiguous_post_is_recovered_by_authoritative_provider_get"))
+    require_file("ops/tests/test_release_commercial_gate.py", (
+        "test_commercial_source_gate_requires_matching_issuer_pins",))
     require_file("ops/tests/test_provision_license_issuer.py", ("test_public_key_provisioning_is_canonical_and_idempotent",))
     for path in ("desktop/src-python/pyproject.toml", "services/location-relay/pyproject.toml",
                  "services/billing/pyproject.toml"):
