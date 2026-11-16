@@ -257,9 +257,6 @@ def design_and_python() -> None:
     require_file("ops/provision_release_approver.py", (
         "i-verified-independent-approval", "TRUSTED_RELEASE_APPROVER_PUBLIC_KEY_B64URL"))
     require_file("ops/sqlite_recovery.py", (
-        "AESGCM", "PRAGMA integrity_check", "CREATE", "RecoveryError")
-        if False else None
-    require_file("ops/sqlite_recovery.py", (
         "AESGCM", "PRAGMA integrity_check", "O_EXCL", "RecoveryError"))
     require_file("ops/tests/test_lock_validation.py", ("test_npm_resolutions_are_integrity_and_manifest_checked",))
     require_file("ops/tests/test_release_attestation.py", ("test_authentic_evidence_verifies_exact_commit_and_all_gates",))
