@@ -110,6 +110,10 @@ def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
         record_command("python:billing-tests",
                        [sys.executable, "-m", "pytest", "-q", "services/billing/tests"],
                        paths=(billing / "pyproject.toml",)),
+        record_command("python:release-operations-tests",
+                       [sys.executable, "-m", "pytest", "-q", "ops/tests"],
+                       paths=(ROOT / "ops/tests/test_lock_validation.py",
+                              ROOT / "ops/tests/test_release_attestation.py")),
         record_command("dependencies:locked",
                        [sys.executable, "ops/lock_dependencies.py"],
                        paths=(ROOT / "ops/lock_dependencies.py",)),
@@ -129,6 +133,12 @@ def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
             ["cargo", "build", "--locked"],
         ], cwd=rust, tools=("cargo",),
             paths=(rust / "Cargo.lock",)),
+        grouped("desktop:installer-build", [
+            [sys.executable, "scripts/prepare_sidecar.py"],
+            ["npm", "run", "tauri", "build"],
+        ], cwd=desktop, tools=("npm", "rustc", "cargo"),
+            paths=(desktop / "package-lock.json", rust / "Cargo.lock",
+                   desktop / "scripts/prepare_sidecar.py"), timeout=1800),
     ]
     wrapper = "gradlew.bat" if os.name == "nt" else "./gradlew"
     android_sdk = os.getenv("ANDROID_HOME") or os.getenv("ANDROID_SDK_ROOT")
@@ -138,6 +148,7 @@ def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
         results.append(grouped("android:native", [
             [wrapper, "--version"],
             [wrapper, "assembleDebug", "test", "lint"],
+            [wrapper, "assembleRelease", "bundleRelease"],
         ], cwd=android, paths=(android / ("gradlew.bat" if os.name == "nt" else "gradlew"),
                               android / "gradle/wrapper/gradle-wrapper.jar"),
             tools=("java",)))
@@ -150,6 +161,10 @@ def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
             ["xcodebuild", "-workspace", "LaptopWatchMobile.xcworkspace",
              "-scheme", "LaptopWatchMobile", "-configuration", "Debug",
              "-destination", "generic/platform=iOS Simulator", "build"],
+            ["xcodebuild", "-workspace", "LaptopWatchMobile.xcworkspace",
+             "-scheme", "LaptopWatchMobile", "-configuration", "Release",
+             "-destination", "generic/platform=iOS",
+             "-archivePath", "build/LaptopWatchMobile.xcarchive", "archive"],
         ], cwd=ios, tools=("xcodebuild", "pod"),
             paths=(ios / "Podfile.lock", ios / "LaptopWatchMobile.xcworkspace/contents.xcworkspacedata")))
     # An independent signing authority must attest to all real-world gates.
