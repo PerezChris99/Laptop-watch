@@ -222,3 +222,13 @@ nonces while retaining required financial cancellation records. Commercial
 release preflight checks the same independently verified issuer key in the
 desktop and mobile clients. These are source changes, not proof of a
 successful native build or tested physical-device release.
+
+
+### Operator release and recovery
+
+The release tooling validates authentic npm, Cargo, CocoaPods and Python
+dependency locks, attempts native distribution builds, and supports
+commit-bound independent sign-off and encrypted SQLite recovery.
+See [product release operations](docs/PRODUCT_RELEASE_OPERATIONS.md).
+Until native build, real hardware, merchant, security and legal checks
+are completed, this repository remains **not approved for release**.

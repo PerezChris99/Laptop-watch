@@ -229,6 +229,8 @@ def design_and_python() -> None:
             if colors.get(key) != value:
                 ERRORS.append(f"Palette drift: {key}")
     command([sys.executable, "design/generate.py", "--check"])
+    if not compileall.compile_dir(ROOT / "ops", quiet=1):
+        ERRORS.append("Release and operations Python compilation failed")
     if not compileall.compile_dir(ROOT / "desktop/src-python/laptopwatch", quiet=1):
         ERRORS.append("Python sidecar compilation failed")
     if not compileall.compile_dir(ROOT / "desktop/src-python/tests", quiet=1):
@@ -241,7 +243,26 @@ def design_and_python() -> None:
         ERRORS.append("Billing service Python source compilation failed")
     if not compileall.compile_dir(ROOT / "services/billing/tests", quiet=1):
         ERRORS.append("Billing service Python test compilation failed")
-    require_file("ops/lock_dependencies.py", ("--generate", "package-lock.json", "Cargo.lock", "Podfile.lock"))
+    require_file("ops/lock_dependencies.py", (
+        "--generate", "package-lock.json", "Cargo.lock", "Podfile.lock",
+        "requirements.lock", "python_lock"))
+    require_file("ops/lock_validation.py", (
+        "npm_lock", "cargo_lock", "pod_lock", "python_lock", "sha512-"))
+    require_file("ops/release_attestation.py", (
+        "REQUIRED", "Ed25519PublicKey", "commit_sha", "security_review",
+        "merchant_sandbox", "physical_devices"))
+    require_file("ops/release_trust.py", ("TRUSTED_RELEASE_APPROVER_PUBLIC_KEY_B64URL",))
+    require_file("ops/sign_release_attestation.py", (
+        "sign_reports", "i-reviewed-and-approve-every-gate", "TRUSTED_RELEASE_APPROVER_PUBLIC_KEY_B64URL"))
+    require_file("ops/provision_release_approver.py", (
+        "i-verified-independent-approval", "TRUSTED_RELEASE_APPROVER_PUBLIC_KEY_B64URL"))
+    require_file("ops/sqlite_recovery.py", (
+        "AESGCM", "PRAGMA integrity_check", "O_EXCL", "RecoveryError"))
+    require_file("ops/tests/test_lock_validation.py", ("test_npm_resolutions_are_integrity_and_manifest_checked",))
+    require_file("ops/tests/test_release_attestation.py", ("test_authentic_evidence_verifies_exact_commit_and_all_gates",))
+    require_file("ops/tests/test_sign_release_attestation.py", ("test_signed_reports_are_verifiable_without_private_key",))
+    require_file("ops/tests/test_sqlite_recovery.py", ("test_backup_is_encrypted_and_restore_is_consistent",))
+    require_file("ops/tests/test_release_runner.py", ("test_full_release_stays_blocked_without_signed_acceptance",))
     require_file("ops/provision_license_issuer.py", ("parse_issuer_key",
         "verify_issuer_pins", "TRUSTED_ISSUER_PUBLIC_KEY_B64URL"))
     require_file("desktop/src-python/tests/test_controller_alarm.py", (
@@ -295,7 +316,11 @@ def design_and_python() -> None:
 def main() -> int:
     require_file("ops/verify_release.py", (
         "release_approved", "release:real-world-acceptance", "BLOCKED",
+        "desktop:installer-build", "assembleRelease", "bundleRelease",
+        "archive", "python:release-operations-tests",
     ))
+    require_file("desktop/src-python/pyproject.toml", (
+        "release =", "pyinstaller", "pillow"))
     scan_sources()
     native_contract()
     design_and_python()

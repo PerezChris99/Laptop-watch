@@ -100,3 +100,27 @@ and privacy data minimization. An isolated local alarm/Paddle harness passed
 14 tests; this is NOT a test of the integrated repository. Native builds and
 physical-device/merchant/security acceptance remain BLOCKED and STOP-SHIP.
 No final consumer release or paid production launch is authorized.
+
+
+## Product-level operations hardening — 16 November 2026
+
+Code-level release tooling added: required desktop release-sidecar dependencies,
+strict real dependency-lock authenticity
+checks (npm integrity, Cargo/Pods checksums, Python hash locks), native
+installer/archive build gates, runnable operations regression tests,
+cryptographically signed commit-bound acceptance with eight independently
+reviewed evidence categories and explicit offline approver provisioning.
+An operator-only authenticated SQLite backup/restore utility covers databases
+up to 128 MiB, with fail-closed decryption and no overwrites.
+
+A local focused run passed **31 tests** covering release/SQLite utilities
+and previously staged isolated cancellation/alarm modules. This is not a
+complete checkout, cannot prove Android/iOS/Tauri native builds, and did not
+exercise production hardware, service providers, signing or penetration
+testing. No consumer binary or live merchant approval was produced.
+
+**STOP-SHIP remains:** genuine dependency resolution and installation, full
+integrated suite and real device acceptance, signed installers/archives,
+trusted owner issuer/release approver keys, merchant/relay/FCM/GNSS
+provisioning, security/legal reviews and long-running reliability checks.
+Product readiness must be reassessed after those real runs reveal defects.

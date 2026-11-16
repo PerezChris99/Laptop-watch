@@ -77,7 +77,7 @@ def grouped(name: str, commands: list[list[str]], *,
                   monotonic() - start)
 
 
-def checks(mode: str) -> list[Result]:
+def checks(mode: str, acceptance_manifest: Path | None = None) -> list[Result]:
     results = [
         record_command("source:contract", [sys.executable, "ops/source_preflight.py"],
                        paths=(ROOT / "ops/source_preflight.py",), tools=("node",)),
@@ -110,6 +110,10 @@ def checks(mode: str) -> list[Result]:
         record_command("python:billing-tests",
                        [sys.executable, "-m", "pytest", "-q", "services/billing/tests"],
                        paths=(billing / "pyproject.toml",)),
+        record_command("python:release-operations-tests",
+                       [sys.executable, "-m", "pytest", "-q", "ops/tests"],
+                       paths=(ROOT / "ops/tests/test_lock_validation.py",
+                              ROOT / "ops/tests/test_release_attestation.py")),
         record_command("dependencies:locked",
                        [sys.executable, "ops/lock_dependencies.py"],
                        paths=(ROOT / "ops/lock_dependencies.py",)),
@@ -129,6 +133,12 @@ def checks(mode: str) -> list[Result]:
             ["cargo", "build", "--locked"],
         ], cwd=rust, tools=("cargo",),
             paths=(rust / "Cargo.lock",)),
+        grouped("desktop:installer-build", [
+            [sys.executable, "scripts/prepare_sidecar.py"],
+            ["npm", "run", "tauri", "build"],
+        ], cwd=desktop, tools=("npm", "rustc", "cargo"),
+            paths=(desktop / "package-lock.json", rust / "Cargo.lock",
+                   desktop / "scripts/prepare_sidecar.py"), timeout=1800),
     ]
     wrapper = "gradlew.bat" if os.name == "nt" else "./gradlew"
     android_sdk = os.getenv("ANDROID_HOME") or os.getenv("ANDROID_SDK_ROOT")
@@ -138,6 +148,7 @@ def checks(mode: str) -> list[Result]:
         results.append(grouped("android:native", [
             [wrapper, "--version"],
             [wrapper, "assembleDebug", "test", "lint"],
+            [wrapper, "assembleRelease", "bundleRelease"],
         ], cwd=android, paths=(android / ("gradlew.bat" if os.name == "nt" else "gradlew"),
                               android / "gradle/wrapper/gradle-wrapper.jar"),
             tools=("java",)))
@@ -150,15 +161,25 @@ def checks(mode: str) -> list[Result]:
             ["xcodebuild", "-workspace", "LaptopWatchMobile.xcworkspace",
              "-scheme", "LaptopWatchMobile", "-configuration", "Debug",
              "-destination", "generic/platform=iOS Simulator", "build"],
+            ["xcodebuild", "-workspace", "LaptopWatchMobile.xcworkspace",
+             "-scheme", "LaptopWatchMobile", "-configuration", "Release",
+             "-destination", "generic/platform=iOS",
+             "-archivePath", "build/LaptopWatchMobile.xcarchive", "archive"],
         ], cwd=ios, tools=("xcodebuild", "pod"),
             paths=(ios / "Podfile.lock", ios / "LaptopWatchMobile.xcworkspace/contents.xcworkspacedata")))
-    # No script can replace an actual paired laptop, physical phone, security
-    # assessment, signed installer, owner legal judgment or external provider.
-    results.append(Result(
-        "release:real-world-acceptance", "BLOCKED",
-        "Physical devices, signed installers, security, GNSS/FCM/relay, "
-        "independent legal and owner approval are mandatory; see docs/RELEASE_RUNBOOK.md",
-    ))
+    # An independent signing authority must attest to all real-world gates.
+    # Checking an owner's signed reports is not the same as doing the tests.
+    if acceptance_manifest is None:
+        results.append(Result("release:real-world-acceptance", "BLOCKED",
+            "No independently signed device/security/merchant/legal acceptance manifest; "
+            "see docs/RELEASE_RUNBOOK.md"))
+    else:
+        results.append(record_command("release:real-world-acceptance",
+            [sys.executable, "ops/release_attestation.py",
+             "--manifest", str(acceptance_manifest)],
+            paths=(ROOT / "ops/release_attestation.py",
+                   ROOT / "ops/release_trust.py"),
+            tools=("git",)))
     return results
 
 
@@ -166,14 +187,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LaptopWatch strict, non-fabricated release gates")
     parser.add_argument("--mode", choices=("source", "full"), default="full")
     parser.add_argument("--json", type=Path, help="Write local non-secret result summary")
+    parser.add_argument("--acceptance-manifest", type=Path,
+                        help="Independent signed device, merchant, security and legal acceptance evidence")
     opts = parser.parse_args(argv)
-    results = checks(opts.mode)
+    results = checks(opts.mode, opts.acceptance_manifest)
     for item in results:
         print(f"{item.status:7} {item.gate}: {item.detail} ({item.seconds:.1f}s)")
+    approved = (opts.mode == "full" and
+                any(item.gate == "release:real-world-acceptance" and item.status == "PASS"
+                    for item in results) and
+                all(item.status == "PASS" for item in results))
     message = {
         "mode": opts.mode,
-        "release_approved": False,
-        "note": "Source checks do not confer native/production acceptance.",
+        "release_approved": approved,
+        "note": ("Independent acceptance verified for exactly this source revision; "
+                 "the designated approver remains responsible for evidence authenticity."
+                 if approved else "Source checks do not confer native/production acceptance."),
         "results": [asdict(item) for item in results],
     }
     if opts.json:
