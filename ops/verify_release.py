@@ -84,6 +84,12 @@ def checks(mode: str) -> list[Result]:
         record_command("source:design", [sys.executable, "design/generate.py", "--check"],
                        paths=(ROOT / "design/generate.py",)),
     ]
+    if os.getenv("LW_COMMERCIAL_BUILD") == "1":
+        results.append(record_command("commercial:issuer-pins",
+            [sys.executable, "ops/provision_license_issuer.py", "--verify-only"],
+            paths=(ROOT / "ops/provision_license_issuer.py",
+                   ROOT / "desktop/src-python/laptopwatch/license_trust.py",
+                   ROOT / "mobile/src/licensing/trust.js")))
     if mode == "source":
         return results
 
