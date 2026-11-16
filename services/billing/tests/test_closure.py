@@ -32,6 +32,10 @@ def test_authenticated_account_closure_revokes_devices_and_protects_billing(tmp_
         response=api.post('/v1/accounts/close',json=data)
         assert response.status_code==200,response.text
         assert response.json()['result']=='closed'
+        # Data minimization: closing an account erases all enrolled public keys
+        # and device replay nonces; only required billing/tombstone data remains.
+        assert app.state.store.db.execute('SELECT COUNT(*) FROM devices WHERE account_id=?', (account,)).fetchone()[0] == 0
+        assert app.state.store.db.execute('SELECT COUNT(*) FROM lease_nonces WHERE device_id=?', (device,)).fetchone()[0] == 0
         assert response.json()['provider_cancellation_required'] is False
         assert response.json()['cancellation_pending_count'] == 0
         assert api.post('/v1/accounts/close',json={**data,'nonce':enc(secrets.token_bytes(16))}).status_code==403
