@@ -176,7 +176,9 @@ export default function App () {
     setMessage(action === 'checkout'
       ? 'Paddle checkout opened. The subscription activates only after verified payment.'
       : action === 'portal' ? 'Paddle customer portal opened securely.'
-      : action === 'close' ? 'Account access closed. Cancel any active Paddle subscription separately to prevent recurring charges.'
+      : action === 'close' ? (JSON.parse(raw).provider_cancellation_required
+        ? 'Account access closed. Merchant cancellation remains pending; contact support if it does not complete.'
+        : 'Account closed. No outstanding Paddle cancellation jobs were reported.')
       : action === 'enroll' ? 'Device enrolled. Complete payment to activate your plan.'
       : action === 'refresh' ? 'Verified subscription refreshed.'
       : 'License status refreshed.')
