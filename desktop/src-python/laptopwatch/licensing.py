@@ -245,7 +245,7 @@ class BillingClient:
 
     def close_account(self, confirm_account_id: str) -> dict:
         """Require a distinct signed proof and exact account identifier.
-        Closure stops entitlement issuance, NOT Paddle recurring charges.
+        Closure revokes entitlements; merchant cancellation may require queued retries.
         """
         if _uuid(confirm_account_id) != self.account_id:
             raise LicenseUnavailable('Account closure confirmation does not match')
@@ -253,7 +253,9 @@ class BillingClient:
         data['confirm_account_id'] = self.account_id
         result = self._post('/v1/accounts/close', data)
         if (result.get('result') not in {'closed','already_closed'}
-                or result.get('provider_cancellation_required') is not True):
+                or type(result.get('provider_cancellation_required')) is not bool
+                or type(result.get('cancellation_pending_count')) is not int
+                or result['cancellation_pending_count'] < 0):
             raise LicenseUnavailable('Account closure not confirmed')
         return result
 
