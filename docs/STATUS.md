@@ -80,3 +80,23 @@ provider passed (8 of 8). These tests do not constitute integrated builds,
 real Paddle sandbox acceptance or device tests. Full Android/iOS, desktop,
 media, performance, security and operational sign-off remain STOP-SHIP.
 Previously issued one-hour offline signed leases may survive closure briefly.
+
+
+## Product-hardening checkpoint — 16 November 2026
+
+Additional source defects repaired on the integration branch:
+- MP4 sessions that reach their worker limit can no longer be silently
+  replaced before their completed evidence is finalized.
+- JPEG quota reservation and durable file writing now occur under the same
+  recorder lock, and failed writes discard partial JPEG files.
+- Camera/encoder opening failures clean up resources before reporting failure.
+- The OS alarm waits for the playback result, correctly reports failure,
+  cleans up the generated WAV, and supports PipeWire/PulseAudio/ALSA on Linux.
+- Commercial account closure now deletes enrolled device public keys and
+  their replay nonces while preserving billing tombstones and cancellation jobs.
+
+New regression tests were committed for alarm handling, evidence lifecycle,
+and privacy data minimization. An isolated local alarm/Paddle harness passed
+14 tests; this is NOT a test of the integrated repository. Native builds and
+physical-device/merchant/security acceptance remain BLOCKED and STOP-SHIP.
+No final consumer release or paid production launch is authorized.
