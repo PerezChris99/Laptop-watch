@@ -1,6 +1,6 @@
 # LaptopWatch — proposed commercial pricing and entitlements
 
-**Pricing proposal only. A tested, operator-provisioned Paddle webhook/transaction/adjustment/entitlement backend now exists under `services/billing/`; no live checkout, desktop/mobile client license enforcement, merchant approval or purchased entitlement is active.**
+**Pricing proposal only. A tested, operator-provisioned Paddle webhook/transaction/adjustment/entitlement backend now exists under `services/billing/`; desktop/mobile signed entitlement source and checkout source now exist, but no live checkout, merchant approval, signed release or purchased entitlement is active.**
 
 | Plan | Suggested price | Devices | Media/network | Evidence |
 |---|---|---|---|---|

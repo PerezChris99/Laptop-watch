@@ -199,3 +199,13 @@ production approval. This repository does not include GitHub Actions.
 
 See [scenarios](docs/SCENARIOS.md), [architecture](docs/ARCHITECTURE.md),
 [status](docs/STATUS.md) and [commercial policy drafts](docs/commercial/).
+
+
+### 16 November 2026 engineering update
+
+Account closure now has a persisted merchant cancellation queue,
+Paddle response confirmation and retry logic, and mobile/desktop
+pending-cancellation feedback. This is source integration, not a certified
+Paddle deployment or signed consumer build. The trusted commercial issuer
+pin still requires approved release provisioning. **No production release
+is authorized.** See `docs/STATUS.md` and `services/billing/README.md`.

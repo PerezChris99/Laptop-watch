@@ -88,3 +88,12 @@ sequenceDiagram
 | Theft alert | Owner receives evidence even if disk later removed | Requires encrypted remote evidence transport |
 
 Related: [README](../README.md) · [Location and Recovery](LOCATION_AND_RECOVERY.md) · [Performance Evidence](PERFORMANCE.md) · [Release Checklist](RELEASE_CHECKLIST.md).
+
+
+### Source checkpoint clarification — 16 November 2026
+
+Historical statements above describing Android evidence integration or
+remote location retrieval as absent describe an earlier implementation
+checkpoint. The current React Native source includes these signed clients.
+They remain **unverified on physical devices**; do not infer completion
+from their presence in source.

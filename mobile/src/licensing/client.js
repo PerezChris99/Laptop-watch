@@ -29,7 +29,7 @@ export function verifyMobileLease(token,accountId,deviceId,now=Math.floor(Date.n
     {decode,utf8:bytesToUtf8,verify},now);
 }
 async function post(url,path,payload) {
-  if (!['/v1/accounts/enroll','/v1/licenses/lease','/v1/billing/checkout-ticket','/v1/billing/portal'].includes(path))
+  if (!['/v1/accounts/enroll','/v1/licenses/lease','/v1/billing/checkout-ticket','/v1/billing/portal','/v1/accounts/close'].includes(path))
     throw new LicenseUnavailable('Unsupported billing operation');
   const base=normalizeBillingUrl(url);
   const body=JSON.stringify(payload);
@@ -50,7 +50,7 @@ async function post(url,path,payload) {
 }
 function proof(paired,accountId,operation,priceId) {
   identity(paired,accountId);
-  if (!['LICENSE','PORTAL','CHECKOUT'].includes(operation) ||
+  if (!['LICENSE','PORTAL','CHECKOUT','ACCOUNT-CLOSE'].includes(operation) ||
       (operation==='CHECKOUT' && !PRICE.test(priceId)))
     throw new LicenseUnavailable('Invalid billing operation');
   const timestamp=Math.floor(Date.now()/1000),nonce=b64url(secureRandom16());
@@ -88,6 +88,24 @@ export async function refreshCommercialLease(paired,accountId,billingUrl) {
   await setPreference('commercial_signed_lease',reply.license);
   return claims;
 }
+/** Close a paid account using a signed, explicit account-ID confirmation.
+ * The backend records closure even if Paddle is offline; it returns the
+ * outstanding cancellation status rather than falsely claiming success.
+ */
+export async function closeCommercialAccount(paired,accountId,billingUrl,confirmation) {
+  identity(paired,accountId);
+  if (confirmation!==accountId) throw new LicenseUnavailable('Account closure confirmation mismatch');
+  const payload={...proof(paired,accountId,'ACCOUNT-CLOSE'),confirm_account_id:accountId};
+  const response=await post(billingUrl,'/v1/accounts/close',payload);
+  if (!['closed','already_closed'].includes(response.result) ||
+      typeof response.provider_cancellation_required!=='boolean' ||
+      !Number.isSafeInteger(response.cancellation_pending_count) ||
+      response.cancellation_pending_count<0)
+    throw new LicenseUnavailable('Account closure not confirmed');
+  await forgetCommercialLicense();
+  return response;
+}
+
 export async function forgetCommercialLicense() {
   await setPreference('commercial_signed_lease','');
   await setPreference('commercial_account','');

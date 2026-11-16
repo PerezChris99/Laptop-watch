@@ -21,7 +21,7 @@ import { PaperCard, SectionHeader, StatusPill, PrimaryButton, SecondaryButton, D
 import { loadIdentity, saveIdentity, clearIdentity } from './storage/identity.js';
 import { pinnedTransport } from './net/pinnedTransport.js';
 import { cachedCommercialLease, refreshCommercialLease, enrollCommercialDevice,
-  normalizeBillingUrl, forgetCommercialLicense } from './licensing/client.js';
+  normalizeBillingUrl, forgetCommercialLicense, closeCommercialAccount } from './licensing/client.js';
 import { SignedClient } from './net/SignedClient.js';
 import { requestPairing, verifyApproval } from './pairing/pair.js';
 
@@ -62,6 +62,7 @@ export default function App() {
   const [accountId, setAccountId] = useState('');
   const [accountInput, setAccountInput] = useState('');
   const [invitation, setInvitation] = useState('');
+  const [closeAccountConfirm, setCloseAccountConfirm] = useState('');
   const [paidLease, setPaidLease] = useState(null);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushEnrolled, setPushEnrolled] = useState(false);
@@ -713,6 +714,28 @@ export default function App() {
             setPaidLease(claims);
             setNotice('A device-bound paid license has been cryptographically verified.');
           })} />
+        <TextInput style={{ backgroundColor:c.surface,borderWidth:1,borderColor:c.hairline,
+          borderRadius:8,color:c.ink,padding:12,marginVertical:8 }}
+          value={closeAccountConfirm} onChangeText={setCloseAccountConfirm}
+          autoCorrect={false} autoCapitalize="none"
+          accessibilityLabel="Type the exact commercial account UUID to confirm permanent closure"
+          placeholder="Type your exact account UUID to close" />
+        <DestructiveButton title="Permanently close commercial account"
+          disabled={!paired?.approved || !accountId || !billingHost ||
+            closeAccountConfirm.trim()!==accountId || busy}
+          onPress={() => Alert.alert('Permanently close account?',
+            'This revokes all enrolled devices and cannot be undone. Existing Paddle billing must be independently confirmed canceled; offline failures remain pending.',
+            [{text:'Keep account',style:'cancel'}, {text:'Close account',style:'destructive',
+              onPress:() => perform(async () => {
+                const response=await closeCommercialAccount(paired,accountId,billingHost,
+                  closeAccountConfirm.trim());
+                setPaidLease(null);setAccountId('');setAccountInput('');
+                setBillingHost('');setBillingInput('');setInvitation('');
+                setCloseAccountConfirm('');
+                setNotice(response.provider_cancellation_required
+                  ? 'Access closed. Merchant cancellation is pending; contact support if it does not complete.'
+                  : 'Account closed; no outstanding merchant cancellation is pending.');
+              })}])} />
         <ConsentNotice>Checkout is not offered inside this mobile app. Use the approved seller channel, subject to Google Play and Apple payment policies. A checkout screen alone never grants a subscription.</ConsentNotice>
       </PaperCard>
       <PaperCard>

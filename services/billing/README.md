@@ -163,3 +163,30 @@ python -m laptopwatch_billing.reconcile --subscription-id sub_REPLACE_WITH_REAL_
 ```
 
 Configure LW_BILLING_DB, LW_PADDLE_API_KEY, LW_PADDLE_PRICE_PRO, LW_PADDLE_PRICE_BUSINESS and LW_PADDLE_SANDBOX appropriately. The tool checks the exact account/customer/price binding, current subscription period and completed Paddle transaction, with bounded pagination and HTTPS-only provider access. It fails closed for unverified renewals. Schedule it on trusted infrastructure after successful sandbox tests; it is not an automated production job. Separate Paddle cancellation, refunds, legal financial-retention and data-erasure workflows must still be handled.
+
+
+## Closure and Paddle cancellation recovery (16 November 2026)
+
+Authenticated owner/operator closure immediately tombstones the account and revokes
+device enrollments. Every non-canceled subscription is durably queued for
+Paddle cancellation with `effective_from=immediately`. The provider response
+must confirm the exact subscription is `canceled`; after an ambiguous POST,
+the service verifies Paddle via a bounded authenticated GET. No network failure
+or scheduled cancellation is treated as successful.
+
+The service retries jobs every five minutes when `LW_PADDLE_API_KEY` is configured.
+An authenticated `subscription.canceled` webhook also confirms cancellation.
+Late subscription events after account closure are queued as well.
+The Paddle API key requires `subscription.write` permission.
+
+Operator-only maintenance endpoints:
+- `GET /v1/admin/closures/pending` returns the outstanding job count
+- `POST /v1/admin/closures/retry` with JSON `{"account_id":"<uuid>"}` retries jobs
+Both require the existing operator Bearer secret. Closure responses explicitly
+expose `provider_cancellation_required` and `cancellation_pending_count`.
+Never assert recurring charges have stopped while any jobs remain pending.
+If merchant credentials are absent, access is still revoked but jobs remain open.
+
+Already-issued offline paid leases remain valid until their short expiration
+(at most one hour). Enforced server-side account revocation and live merchant
+acceptance remain separate deployment and security requirements.

@@ -6,6 +6,7 @@ Operator provisioning is intentionally separate from public self-service auth.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from cryptography.hazmat.primitives import serialization
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+
+from .cancellation import cancel_subscription_immediately
 
 MAX_WEBHOOK = 262_144
 WEBHOOK_SKEW = 300
@@ -164,6 +167,13 @@ class Store:
           CREATE TABLE IF NOT EXISTS lease_nonces(
             device_id TEXT NOT NULL, nonce TEXT NOT NULL, created_at INTEGER NOT NULL,
             PRIMARY KEY(device_id,nonce));
+          CREATE TABLE IF NOT EXISTS cancellation_jobs(
+            subscription_id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            attempted_at INTEGER NOT NULL DEFAULT 0,
+            confirmed_at INTEGER NOT NULL DEFAULT 0);
+          CREATE INDEX IF NOT EXISTS idx_cancel_pending
+            ON cancellation_jobs(confirmed_at,attempted_at);
         ''')
         # Non-destructive migration: historical transactions without a verified
         # billing period do not grant a new license until reconciled with Paddle.
@@ -206,7 +216,41 @@ class Store:
                        (account_id, now))
             db.execute('UPDATE devices SET revoked=1 WHERE account_id=?', (account_id,))
             db.execute('DELETE FROM enrollment_invites WHERE account_id=?', (account_id,))
+            # Closure tombstone revokes access immediately even if Paddle is offline.
+            # Persist every outstanding recurring charge cancellation for retry.
+            db.execute("""INSERT OR IGNORE INTO cancellation_jobs(subscription_id,account_id)
+                SELECT id,account_id FROM subscriptions
+                WHERE account_id=? AND status!='canceled'""", (account_id,))
             return 'closed'
+
+    def pending_cancellations(self, account_id: str | None = None, *, limit: int = 20) -> list[str]:
+        with self.lock:
+            if account_id is None:
+                rows = self.db.execute("""SELECT subscription_id FROM cancellation_jobs
+                    WHERE confirmed_at=0 ORDER BY attempted_at,subscription_id LIMIT ?""",
+                    (limit,)).fetchall()
+            else:
+                rows = self.db.execute("""SELECT subscription_id FROM cancellation_jobs
+                    WHERE confirmed_at=0 AND account_id=?
+                    ORDER BY attempted_at,subscription_id LIMIT ?""",
+                    (strict_uuid(account_id),limit)).fetchall()
+        return [row['subscription_id'] for row in rows]
+
+    def pending_cancellation_count(self, account_id: str | None = None) -> int:
+        with self.lock:
+            if account_id is None:
+                row = self.db.execute('SELECT COUNT(*) FROM cancellation_jobs WHERE confirmed_at=0').fetchone()
+            else:
+                row = self.db.execute("""SELECT COUNT(*) FROM cancellation_jobs
+                    WHERE confirmed_at=0 AND account_id=?""", (strict_uuid(account_id),)).fetchone()
+        return int(row[0])
+
+    def record_cancellation_attempt(self, subscription_id: str, confirmed: bool, now: int):
+        with self.tx() as db:
+            db.execute("""UPDATE cancellation_jobs SET attempt_count=attempt_count+1,
+                attempted_at=?, confirmed_at=CASE WHEN ? THEN ? ELSE confirmed_at END
+                WHERE subscription_id=? AND confirmed_at=0""",
+                (now,int(confirmed),now,subscription_id))
 
     def create_invite(self, account_id: str, now: int) -> str:
         account_id = strict_uuid(account_id)
@@ -379,6 +423,14 @@ class Store:
                 price_id=excluded.price_id,status=excluded.status,
                 period_end=excluded.period_end,event_time=excluded.event_time''',
                 (sub_id, account_id, customer_id, price_id, status, period_end, when))
+            if status == 'canceled':
+                db.execute("""UPDATE cancellation_jobs SET confirmed_at=?
+                    WHERE subscription_id=? AND confirmed_at=0""", (int(time.time()),sub_id))
+            elif db.execute('SELECT 1 FROM closed_accounts WHERE account_id=?',
+                            (account_id,)).fetchone():
+                # Late payment/subscription webhook after closure: enqueue too.
+                db.execute("""INSERT OR IGNORE INTO cancellation_jobs(subscription_id,account_id)
+                    VALUES (?,?)""", (sub_id,account_id))
             db.execute('INSERT INTO webhook_events(id,received_at) VALUES (?,?)', (event_id, int(time.time())))
         return 'processed'
 
@@ -517,7 +569,8 @@ def paddle_portal_url(api_key: str, customer_id: str, subscription_id: str,
 def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
                operator_secret: str, signing_key: Ed25519PrivateKey,
                prices: dict[str, tuple[str, int]], clock=None, portal_provider=None,
-               paddle_client_token: str | None = None, sandbox: bool = False) -> FastAPI:
+               paddle_client_token: str | None = None, sandbox: bool = False,
+               cancellation_provider=None) -> FastAPI:
     if not prices or len(set(prices)) != len(prices) or any(not k.startswith('pri_') or
        plan not in {'pro', 'business'} or seats < 1 or seats > 100 for k,(plan,seats) in prices.items()):
         raise ValueError('merchant price IDs and enforced device quotas are required')
@@ -529,6 +582,41 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
     app.state.store = store
     app.state.verify_public_key = enc(signing_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw))
+
+    async def reconcile_cancellations(account_id: str | None = None) -> dict:
+        # Provider calls are bounded and off the event loop. Failed calls
+        # remain in the durable retry queue, not marked as successful.
+        if cancellation_provider is not None:
+            for subscription_id in store.pending_cancellations(account_id, limit=20):
+                try:
+                    await asyncio.to_thread(cancellation_provider, subscription_id)
+                except Exception:
+                    store.record_cancellation_attempt(subscription_id, False, now())
+                else:
+                    store.record_cancellation_attempt(subscription_id, True, now())
+        pending = store.pending_cancellation_count(account_id)
+        return {'provider_cancellation_required': pending > 0,
+                'cancellation_pending_count': pending}
+
+    async def cancellation_retry_loop():
+        while True:
+            await reconcile_cancellations()
+            await asyncio.sleep(300)
+
+    @app.on_event('startup')
+    async def start_cancellation_retries():
+        if cancellation_provider is not None:
+            app.state.cancel_task = asyncio.create_task(cancellation_retry_loop())
+
+    @app.on_event('shutdown')
+    async def stop_cancellation_retries():
+        task = getattr(app.state, 'cancel_task', None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     def admin(request: Request):
         bearer = request.headers.get('Authorization', '')
@@ -580,8 +668,8 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
     async def operator_close_account(request: Request, data: InviteInput):
         admin(request)
         try:
-            return {'result': store.close_account(data.account_id, now()),
-                    'provider_cancellation_required': True}
+            result = store.close_account(data.account_id, now())
+            return {'result': result, **await reconcile_cancellations(data.account_id)}
         except ValueError:
             raise HTTPException(404, 'Account unavailable')
 
@@ -599,9 +687,19 @@ def create_app(*, db_path: str, webhook_secret: str, checkout_secret: str,
             Ed25519PublicKey.from_public_bytes(pub).verify(dec(data.signature, 64), challenge)
             store.claim_nonce(device_id, data.nonce, now())
             result = store.close_account(account_id, now())
-            return {'result': result, 'provider_cancellation_required': True}
+            return {'result': result, **await reconcile_cancellations(account_id)}
         except Exception:
             raise HTTPException(403, 'Account closure rejected')
+
+    @app.get('/v1/admin/closures/pending')
+    async def pending_closures(request: Request):
+        admin(request)
+        return {'pending_cancellations': store.pending_cancellation_count()}
+
+    @app.post('/v1/admin/closures/retry')
+    async def retry_closures(request: Request, data: InviteInput):
+        admin(request)
+        return await reconcile_cancellations(data.account_id)
 
     @app.post('/v1/admin/invitations')
     async def create_invitation(request: Request, data: InviteInput):
@@ -811,6 +909,10 @@ def from_env():
         sandbox=os.environ.get('LW_PADDLE_SANDBOX','false').lower() == 'true',
         portal_provider=(lambda customer, subscription: paddle_portal_url(
             need('LW_PADDLE_API_KEY'), customer, subscription,
+            sandbox=os.environ.get('LW_PADDLE_SANDBOX', 'false').lower() == 'true'))
+            if os.environ.get('LW_PADDLE_API_KEY') else None,
+        cancellation_provider=(lambda subscription: cancel_subscription_immediately(
+            need('LW_PADDLE_API_KEY'), subscription,
             sandbox=os.environ.get('LW_PADDLE_SANDBOX', 'false').lower() == 'true'))
             if os.environ.get('LW_PADDLE_API_KEY') else None)
 

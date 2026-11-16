@@ -66,3 +66,17 @@ remains binding regardless of the source retirement approval.
 See [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md),
 [PARITY.md](PARITY.md), [DEFECTS.md](DEFECTS.md) and
 [THREAT_MODEL.md](THREAT_MODEL.md).
+
+
+## 16 November 2026 additional source checkpoint
+
+The commercial backend now queues and retries Paddle cancellation after
+authenticated account closure, reports unconfirmed merchant cancellation,
+and provides operator-only pending/retry endpoints. The React Native mobile
+Settings source now has typed-confirmation signed account closure as well.
+
+**Verification boundary:** Isolated tests of the bounded Paddle cancellation
+provider passed (8 of 8). These tests do not constitute integrated builds,
+real Paddle sandbox acceptance or device tests. Full Android/iOS, desktop,
+media, performance, security and operational sign-off remain STOP-SHIP.
+Previously issued one-hour offline signed leases may survive closure briefly.

@@ -232,13 +232,14 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.action == 'close':
                     if not args.confirm_account_id or args.confirm_account_id != account_id:
                         parser.error('Closure requires an exact matching --confirm-account-id')
-                    # Do not silently stop ongoing payment at Paddle; an owner
-                    # must cancel through the provider portal separately.
+                    # The service attempts immediate Paddle cancellation and queues
+                    # unconfirmed operations for automatic retries.
                     result = client.close_account(args.confirm_account_id)
                     cache.path.unlink(missing_ok=True)
                     config_path.unlink(missing_ok=True)
                     print(json.dumps({'closed': True,
-                                      'provider_cancellation_required': result['provider_cancellation_required']}))
+                                      'provider_cancellation_required': result['provider_cancellation_required'],
+                                      'cancellation_pending_count': result['cancellation_pending_count']}))
                 elif args.action == 'portal':
                     import webbrowser
                     if not webbrowser.open(client.portal(), new=2):

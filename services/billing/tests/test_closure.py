@@ -32,7 +32,8 @@ def test_authenticated_account_closure_revokes_devices_and_protects_billing(tmp_
         response=api.post('/v1/accounts/close',json=data)
         assert response.status_code==200,response.text
         assert response.json()['result']=='closed'
-        assert response.json()['provider_cancellation_required'] is True
+        assert response.json()['provider_cancellation_required'] is False
+        assert response.json()['cancellation_pending_count'] == 0
         assert api.post('/v1/accounts/close',json={**data,'nonce':enc(secrets.token_bytes(16))}).status_code==403
         assert admin(api,'/v1/admin/invitations',{'account_id':account}).status_code==404
         assert admin(api,'/v1/admin/devices',{'account_id':account,'device_id':str(uuid.uuid4()),'public_key':pub}).status_code==400

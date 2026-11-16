@@ -86,7 +86,7 @@ npm run ios      # requires macOS, Xcode and CocoaPods
 
 **The commands above are required, not recorded as passing.**
 The owner authorized retirement of `app/` before real-device acceptance. Do not restore the deprecated Kotlin build path or claim this implies verified parity. See [retirement record](../docs/KOTLIN_RETIREMENT.md).
-No root software LICENSE or CI workflow was created on the owner's behalf.
+An owner-approved proprietary root LICENSE exists; no GitHub Actions workflow is configured. Distribution and commercial acceptance are still pending.
 
 ## Optional owner Firebase activation (Android only)
 
