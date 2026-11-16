@@ -6,6 +6,7 @@ Provision once per signed release. No secret key is required or accepted.
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import hashlib
 from pathlib import Path
@@ -56,13 +57,45 @@ Changing it requires an independently approved rotation and new signed build.
     return hashlib.sha256(raw).hexdigest()
 
 
+def verify_issuer_pins(desktop_path: Path = TARGET, mobile_path: Path = MOBILE_TARGET) -> str:
+    """Fail a commercial build if either artifact has a missing or different pin.
+
+    Independently verify the approved public key through an operator channel.
+    Never trust a key returned by the API that the key is meant to authenticate.
+    """
+    desktop = ast.parse(desktop_path.read_text(encoding='utf-8'))
+    assignments = [
+        node.value.value for node in desktop.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name)
+                and target.id == 'TRUSTED_ISSUER_PUBLIC_KEY_B64URL'
+                for target in node.targets)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+    text = mobile_path.read_text(encoding='utf-8')
+    mobile = re.findall(
+        r"^export const TRUSTED_ISSUER_PUBLIC_KEY_B64URL = ['\\\"]([A-Za-z0-9_-]*)['\\\"];?$",
+        text, flags=re.MULTILINE,
+    )
+    if len(assignments) != 1 or len(mobile) != 1 or assignments[0] != mobile[0]:
+        raise ValueError('Desktop/mobile commercial issuer pins missing or mismatched')
+    return hashlib.sha256(parse_issuer_key(assignments[0])).hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--public-key-file', type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--public-key-file', type=Path)
+    mode.add_argument('--verify-only', action='store_true')
     args = parser.parse_args()
+    if args.verify_only:
+        fingerprint = verify_issuer_pins()
+        print(f'Commercial issuer pins agree. Public SHA256 fingerprint: {fingerprint}')
+        return 0
     fingerprint = provision(args.public_key_file, mobile_target=MOBILE_TARGET)
     print(f'Issuer PUBLIC key pinned. SHA256 fingerprint: {fingerprint}')
-    print('Independently review this key and sign the exact desktop release artifact.')
+    print('Independently review this key and sign the exact desktop and mobile release artifacts.')
     return 0
 
 
