@@ -2,7 +2,7 @@
 
 # LaptopWatch — security threat model (v0.1 baseline)
 
-**This is a model, not a penetration-test report.** Current PIN and TLS implementation are insecure and must not be publicly exposed.
+**This is a model, not a penetration-test report.** The insecure original Kotlin/PIN and permissive-TLS implementation was retired; the current signed React Native/Python replacement still requires independent penetration testing.
 
 ## Assets
 
