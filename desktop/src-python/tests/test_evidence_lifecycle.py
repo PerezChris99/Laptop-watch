@@ -8,7 +8,7 @@ import pytest
 from laptopwatch.evidence import EvidenceRecorder, CaptureUnavailable
 
 
-JPEG = b"\\xff\\xd8" + b"actual-photo-bytes" + b"\\xff\\xd9"
+JPEG = bytes((0xff, 0xd8)) + b'actual-photo-bytes' + bytes((0xff, 0xd9))
 
 
 def test_finished_recording_cannot_be_replaced_before_finalization(tmp_path):
