@@ -47,7 +47,10 @@ def backup(database: Path, output: Path, key: bytes) -> None:
     if not 0 < database.stat().st_size <= MAX:
         raise RecoveryError('Database exceeds bounded backup size')
     address = quote(database.resolve().as_posix(), safe='/')
-    source = sqlite3.connect(f'file:{address}?mode=ro', uri=True, timeout=10)
+    try:
+        source = sqlite3.connect(f'file:{address}?mode=ro', uri=True, timeout=10)
+    except sqlite3.Error as exc:
+        raise RecoveryError('Unable to open source SQLite database') from exc
     snapshot = sqlite3.connect(':memory:')
     try:
         source.backup(snapshot, pages=128, sleep=0.02)
