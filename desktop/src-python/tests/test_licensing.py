@@ -84,7 +84,7 @@ def test_account_closure_requires_distinct_signed_confirmation(tmp_path):
         if path == '/v1/accounts/close':
             assert payload['confirm_account_id'] == client.account_id
             assert payload['device_id'] == client.device_id
-            return {'result':'closed','provider_cancellation_required':True}
+            return {'result':'closed','provider_cancellation_required':True,'cancellation_pending_count':1}
         raise AssertionError('unexpected route')
     client._post=fake
     with pytest.raises(LicenseUnavailable):
