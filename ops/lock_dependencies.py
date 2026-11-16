@@ -45,13 +45,13 @@ def validate(path: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--generate', action='store_true', help='resolve using authentic registries and toolchains')
-    parser.add_argument('--platform', choices=['all', 'mobile', 'desktop', 'ios'], default='all')
+    parser.add_argument('--platform', choices=['all', 'mobile', 'desktop', 'ios', 'python'], default='all')
     args = parser.parse_args()
     selected = {path: spec for path, spec in LOCKS.items() if
                 args.platform == 'all' or (args.platform == 'mobile' and path.startswith('mobile/'))
                 or (args.platform == 'desktop' and path.startswith('desktop/'))
                 or (args.platform == 'ios' and path.startswith('mobile/ios/'))
-                or (args.platform == 'all' and path.startswith('services/'))}
+                or (args.platform == 'python' and path.endswith('requirements.lock'))}
     missing = []
     for path, (executable, command) in selected.items():
         target = ROOT / path
